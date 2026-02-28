@@ -10,8 +10,8 @@ public class CameraOrbit : MonoBehaviour
     public float yMax = 12f;
     public float sensitivity = 2f;
 
-    [HideInInspector] public float _yaw = 0f;
-    [HideInInspector] public float _pitch = 35f;
+    [HideInInspector] public float _yaw = 180f;
+    [HideInInspector] public float _pitch = 39f;
 
     void Start()
     {

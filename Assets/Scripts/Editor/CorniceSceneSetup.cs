@@ -245,19 +245,19 @@ public static class CorniceSceneSetup
 
         var root = new GameObject("SnowTestRoot");
 
-        // 1m x 2m の傾斜板（家の横、X=3 に配置）
+        // 横1m x 縦2m の傾斜板（コンパクト化：家の1/4サイズ、X=3 に配置）
         var plank = GameObject.CreatePrimitive(PrimitiveType.Cube);
         plank.name = "SnowTestPlank";
         plank.transform.SetParent(root.transform, false);
-        plank.transform.position = new Vector3(3f, 0.55f, 0f);
-        plank.transform.localScale = new Vector3(1f, 0.05f, 2f);
-        plank.transform.rotation = Quaternion.Euler(20f, 0f, 0f);
+        plank.transform.position = new Vector3(3f, 1f, 0f);
+        plank.transform.localScale = new Vector3(1f, 0.02f, 2f);
+        plank.transform.rotation = Quaternion.Euler(-25f, 0f, 0f);
         SetRendererColor(plank.GetComponent<Renderer>(), new Color(0.4f, 0.35f, 0.3f));
-        plank.GetComponent<Collider>().material = new PhysicsMaterial("Plank") { dynamicFriction = 0.3f, staticFriction = 0.4f, bounciness = 0f };
+        plank.GetComponent<Collider>().material = new PhysicsMaterial("Plank") { dynamicFriction = 0.15f, staticFriction = 0.2f, bounciness = 0f };
 
-        // 雪のキューブ: 10cm、10x20のグリッド、3段（30cm積雪）
+        // 雪のキューブ: 10cm、10x20のグリッド、1段
         float cubeSize = 0.1f;
-        int gridX = 10, gridZ = 20, layers = 3;
+        int gridX = 10, gridZ = 20, layers = 1;
         var snowMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
         snowMat.color = new Color(0.95f, 0.97f, 1f);
         var plankTr = plank.transform;
@@ -268,31 +268,41 @@ public static class CorniceSceneSetup
             {
                 for (int iz = 0; iz < gridZ; iz++)
                 {
-                    float lx = (ix + 0.5f) * cubeSize - 0.5f;
-                    float lz = (iz + 0.5f) * cubeSize - 1f;
-                    var surfacePos = plankTr.TransformPoint(lx, 0.025f, lz);
+                    float sz = cubeSize * Random.Range(1.03f, 1.14f);
+                    float lx = (ix + 0.5f) / gridX - 0.5f + Random.Range(-0.008f, 0.008f);
+                    float lz = (iz + 0.5f) / gridZ - 0.5f + Random.Range(-0.008f, 0.008f);
+                    var surfacePos = plankTr.TransformPoint(lx, 0.5f, lz);
                     var up = plankTr.TransformDirection(Vector3.up);
-                    var pos = surfacePos + up * (layer * cubeSize + cubeSize * 0.5f);
+                    var pos = surfacePos + up * (layer * cubeSize * 0.5f + sz * 0.5f);
 
                     var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
                     cube.name = "SnowCube";
                     cube.transform.SetParent(root.transform, false);
                     cube.transform.position = pos;
-                    cube.transform.localScale = Vector3.one * cubeSize;
+                    cube.transform.rotation = plankTr.rotation * Quaternion.Euler(Random.Range(-3f, 3f), Random.Range(-6f, 6f), Random.Range(-3f, 3f));
+                    cube.transform.localScale = new Vector3(sz * Random.Range(0.98f, 1.08f), sz * Random.Range(0.98f, 1.05f), sz * Random.Range(0.98f, 1.08f));
                     cube.GetComponent<Renderer>().sharedMaterial = snowMat;
-                    cube.GetComponent<Collider>().material = new PhysicsMaterial("Snow") { dynamicFriction = 0.2f, staticFriction = 0.3f, bounciness = 0f };
+                    cube.GetComponent<Collider>().material = new PhysicsMaterial("Snow") { dynamicFriction = 0.4f, staticFriction = 0.5f, bounciness = 0f };
 
                     var rb = cube.AddComponent<Rigidbody>();
                     rb.mass = 0.5f;
+                    rb.linearDamping = 2f;
+                    rb.angularDamping = 4f;
                     rb.isKinematic = true;
 
                     var script = cube.AddComponent<SnowTestCube>();
-                    script.hitForce = 8f;
-                    script.canBreak = layer < 2;
+                    script.hitForce = 1.2f;
+                    script.slideDirection = plankTr.TransformDirection(new Vector3(0f, -0.42f, -0.91f)).normalized;
+                    script.canBreak = Random.value < 0.6f;
                     script.breakIntoPieces = 4;
                 }
             }
         }
+
+        // カメラに CorniceHitter がなければ追加（クリックで叩けるように）
+        var cam = Camera.main;
+        if (cam != null && cam.GetComponent<CorniceHitter>() == null)
+            cam.gameObject.AddComponent<CorniceHitter>().mainCamera = cam;
 
         UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
         Debug.Log("Snow Test 作成完了。雪のキューブをクリックで叩いて落とせます。");
@@ -332,7 +342,7 @@ public static class CorniceSceneSetup
         cam.transform.position = new Vector3(0f, 8f, -8f);
         cam.transform.LookAt(lookAt);
         var orbit = cam.GetComponent<CameraOrbit>();
-        if (orbit != null) { orbit._yaw = 0f; orbit._pitch = 39f; orbit.distance = 12f; }
+        if (orbit != null) { orbit._yaw = 180f; orbit._pitch = 39f; orbit.distance = 12f; }
     }
 }
 
