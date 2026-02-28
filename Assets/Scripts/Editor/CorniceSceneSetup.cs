@@ -12,7 +12,15 @@ public static class CorniceSceneSetup
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
         if (state == PlayModeStateChange.ExitingEditMode)
-            FixCorniceRootMissingScript();
+            FixAllMissingScriptsAndSave();
+    }
+
+    static void FixAllMissingScriptsAndSave()
+    {
+        FixAllMissingScripts();
+        var scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene();
+        if (scene.isDirty)
+            UnityEditor.SceneManagement.EditorSceneManager.SaveOpenScenes();
     }
 
     /// <summary>Edit モードでの material リークを防ぐ。シェーダーから新規作成して sharedMaterial に代入。</summary>
@@ -26,26 +34,50 @@ public static class CorniceSceneSetup
         r.sharedMaterial = mat;
     }
 
+    [MenuItem("SnowPanicVibe/Fix All Missing Scripts")]
+    public static void FixAllMissingScripts()
+    {
+        var scene = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene();
+        var roots = scene.GetRootGameObjects();
+        int totalRemoved = 0;
+        foreach (var root in roots)
+        {
+            foreach (var go in root.GetComponentsInChildren<Transform>(true))
+            {
+                int n = GameObjectUtility.RemoveMonoBehavioursWithMissingScript(go.gameObject);
+                if (n > 0)
+                {
+                    totalRemoved += n;
+                    Debug.Log($"Removed {n} missing script(s) from {go.name}");
+                }
+            }
+        }
+        var corniceRoot = GameObject.Find("CorniceRoot");
+        var added = false;
+        if (corniceRoot != null && corniceRoot.GetComponent<CorniceRuntimeSnowSetup>() == null)
+        {
+            corniceRoot.AddComponent<CorniceRuntimeSnowSetup>();
+            added = true;
+            Debug.Log("Added CorniceRuntimeSnowSetup to CorniceRoot.");
+        }
+        if (totalRemoved > 0 || added)
+        {
+            UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(scene);
+            if (totalRemoved > 0) Debug.Log($"Fixed: Removed {totalRemoved} missing script(s).");
+        }
+    }
+
     [MenuItem("SnowPanicVibe/Fix CorniceRoot Missing Script")]
     public static void FixCorniceRootMissingScript()
     {
-        var root = GameObject.Find("CorniceRoot");
-        if (root == null) { Debug.LogWarning("CorniceRoot not found."); return; }
-        int removed = GameObjectUtility.RemoveMonoBehavioursWithMissingScript(root);
-        if (removed > 0) Debug.Log($"Removed {removed} missing script(s) from CorniceRoot.");
-        if (root.GetComponent<CorniceRuntimeSnowSetup>() == null)
-        {
-            root.AddComponent<CorniceRuntimeSnowSetup>();
-            Debug.Log("Added CorniceRuntimeSnowSetup to CorniceRoot.");
-        }
-        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
+        FixAllMissingScripts();
     }
 
     [MenuItem("SnowPanicVibe/Setup Cornice Scene")]
     public static void SetupCorniceScene()
     {
         // 既存オブジェクトを掃除
-        string[] namesToDelete = { "CorniceRoot", "Ground", "HouseBody", "Roof", "RoofBase", "RoofPanel", "CorniceSnow", "Person", "Window", "Porch", "SnowParticle", "GroundSnow", "RoofSnow", "RoofSnowPlaceholder", "RidgeSnow", "GroundDecor" };
+        string[] namesToDelete = { "CorniceRoot", "Ground", "HouseBody", "Roof", "RoofBase", "RoofPanel", "EavesDropTrigger", "CorniceSnow", "Person", "Window", "Porch", "SnowParticle", "GroundSnow", "RoofSnow", "RoofSnowPlaceholder", "RidgeSnow", "GroundDecor" };
         foreach (string name in namesToDelete)
         {
             var obj = GameObject.Find(name);
@@ -125,6 +157,19 @@ public static class CorniceSceneSetup
         var roofSlideMat = new PhysicsMaterial("RoofSlide") { dynamicFriction = 0.05f, staticFriction = 0.08f, bounciness = 0f };
         roofPanel.GetComponent<Collider>().material = roofSlideMat;
 
+        // 軒先トリガー：雪が通過したら屋根を無視して落下させる（片流れ屋根の軒先＝-Z側）
+        var eavesTrigger = new GameObject("EavesDropTrigger");
+        eavesTrigger.transform.SetParent(roof.transform, false);
+        eavesTrigger.transform.localPosition = new Vector3(0f, -0.25f, -0.85f);
+        eavesTrigger.transform.localRotation = Quaternion.identity;
+        eavesTrigger.transform.localScale = Vector3.one;
+        var box = eavesTrigger.AddComponent<BoxCollider>();
+        box.isTrigger = true;
+        box.size = new Vector3(2.5f, 1f, 1.2f);
+        box.center = Vector3.zero;
+        var triggerScript = eavesTrigger.AddComponent<EavesDropTrigger>();
+        triggerScript.roofCollider = roofPanel.GetComponent<Collider>();
+
         // 屋根の積雪（軒側に滑り落ちる方向）
         CreateRoofSnowPlaceholder(roofPanel.transform, new Vector3(0f, -0.42f, -0.9f).normalized);
 
@@ -186,6 +231,71 @@ public static class CorniceSceneSetup
         Selection.activeGameObject = root;
         UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
         Debug.Log("Setup complete. Play モードで屋根の雪が表示されます。屋根の雪をクリックで雪落とし。");
+    }
+
+    [MenuItem("SnowPanicVibe/Setup Snow Test")]
+    public static void SetupSnowTest()
+    {
+        // 既存のテストを削除
+        foreach (var name in new[] { "SnowTestRoot" })
+        {
+            var obj = GameObject.Find(name);
+            if (obj != null) Object.DestroyImmediate(obj);
+        }
+
+        var root = new GameObject("SnowTestRoot");
+
+        // 1m x 2m の傾斜板（家の横、X=3 に配置）
+        var plank = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        plank.name = "SnowTestPlank";
+        plank.transform.SetParent(root.transform, false);
+        plank.transform.position = new Vector3(3f, 0.55f, 0f);
+        plank.transform.localScale = new Vector3(1f, 0.05f, 2f);
+        plank.transform.rotation = Quaternion.Euler(20f, 0f, 0f);
+        SetRendererColor(plank.GetComponent<Renderer>(), new Color(0.4f, 0.35f, 0.3f));
+        plank.GetComponent<Collider>().material = new PhysicsMaterial("Plank") { dynamicFriction = 0.3f, staticFriction = 0.4f, bounciness = 0f };
+
+        // 雪のキューブ: 10cm、10x20のグリッド、3段（30cm積雪）
+        float cubeSize = 0.1f;
+        int gridX = 10, gridZ = 20, layers = 3;
+        var snowMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        snowMat.color = new Color(0.95f, 0.97f, 1f);
+        var plankTr = plank.transform;
+
+        for (int layer = 0; layer < layers; layer++)
+        {
+            for (int ix = 0; ix < gridX; ix++)
+            {
+                for (int iz = 0; iz < gridZ; iz++)
+                {
+                    float lx = (ix + 0.5f) * cubeSize - 0.5f;
+                    float lz = (iz + 0.5f) * cubeSize - 1f;
+                    var surfacePos = plankTr.TransformPoint(lx, 0.025f, lz);
+                    var up = plankTr.TransformDirection(Vector3.up);
+                    var pos = surfacePos + up * (layer * cubeSize + cubeSize * 0.5f);
+
+                    var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                    cube.name = "SnowCube";
+                    cube.transform.SetParent(root.transform, false);
+                    cube.transform.position = pos;
+                    cube.transform.localScale = Vector3.one * cubeSize;
+                    cube.GetComponent<Renderer>().sharedMaterial = snowMat;
+                    cube.GetComponent<Collider>().material = new PhysicsMaterial("Snow") { dynamicFriction = 0.2f, staticFriction = 0.3f, bounciness = 0f };
+
+                    var rb = cube.AddComponent<Rigidbody>();
+                    rb.mass = 0.5f;
+                    rb.isKinematic = true;
+
+                    var script = cube.AddComponent<SnowTestCube>();
+                    script.hitForce = 8f;
+                    script.canBreak = layer < 2;
+                    script.breakIntoPieces = 4;
+                }
+            }
+        }
+
+        UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
+        Debug.Log("Snow Test 作成完了。雪のキューブをクリックで叩いて落とせます。");
     }
 
     [MenuItem("SnowPanicVibe/Reset Camera to 俯瞰 View")]

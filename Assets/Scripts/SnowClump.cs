@@ -119,6 +119,18 @@ public class SnowClump : MonoBehaviour
         }
     }
 
+    /// <summary>軒先トリガー用。屋根を無視して落下させる</summary>
+    public void ForceDropFromEaves(Collider roofCol)
+    {
+        if (_landed || _rb == null) return;
+        var myCol = GetComponent<Collider>();
+        if (myCol != null && roofCol != null)
+            Physics.IgnoreCollision(myCol, roofCol);
+        _rb.AddForce((Vector3.down + slideDownDirection.normalized * 0.5f) * 8f);
+    }
+
+    public bool HasLanded => _landed;
+
     /// <summary>クリックで即削除（軒先の残雪用）</summary>
     public void RemoveImmediate()
     {

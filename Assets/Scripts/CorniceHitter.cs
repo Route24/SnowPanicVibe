@@ -33,6 +33,8 @@ public class CorniceHitter : MonoBehaviour
                 if (seg != null) { seg.Hit(1f); return; }
                 var snowClump = hit.collider.GetComponent<SnowClump>() ?? hit.collider.GetComponentInParent<SnowClump>();
                 if (snowClump != null) { snowClump.RemoveImmediate(); return; }
+                var snowCube = hit.collider.GetComponent<SnowTestCube>();
+                if (snowCube != null) { snowCube.Hit(hit.point, hit.normal); return; }
             }
         }
     }

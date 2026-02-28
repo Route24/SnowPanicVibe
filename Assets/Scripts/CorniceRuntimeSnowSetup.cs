@@ -145,7 +145,30 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
             comp.canReachRidge = true; // 片流れは全体クリック可能
 
             Object.Destroy(placeholder.GetComponent<RoofSnowPlaceholder>());
+
+            // 軒先トリガー（既存シーン用：Setup で作られていない場合）
+            CreateEavesDropTrigger(panel.transform, panel.GetComponent<Collider>());
         }
+    }
+
+    void CreateEavesDropTrigger(Transform roofPanelParent, Collider roofCol)
+    {
+        if (roofCol == null) return;
+        var roof = roofPanelParent.parent;
+        if (roof == null) return;
+        if (roof.Find("EavesDropTrigger") != null) return;
+
+        var eavesTrigger = new GameObject("EavesDropTrigger");
+        eavesTrigger.transform.SetParent(roof, false);
+        eavesTrigger.transform.localPosition = new Vector3(0f, -0.25f, -0.85f);
+        eavesTrigger.transform.localRotation = Quaternion.identity;
+        eavesTrigger.transform.localScale = Vector3.one;
+        var box = eavesTrigger.AddComponent<BoxCollider>();
+        box.isTrigger = true;
+        box.size = new Vector3(2.5f, 1f, 1.2f);
+        box.center = Vector3.zero;
+        var triggerScript = eavesTrigger.AddComponent<EavesDropTrigger>();
+        triggerScript.roofCollider = roofCol;
     }
 }
 

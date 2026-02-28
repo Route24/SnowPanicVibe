@@ -52,12 +52,14 @@
     <Compile Include="Assets/Scripts/RoofSnowCleanup.cs" />
     <Compile Include="Assets/Scripts/CameraOrbit.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowSegment.cs" />
+    <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/RoofSnow.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/SnowClump.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/CorniceRuntimeSnowSetup.cs" />
     <Compile Include="Assets/Scripts/CorniceHitter.cs" />
+    <Compile Include="Assets/Scripts/SnowTestCube.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">
