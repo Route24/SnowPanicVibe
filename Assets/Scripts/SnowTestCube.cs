@@ -9,6 +9,12 @@ public class SnowTestCube : MonoBehaviour
     [HideInInspector] public Vector3 slideDirection = Vector3.down;
     public bool canBreak = true;
     public int breakIntoPieces = 4;
+    [Tooltip("直接ヒット時に周囲へ波及する半径（0で無効）")]
+    public float spreadRadius = 0.18f;
+    [Tooltip("クリティカルヒット時に使う拡大半径")]
+    public float avalancheSpreadRadius = 0.55f;
+    [Tooltip(" true=クリティカルスポット（叩くと一気に雪崩）")]
+    public bool isCriticalSpot = false;
 
     Rigidbody _rb;
 
@@ -22,21 +28,52 @@ public class SnowTestCube : MonoBehaviour
         if (_rb == null || !_rb.isKinematic) return;
         var otherRb = col.rigidbody;
         if (otherRb == null) return;
-        if (otherRb.linearVelocity.sqrMagnitude < 0.35f) return;
+
+        float vSq = otherRb.linearVelocity.sqrMagnitude;
+        float massRatio = otherRb.mass / Mathf.Max(_rb.mass, 0.01f);
+        float velThreshold = massRatio >= 2f ? 0.02f : (massRatio >= 1.2f ? 0.05f : 0.12f);
+        if (vSq < velThreshold * velThreshold) return;
 
         var dir = (slideDirection.sqrMagnitude > 0.01f ? slideDirection : Vector3.down).normalized;
-        float strength = Mathf.Clamp(col.relativeVelocity.magnitude * 0.04f, 0.2f, 0.8f);
+        float strength = Mathf.Clamp(col.relativeVelocity.magnitude * (0.08f + massRatio * 0.02f), 0.4f, 1.5f);
         _rb.isKinematic = false;
         _rb.AddForce(dir * strength, ForceMode.Impulse);
     }
 
+    /// <summary>動いた雪を叩いたとき。追加の力を加える</summary>
+    public void PushFromHit(Vector3 hitPoint)
+    {
+        if (_rb == null || _rb.isKinematic) return;
+        var dir = (slideDirection.sqrMagnitude > 0.01f ? slideDirection : Vector3.down).normalized;
+        _rb.AddForce(dir * hitForce * 0.5f, ForceMode.Impulse);
+    }
+
     /// <summary>叩かれたとき。Raycast の hit から呼ばれる</summary>
-    public void Hit(Vector3 hitPoint, Vector3 hitNormal)
+    public void Hit(Vector3 hitPoint, Vector3 hitNormal, bool spreadToNearby = true)
     {
         if (_rb == null) return;
+        if (!_rb.isKinematic) return;
+
+        bool isCritical = spreadToNearby && isCriticalSpot;
+        if (isCritical)
+            AvalancheFeedback.Trigger();
+        float radius = isCritical ? avalancheSpreadRadius : spreadRadius;
+        if (spreadToNearby && radius > 0.01f)
+        {
+            var hits = Physics.OverlapSphere(transform.position, radius);
+            foreach (var col in hits)
+            {
+                var other = col.GetComponent<SnowTestCube>();
+                if (other != null && other != this)
+                {
+                    var or = other.GetComponent<Rigidbody>();
+                    if (or != null && or.isKinematic)
+                        other.Hit(other.transform.position, Vector3.down, false);
+                }
+            }
+        }
 
         var dir = (slideDirection.sqrMagnitude > 0.01f ? slideDirection : Vector3.down).normalized;
-
         _rb.isKinematic = false;
 
         if (canBreak && breakIntoPieces > 1)
@@ -71,6 +108,7 @@ public class SnowTestCube : MonoBehaviour
             rb.linearDamping = 2f;
             var dir = slideDirection.sqrMagnitude > 0.01f ? slideDirection.normalized : Vector3.down;
             rb.AddForce(dir * hitForce * 0.2f, ForceMode.Impulse);
+            piece.AddComponent<SnowPieceAutoSettle>();
 
             var col = piece.GetComponent<Collider>();
             var srcCol = GetComponent<Collider>();
