@@ -22,7 +22,7 @@ public class SnowPackSpawner : MonoBehaviour
     public float syncIntervalSeconds = 0.2f;
     public float addThreshold = 0.08f;
     public float removeThreshold = -0.08f;
-    public float minSyncInterval = 0.25f;
+    public float minSyncInterval = 0.50f;
     public int maxLayerStep = 2;
     [Tooltip("Current displayed depth (updated on Rebuild/Add/Remove)")]
     public float packDepthMeters;
@@ -517,7 +517,6 @@ public class SnowPackSpawner : MonoBehaviour
                 float oldPack = packDepthMeters;
                 float delta = roofDepth - oldPack;
                 string hysteresis = $"(add={addThreshold:F2},remove={removeThreshold:F2})";
-                float cooldown = minSyncInterval;
 
                 if (Time.time >= _nextSyncAllowedAt)
                 {
@@ -544,7 +543,7 @@ public class SnowPackSpawner : MonoBehaviour
                     }
 
                     if (action != "NoOp")
-                        Debug.Log($"[SnowPackSync] roofDepth={roofDepth:F3} packDepth={oldPack:F3} delta={delta:F3} action={action} hysteresis={hysteresis} cooldown={cooldown:F2} nextAllowedAt={_nextSyncAllowedAt:F2}");
+                        Debug.Log($"[SnowPackSync] roofDepth={roofDepth:F3} packDepth={oldPack:F3} delta={delta:F3} action={action} hysteresis={hysteresis} minSyncInterval={minSyncInterval:F2} nextAllowedAt={_nextSyncAllowedAt:F2}");
                 }
             }
         }

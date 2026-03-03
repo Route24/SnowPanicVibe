@@ -236,6 +236,7 @@ public static class SnowLoopNoaReportAutoCopy
 
         var results = new List<string>();
         results.Add("=== 自動判定 (PASS/FAIL) ===");
+        var failReasons = new List<string>();
 
         // 1) movedMeters が 0.5〜3.0m に収まっているか
         var movedMetersList = new List<float>();
@@ -252,10 +253,12 @@ public static class SnowLoopNoaReportAutoCopy
             float last = movedMetersList[movedMetersList.Count - 1];
             movedMetersVal = last.ToString("F3");
             movedMetersOk = last >= movedMetersMin && last <= movedMetersMax;
+            if (!movedMetersOk)
+                failReasons.Add($"movedMeters={last:F3} (範囲外: 要0.5〜3.0)");
         }
         results.Add($"1) movedMeters範囲(0.5〜3.0m): {(movedMetersOk ? "PASS" : "FAIL")} 値={movedMetersVal}");
 
-        // 2) addCount+removeCount が 1秒あたり<=6 程度（最終Audit1sの値を使用）
+        // 2) addCount+removeCount が 1秒あたり<=6
         int addCount = 0, removeCount = 0;
         foreach (var line in picked)
         {
@@ -269,6 +272,8 @@ public static class SnowLoopNoaReportAutoCopy
         int addRemoveTotal = addCount + removeCount;
         float perSec = runDuration > 0 ? addRemoveTotal / runDuration : 0;
         bool addRemoveOk = perSec <= addRemovePerSecLimit;
+        if (!addRemoveOk)
+            failReasons.Add($"add+remove/秒={perSec:F1} (上限={addRemovePerSecLimit}) 合計={addRemoveTotal} 実行秒={runDuration:F1}");
         results.Add($"2) add+remove/秒<={addRemovePerSecLimit}: {(addRemoveOk ? "PASS" : "FAIL")} addCount={addCount} removeCount={removeCount} 合計/秒={perSec:F1} 実行秒={runDuration:F1}");
 
         // 3) 起動直後2秒で fired=0, suppressed>0
@@ -281,7 +286,13 @@ public static class SnowLoopNoaReportAutoCopy
             if (line.Contains("[Avalanche] suppressed")) suppressedInFirst2s++;
         }
         bool graceOk = firedInFirst2s == 0 && suppressedInFirst2s > 0;
+        if (!graceOk)
+            failReasons.Add($"Grace: fired2s={firedInFirst2s} (要0) suppressed2s={suppressedInFirst2s} (要>0)");
         results.Add($"3) Grace抑止(2秒内fired=0,suppressed>0): {(graceOk ? "PASS" : "FAIL")} fired2s={firedInFirst2s} suppressed2s={suppressedInFirst2s}");
+
+        bool allPass = movedMetersOk && addRemoveOk && graceOk;
+        results.Add("");
+        results.Add(allPass ? "判定: ALL PASS" : $"判定: FAIL ({string.Join(" / ", failReasons)})");
 
         return string.Join(Environment.NewLine, results);
     }
