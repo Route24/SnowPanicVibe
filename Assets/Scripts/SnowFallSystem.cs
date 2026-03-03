@@ -32,6 +32,7 @@ public class SnowFallSystem : MonoBehaviour
         public Transform t;
         public Vector3 vel;
         public bool active;
+        public string lastContact;
     }
 
     readonly List<Piece> _pieces = new List<Piece>();
@@ -40,6 +41,9 @@ public class SnowFallSystem : MonoBehaviour
     int _spawned;
     int _roofHits;
     int _groundHits;
+    int _spawnedTotal;
+    int _destroyedTotal;
+    float _nextBurstLogTime;
 
     void Start()
     {
@@ -70,11 +74,23 @@ public class SnowFallSystem : MonoBehaviour
                 (Mathf.PerlinNoise(i * 0.01f, Time.time * 0.7f) - 0.5f) * 2f * windStrength);
             p.vel += (Vector3.down * gravity + wind) * dt;
             Vector3 next = prev + p.vel * dt;
+            float speed = p.vel.magnitude;
+            if (speed > 10f && Time.time >= _nextBurstLogTime)
+            {
+                _nextBurstLogTime = Time.time + 0.2f;
+                Debug.Log($"[SnowFallBurst] frame={Time.frameCount} t={Time.time:F2} speed={speed:F2} pos={p.t.position} vel={p.vel} reason=unknown lastContact={p.lastContact}");
+            }
 
             Vector3 dir = next - prev;
             float dist = dir.magnitude;
             if (dist > 0.0001f && Physics.Raycast(prev, dir / dist, out RaycastHit hit, dist, ~0, QueryTriggerInteraction.Ignore))
             {
+                p.lastContact = hit.collider != null ? hit.collider.name : "None";
+                if (speed > 10f && Time.time >= _nextBurstLogTime)
+                {
+                    _nextBurstLogTime = Time.time + 0.2f;
+                    Debug.Log($"[SnowFallBurst] frame={Time.frameCount} t={Time.time:F2} speed={speed:F2} pos={p.t.position} vel={p.vel} reason=collision lastContact={p.lastContact}");
+                }
                 if (roofSlideCollider != null && hit.collider == roofSlideCollider)
                 {
                     if (roofSnowSystem != null) roofSnowSystem.AddRoofSnow(addPerLandingMeters);
@@ -104,6 +120,24 @@ public class SnowFallSystem : MonoBehaviour
         {
             _nextLogTime = Time.time + 1f;
             Debug.Log($"[SnowFall] spawned={_spawned} roofHits={_roofHits} groundHits={_groundHits}");
+            int active = 0;
+            float maxSpeed = 0f;
+            Vector3 maxVel = Vector3.zero;
+            Vector3 maxPos = Vector3.zero;
+            for (int i = 0; i < _pieces.Count; i++)
+            {
+                if (!_pieces[i].active || _pieces[i].t == null) continue;
+                active++;
+                float s = _pieces[i].vel.magnitude;
+                if (s > maxSpeed)
+                {
+                    maxSpeed = s;
+                    maxVel = _pieces[i].vel;
+                    maxPos = _pieces[i].t.position;
+                }
+            }
+            Debug.Log($"[SnowFallAudit1s] frame={Time.frameCount} t={Time.time:F2} active={active} spawnedTotal={_spawnedTotal} destroyedTotal={_destroyedTotal} maxSpeed1s={maxSpeed:F2}");
+            Debug.Log($"[SnowFallMax1s] maxSpeed={maxSpeed:F2} maxVel={maxVel} atPos={maxPos}");
             _spawned = 0;
             _roofHits = 0;
             _groundHits = 0;
@@ -130,6 +164,7 @@ public class SnowFallSystem : MonoBehaviour
         p.t.gameObject.SetActive(true);
         _pieces[idx] = p;
         _spawned++;
+        _spawnedTotal++;
     }
 
     int FindInactive()
@@ -142,6 +177,7 @@ public class SnowFallSystem : MonoBehaviour
     void Deactivate(ref Piece p)
     {
         p.active = false;
+        _destroyedTotal++;
         if (p.t != null) p.t.gameObject.SetActive(false);
     }
 

@@ -27,9 +27,17 @@ public class RoofSnowSystem : MonoBehaviour
 
     [Header("References")]
     public GroundSnowSystem groundSnowSystem;
+    public SnowPackSpawner snowPackSpawner;
     public LayerMask groundMask = ~0;
 
+    [Header("Avalanche visual")]
+    public float avalancheSlideDuration = 0.6f;
+    public float avalancheSlideOffset = 1.2f;
+    public float avalancheGraceSeconds = 2.0f;
+
     Transform _roofLayer;
+    float _startTime;
+    float _lastSuppressedLogTime;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;
@@ -40,6 +48,7 @@ public class RoofSnowSystem : MonoBehaviour
 
     void Start()
     {
+        _startTime = Time.time;
         ResolveDefaults();
         EnsureRoofVisual();
         UpdateRoofVisual();
@@ -56,10 +65,26 @@ public class RoofSnowSystem : MonoBehaviour
         {
             _nextRoofLogTime = Time.time + 1f;
             Debug.Log($"[RoofSnow] depth={roofSnowDepthMeters:F3} threshold={ComputedThreshold:F3} angleDeg={AngleDeg:F1}");
+            string state = Time.time < _nextAvalancheTime ? "Avalanche" : "Freeze";
+            float groundTotal = groundSnowSystem != null ? groundSnowSystem.totalSnowAmount : 0f;
+            Debug.Log($"[AvalancheAudit1s] frame={Time.frameCount} t={Time.time:F2} state={state} roofDepth={roofSnowDepthMeters:F3} groundTotal={groundTotal:F3}");
         }
 
         if (Time.time >= _nextAvalancheTime && roofSnowDepthMeters >= ComputedThreshold)
-            TriggerAvalanche();
+        {
+            if (Time.time - _startTime < avalancheGraceSeconds)
+            {
+                if (Time.time >= _lastSuppressedLogTime)
+                {
+                    _lastSuppressedLogTime = Time.time + 0.5f;
+                    Debug.Log($"[Avalanche] suppressed reason=Grace t={Time.time:F2} load={roofSnowDepthMeters:F3} threshold={ComputedThreshold:F3}");
+                }
+            }
+            else
+            {
+                TriggerAvalanche();
+            }
+        }
     }
 
     public void AddRoofSnow(float amount)
@@ -74,6 +99,14 @@ public class RoofSnowSystem : MonoBehaviour
         float before = roofSnowDepthMeters;
         float after = Mathf.Max(0f, before * Mathf.Clamp01(avalancheRetainRatio));
         float burstAmount = Mathf.Max(0f, before - after);
+
+        Vector3 roofUp = roofSlideCollider.transform.up.normalized;
+        Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
+        if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
+
+        if (snowPackSpawner != null)
+            snowPackSpawner.PlayAvalancheSlideVisual(burstAmount, slopeDir * avalancheSlideOffset, avalancheSlideDuration);
+
         roofSnowDepthMeters = after;
         _nextAvalancheTime = Time.time + Mathf.Max(0.2f, avalancheCooldownSeconds);
         UpdateRoofVisual();
@@ -82,7 +115,8 @@ public class RoofSnowSystem : MonoBehaviour
         if (groundSnowSystem != null)
             groundSnowSystem.AddSnow(burstAmount * 0.35f);
 
-        Debug.Log($"[Avalanche] fired depthBefore={before:F3} depthAfter={after:F3} burstAmount={burstAmount:F3}");
+        Vector3 burstVel = slopeDir * burstChunkSpeed;
+        Debug.Log($"[Avalanche] fired depthBefore={before:F3} depthAfter={after:F3} burstAmount={burstAmount:F3} burstVel={burstVel}");
     }
 
     void ResolveDefaults()
@@ -92,6 +126,7 @@ public class RoofSnowSystem : MonoBehaviour
             var t = GameObject.Find("RoofSlideCollider");
             if (t != null) roofSlideCollider = t.GetComponent<Collider>();
         }
+        if (snowPackSpawner == null) snowPackSpawner = FindFirstObjectByType<SnowPackSpawner>();
     }
 
     void EnsureRoofVisual()

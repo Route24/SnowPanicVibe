@@ -11,6 +11,7 @@ public class SnowLoopLogCapture : MonoBehaviour
     static SnowLoopLogCapture _instance;
     static string _latestLogPath;
     static bool _reportingWriteFailure;
+    static int _runIdCounter;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
@@ -27,8 +28,10 @@ public class SnowLoopLogCapture : MonoBehaviour
         Directory.CreateDirectory(logsDir);
         _latestLogPath = Path.Combine(logsDir, "snowloop_latest.txt");
 
+        _runIdCounter++;
         string header =
             $"# SnowLoop Play Log{Environment.NewLine}" +
+            $"runId={_runIdCounter}{Environment.NewLine}" +
             $"started_at={DateTime.Now:yyyy-MM-dd HH:mm:ss}{Environment.NewLine}" +
             $"unity_version={Application.unityVersion}{Environment.NewLine}" +
             $"scene={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}{Environment.NewLine}" +

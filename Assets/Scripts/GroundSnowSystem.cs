@@ -1,13 +1,14 @@
 using UnityEngine;
 
 /// <summary>
-/// Lightweight ground accumulation source of truth + simple visual layer.
+/// Lightweight ground accumulation source of truth + visual (広がって増える).
 /// </summary>
 public class GroundSnowSystem : MonoBehaviour
 {
     public float totalSnowAmount;
-    public float maxVisualHeight = 1.2f;
-    public float amountToHeightScale = 0.25f;
+    public float maxVisualHeight = 0.12f;
+    public float amountToRadiusScale = 0.8f;
+    public float baseRadius = 3f;
     public Color snowColor = new Color(0.92f, 0.95f, 1f, 1f);
     public bool logEverySecond = true;
 
@@ -16,7 +17,9 @@ public class GroundSnowSystem : MonoBehaviour
 
     Transform _groundLayer;
     float _nextLogTime;
+    float _nextVisualLogTime;
     Material _sharedMat;
+    string _visualMode = "Plane";
 
     public void AddSnow(float amount)
     {
@@ -87,9 +90,18 @@ public class GroundSnowSystem : MonoBehaviour
             ? groundCollider.bounds
             : new Bounds(Vector3.zero, new Vector3(20f, 0.2f, 20f));
 
-        float h = Mathf.Clamp(totalSnowAmount * amountToHeightScale, 0.01f, maxVisualHeight);
+        float radius = baseRadius + totalSnowAmount * amountToRadiusScale;
+        radius = Mathf.Clamp(radius, 0.5f, Mathf.Max(b.size.x, b.size.z) * 0.8f);
+        float h = Mathf.Clamp(totalSnowAmount * 0.02f, 0.01f, maxVisualHeight);
+
         _groundLayer.position = new Vector3(b.center.x, b.max.y + h * 0.5f, b.center.z);
         _groundLayer.rotation = Quaternion.identity;
-        _groundLayer.localScale = new Vector3(Mathf.Max(0.1f, b.size.x), h, Mathf.Max(0.1f, b.size.z));
+        _groundLayer.localScale = new Vector3(radius * 2f, h, radius * 2f);
+
+        if (Time.time >= _nextVisualLogTime)
+        {
+            _nextVisualLogTime = Time.time + 1f;
+            Debug.Log($"[GroundVisual] total={totalSnowAmount:F3} radius={radius:F2} height={h:F3} mode={_visualMode}");
+        }
     }
 }

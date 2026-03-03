@@ -30,8 +30,11 @@ public class SnowMvpBootstrap : MonoBehaviour
         roof.roofSnowDepthMeters = 0.5f;
 
         var pack = GetOrCreate<SnowPackSpawner>(gameObject);
+        roof.snowPackSpawner = pack;
         pack.roofCollider = roofCol;
+        pack.roofSnowSystem = roof;
         pack.targetDepthMeters = 0.5f;
+        pack.packDepthMeters = 0.5f;
         pack.rebuildOnPlay = true;
 
         var fall = GetOrCreate<SnowFallSystem>(gameObject);
