@@ -16,6 +16,13 @@ public class GroundSnowSystem : MonoBehaviour
     public Collider groundCollider;
 
     Transform _groundLayer;
+
+    /// <summary>DebugSnowVisibility用。GroundSnowLayerのRenderer。</summary>
+    public Renderer GetGroundLayerRenderer()
+    {
+        if (_groundLayer == null) EnsureVisual();
+        return _groundLayer != null ? _groundLayer.GetComponent<Renderer>() : null;
+    }
     float _nextLogTime;
     float _nextVisualLogTime;
     Material _sharedMat;

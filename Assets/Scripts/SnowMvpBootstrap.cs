@@ -46,6 +46,7 @@ public class SnowMvpBootstrap : MonoBehaviour
         fall.addPerLandingMeters = 0.01f;
         fall.addPerGroundHit = 0.01f;
 
+        EnsureTapToSlide();
         DisableLegacyPrototype();
         Debug.Log("[SnowMVP] bootstrap complete (RoofSnowSystem/SnowFallSystem/GroundSnowSystem)");
     }
@@ -91,6 +92,16 @@ public class SnowMvpBootstrap : MonoBehaviour
             if (c != null) return c;
         }
         return null;
+    }
+
+    void EnsureTapToSlide()
+    {
+        var cam = Camera.main;
+        if (cam == null) return;
+        if (cam.GetComponent<CorniceHitter>() != null) return;
+        if (cam.GetComponent<TapToSlideOnRoof>() != null) return;
+        cam.gameObject.AddComponent<TapToSlideOnRoof>();
+        Debug.Log("[SnowMVP] TapToSlideOnRoof added to main camera");
     }
 
     void DisableLegacyPrototype()

@@ -50,10 +50,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Assets/TutorialInfo/Scripts/Editor/ReadmeEditor.cs" />
+    <Compile Include="Assets/Scripts/Editor/AssiReportWindow.cs" />
     <Compile Include="Assets/Scripts/Editor/DioramaRoofSetup.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
     <Compile Include="Assets/Scripts/Editor/CorniceSceneSetup.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowLoopNoaReportAutoCopy.cs" />
+    <Compile Include="Assets/Scripts/Editor/SnowMinReproSceneBuilder.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">

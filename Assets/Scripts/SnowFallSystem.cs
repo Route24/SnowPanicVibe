@@ -7,6 +7,8 @@ using UnityEngine;
 public class SnowFallSystem : MonoBehaviour
 {
     [Header("Spawn")]
+    [Tooltip("false=Play開始時に降雪停止（最小ゲーム用）")]
+    public bool snowfallEnabledAtStart = false;
     public float spawnIntervalSeconds = 0.06f;
     public int spawnPerTick = 2;
     public int maxActivePieces = 240;
@@ -24,6 +26,7 @@ public class SnowFallSystem : MonoBehaviour
     [Header("References")]
     public RoofSnowSystem roofSnowSystem;
     public GroundSnowSystem groundSnowSystem;
+    public SnowPackSpawner snowPackSpawner; // サイズ統一用（未設定時は roofSnowSystem から解決）
     public Collider roofSlideCollider;
     public LayerMask groundMask = ~0;
 
@@ -38,6 +41,7 @@ public class SnowFallSystem : MonoBehaviour
     readonly List<Piece> _pieces = new List<Piece>();
     float _spawnTimer;
     float _nextLogTime;
+    float _lastScaleLogTime;
     int _spawned;
     int _roofHits;
     int _groundHits;
@@ -49,6 +53,16 @@ public class SnowFallSystem : MonoBehaviour
     {
         ResolveRefs();
         EnsurePool(maxActivePieces);
+        float s = ResolveUnifiedScale();
+        Debug.Log($"[SnowPieceScale] kind=Falling scale=({s:F3},{s:F3},{s:F3})");
+
+        if (!snowfallEnabledAtStart)
+        {
+            enabled = false;
+            SnowLoopLogCapture.AppendToAssiReport("=== SNOWFALL STOP ===");
+            SnowLoopLogCapture.AppendToAssiReport("snowfallEnabled=false");
+            SnowLoopLogCapture.AppendToAssiReport($"rate=0 stoppedBy=PlayStart");
+        }
     }
 
     void Update()
@@ -159,8 +173,9 @@ public class SnowFallSystem : MonoBehaviour
         p.t.position = pos;
         p.vel = Vector3.down * fallSpeed;
         p.active = true;
-        float s = Random.Range(pieceSizeRange.x, pieceSizeRange.y);
-        p.t.localScale = Vector3.one * s;
+        float unifiedScale = ResolveUnifiedScale();
+        p.t.localScale = Vector3.one * unifiedScale; // Packed/Burstと同一
+        if (Time.time - _lastScaleLogTime >= 1f) { _lastScaleLogTime = Time.time; Debug.Log($"[SnowPieceScale] kind=Falling scale=({unifiedScale:F3},{unifiedScale:F3},{unifiedScale:F3})"); }
         p.t.gameObject.SetActive(true);
         _pieces[idx] = p;
         _spawned++;
@@ -186,7 +201,18 @@ public class SnowFallSystem : MonoBehaviour
         if (roofSnowSystem == null) roofSnowSystem = FindFirstObjectByType<RoofSnowSystem>();
         if (groundSnowSystem == null) groundSnowSystem = FindFirstObjectByType<GroundSnowSystem>();
         if (roofSlideCollider == null && roofSnowSystem != null) roofSlideCollider = roofSnowSystem.roofSlideCollider;
+        if (snowPackSpawner == null && roofSnowSystem != null) snowPackSpawner = roofSnowSystem.snowPackSpawner;
     }
+
+    float ResolveUnifiedScale()
+    {
+        if (snowPackSpawner != null) return snowPackSpawner.pieceSize;
+        if (roofSnowSystem?.snowPackSpawner != null) return roofSnowSystem.snowPackSpawner.pieceSize;
+        return 0.11f;
+    }
+
+    /// <summary>スケール統一確認用。Packed/Burstと同一であるべき。</summary>
+    public float GetFallingScale() => ResolveUnifiedScale();
 
     void EnsurePool(int n)
     {

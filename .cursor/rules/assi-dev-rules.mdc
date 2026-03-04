@@ -1,0 +1,46 @@
+---
+description: Snow Panic ASSI 開発運用ルール（1ターン1ゴール・優先順位）
+globs: Assets/**/*
+alwaysApply: true
+---
+
+# Snow Panic 開発運用ルール
+
+## 1ターン1ゴール
+
+1回の実行で必ず以下のいずれかの結果を出すこと：
+
+- Yes/No で判定できる
+- 数値が変化する
+- 見た目が変化する
+
+**複数目的の修正は禁止。**
+
+## 優先順位
+
+1. **観測ログ**（最優先）
+2. 再現性
+3. 見た目変化
+4. 機能改善
+
+この順で対応する。未検出の場合は機能開発をせずログ復旧を優先。
+
+## 必須観測ログ（1Playで検出）
+
+以下4つが必ず検出されること：
+
+- [ASSI_BOOT]
+- [RUN_SNAPSHOT_FORCE]
+- [LAST20_FORCE]
+- [STACKTRACE_SELFTEST]
+
+## 再現テスト
+
+- F8キーで ForceAvalancheNow() を呼び出す
+- 必ず [AvalancheBeforeAfter] を出す（beforeDepth, afterDepth, packedCubeCountBefore, packedCubeCountAfter, burstAmount）
+
+## レポート
+
+- 差分レポートの最後に「実装サマリ」を必ず追加
+- Consoleスクショは不要
+- 重要ログはレポート本文に含める

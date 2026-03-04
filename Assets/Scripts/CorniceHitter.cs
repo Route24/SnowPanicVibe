@@ -53,6 +53,13 @@ public class CorniceHitter : MonoBehaviour
                 var roofSnow = hit.collider.GetComponent<RoofSnow>() ?? hit.collider.GetComponentInParent<RoofSnow>() ?? hit.collider.GetComponentInChildren<RoofSnow>();
                 if (roofSnow != null && roofSnow.HasAnySnow()) { roofSnow.Hit(hit.point); return; }
 
+                var roofSys = UnityEngine.Object.FindFirstObjectByType<RoofSnowSystem>();
+                if (roofSys != null && roofSys.roofSlideCollider == hit.collider)
+                {
+                    roofSys.RequestTapSlide(hit.point);
+                    return;
+                }
+
                 var seg = hit.collider.GetComponentInParent<CorniceSnowSegment>();
                 if (seg != null) { seg.Hit(1f); return; }
             }

@@ -53,6 +53,7 @@
     <Compile Include="Assets/Scripts/SnowfallEventBurst.cs" />
     <Compile Include="Assets/Scripts/MvpSnowChunkMotion.cs" />
     <Compile Include="Assets/Scripts/RoofSnowCleanup.cs" />
+    <Compile Include="Assets/Scripts/SnowPackFallingPiece.cs" />
     <Compile Include="Assets/Scripts/CameraOrbit.cs" />
     <Compile Include="Assets/Scripts/SnowFallSystem.cs" />
     <Compile Include="Assets/Scripts/AvalancheFeedback.cs" />
@@ -61,23 +62,34 @@
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
     <Compile Include="Assets/Scripts/RoofDebugGizmo.cs" />
+    <Compile Include="Assets/Scripts/RoofAlignToSnow.cs" />
     <Compile Include="Assets/Scripts/GroundSnowSystem.cs" />
     <Compile Include="Assets/Scripts/RoofSnow.cs" />
+    <Compile Include="Assets/Scripts/SnowMinReproBootstrap.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
+    <Compile Include="Assets/Scripts/TapToSlideOnRoof.cs" />
     <Compile Include="Assets/Scripts/SnowTestSlideAssist.cs" />
     <Compile Include="Assets/Scripts/SnowClump.cs" />
     <Compile Include="Assets/Scripts/RoofSnowPlaceholder.cs" />
     <Compile Include="Assets/Scripts/RoofSnowSystem.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
+    <Compile Include="Assets/Scripts/RoofSnowAngleProbe.cs" />
+    <Compile Include="Assets/Scripts/RendererWatch.cs" />
     <Compile Include="Assets/Scripts/RoofDebugAutoSetup.cs" />
     <Compile Include="Assets/Scripts/SnowLoopLogCapture.cs" />
+    <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
     <Compile Include="Assets/Scripts/CorniceRuntimeSnowSetup.cs" />
     <Compile Include="Assets/Scripts/GroundSnowAccumulator.cs" />
+    <Compile Include="Assets/Scripts/DebugSnowVisibility.cs" />
     <Compile Include="Assets/Scripts/CorniceHitter.cs" />
     <Compile Include="Assets/Scripts/SnowTestCube.cs" />
+    <Compile Include="Assets/Scripts/AssiDebugUI.cs" />
     <Compile Include="Assets/Scripts/RoofSlideTestAutoSetup.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Assets/Logs/noa_report_latest.txt" />
+    <None Include="Assets/Logs/noa_report_previous_full.txt" />
+    <None Include="Assets/Logs/console_buffer.txt" />
     <None Include="Assets/Logs/snowloop_latest.txt" />
   </ItemGroup>
   <ItemGroup>
