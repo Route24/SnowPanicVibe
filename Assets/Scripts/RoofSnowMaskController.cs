@@ -18,6 +18,7 @@ public class RoofSnowMaskController : MonoBehaviour
     SnowPackSpawner _spawner;
     Collider _roofCollider;
     bool _initialized;
+    public bool IsInitialized => _initialized;
 
     /// <summary>Initialize mask and material. Call from RoofSnowSystem when creating RoofSnowLayer.</summary>
     public void Init(Material roofMat, SnowPackSpawner spawner, Collider roofCollider)
@@ -43,11 +44,16 @@ public class RoofSnowMaskController : MonoBehaviour
     /// <summary>Paint a cleared circle at world position. Call from LocalAvalanche.</summary>
     public void PaintEraseAt(Vector3 worldPoint, float radiusWorldMeters = -1f)
     {
-        if (!_initialized || _mask == null || _spawner == null) return;
+        if (_spawner == null) return;
         _spawner.ComputeTapUV(worldPoint, out float u, out float v);
         float rUV = radiusWorldMeters > 0f
             ? (radiusWorldMeters / Mathf.Max(0.01f, Mathf.Max(_spawner.RoofWidth, _spawner.RoofLength)))
             : eraseRadiusUV;
+        if (!_initialized || _mask == null)
+        {
+            Debug.Log($"[MaskPaint] NOT_INIT uv=({u:F3},{v:F3}) R={rUV:F2} (mask not ready)");
+            return;
+        }
         PaintEraseUV(u, v, rUV);
     }
 
@@ -86,7 +92,7 @@ public class RoofSnowMaskController : MonoBehaviour
         {
             _mask.Apply();
             int pr = Mathf.RoundToInt(radiusPx);
-            Debug.Log($"[MaskPaint] uv=({u:F3},{v:F3}) radius={radiusUV:F3} pixels=({cx},{cy},{pr})");
+            Debug.Log($"[MaskPaint] uv=({u:F3},{v:F3}) R={radiusUV:F2} px=({cx},{cy}) pr={pr}");
         }
     }
 
