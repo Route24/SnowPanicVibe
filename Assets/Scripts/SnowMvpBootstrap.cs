@@ -29,6 +29,14 @@ public class SnowMvpBootstrap : MonoBehaviour
         roof.groundSnowSystem = ground;
         roof.roofSnowDepthMeters = 0.5f;
 
+        var pack = GetOrCreate<SnowPackSpawner>(gameObject);
+        roof.snowPackSpawner = pack;
+        pack.roofCollider = roofCol;
+        pack.roofSnowSystem = roof;
+        pack.targetDepthMeters = 0.5f;
+        pack.packDepthMeters = 0.5f;
+        pack.rebuildOnPlay = true;
+
         var fall = GetOrCreate<SnowFallSystem>(gameObject);
         fall.roofSnowSystem = roof;
         fall.groundSnowSystem = ground;
@@ -38,6 +46,13 @@ public class SnowMvpBootstrap : MonoBehaviour
         fall.addPerLandingMeters = 0.01f;
         fall.addPerGroundHit = 0.01f;
 
+        var core = GetOrCreate<CoreGameplayManager>(gameObject);
+        core.collapseThresholdMeters = 0.95f;
+
+        var cooldown = GetOrCreate<ToolCooldownManager>(gameObject);
+        cooldown.cooldownSec = 1.2f;
+
+        EnsureTapToSlide();
         DisableLegacyPrototype();
         Debug.Log("[SnowMVP] bootstrap complete (RoofSnowSystem/SnowFallSystem/GroundSnowSystem)");
     }
@@ -83,6 +98,16 @@ public class SnowMvpBootstrap : MonoBehaviour
             if (c != null) return c;
         }
         return null;
+    }
+
+    void EnsureTapToSlide()
+    {
+        var cam = Camera.main;
+        if (cam == null) return;
+        if (cam.GetComponent<CorniceHitter>() != null) return;
+        if (cam.GetComponent<TapToSlideOnRoof>() != null) return;
+        cam.gameObject.AddComponent<TapToSlideOnRoof>();
+        Debug.Log("[SnowMVP] TapToSlideOnRoof added to main camera");
     }
 
     void DisableLegacyPrototype()

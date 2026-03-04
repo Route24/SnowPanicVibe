@@ -31,7 +31,7 @@ public static class CorniceSceneSetup
         Debug.Log("Setup All 完了。Play で雪落としを楽しめます。");
     }
 
-    [MenuItem("SnowPanicVibe/Auto Setup on Play %#p", false, 100)]
+    [MenuItem("SnowPanicVibe/Auto Setup on Play %#a", false, 100)]
     public static void ToggleAutoSetup()
     {
         bool v = !EditorPrefs.GetBool(PrefAutoSetup, true);
@@ -39,7 +39,7 @@ public static class CorniceSceneSetup
         Debug.Log(v ? "Play 時に自動で Setup All を実行します。" : "Play 時の自動 Setup を無効にしました。");
     }
 
-    [MenuItem("SnowPanicVibe/Auto Setup on Play %#p", true)]
+    [MenuItem("SnowPanicVibe/Auto Setup on Play %#a", true)]
     static bool ToggleAutoSetupValidate()
     {
         Menu.SetChecked("SnowPanicVibe/Auto Setup on Play", EditorPrefs.GetBool(PrefAutoSetup, true));

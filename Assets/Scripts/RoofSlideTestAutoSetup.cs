@@ -160,6 +160,7 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
 
         go.transform.localPosition = Vector3.zero;
         go.transform.localRotation = Quaternion.identity;
+        DebugSnowVisibility.LogRotationOverrideExecuted("RoofSlideTestAutoSetup.cs", 162, go.name);
 
         var box = go.GetComponent<BoxCollider>();
         if (box == null) box = go.AddComponent<BoxCollider>();
@@ -354,6 +355,7 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
         Vector3 boundsCenter = (localMin + localMax) * 0.5f;
         box.transform.localPosition = boundsCenter;
         box.transform.localRotation = Quaternion.identity;
+        DebugSnowVisibility.LogRotationOverrideExecuted("RoofSlideTestAutoSetup.cs", 356, box.name);
         box.center = new Vector3(0f, fixedCenterY, 0f);
         box.size = size;
         ExtendColliderDownhill(box, roofRoot, minLengthMeters);
@@ -772,6 +774,7 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
     void SetupStopperCollider(Transform stopper, BoxCollider roofCol, float sideSign)
     {
         stopper.localRotation = Quaternion.identity;
+        DebugSnowVisibility.LogRotationOverrideExecuted("RoofSlideTestAutoSetup.cs", 775, stopper.name);
         var c = stopper.GetComponent<BoxCollider>();
         if (c == null) c = stopper.gameObject.AddComponent<BoxCollider>();
         c.isTrigger = false;

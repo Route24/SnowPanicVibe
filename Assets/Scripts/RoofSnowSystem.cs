@@ -3,7 +3,9 @@ using UnityEngine;
 
 /// <summary>
 /// Source-of-truth roof accumulation + auto avalanche trigger.
+/// Roof snow uses LOCAL cleared patches (mask) - no global thickness pulsing.
 /// </summary>
+[DefaultExecutionOrder(100)]
 public class RoofSnowSystem : MonoBehaviour
 {
     [Header("Source of truth")]
@@ -17,49 +19,144 @@ public class RoofSnowSystem : MonoBehaviour
     [Header("Visual")]
     public Collider roofSlideCollider;
     public Color roofSnowColor = new Color(0.92f, 0.95f, 1f, 1f);
+    [Tooltip("Constant snow surface thickness (no global pulsing).")]
+    public float roofSnowConstantThickness = 0.08f;
 
     [Header("Burst visual")]
-    public int burstChunkCount = 24;
+    public int burstChunkCount = 48;
     public float burstChunkLife = 1.8f;
     public float burstChunkSpeed = 2.2f;
+    [Tooltip("Hit radius for initial detach. Slightly larger = more pieces.")]
+    [Range(0.6f, 1.2f)] public float hitRadiusR = 0.80f;
+    [Tooltip("Slower = think & watch tempo.")]
+    public float localAvalancheSlideSpeed = 0.9f;
     public float burstSpread = 0.8f;
     public float burstGroundDepositPerChunk = 0.015f;
 
     [Header("References")]
     public GroundSnowSystem groundSnowSystem;
+    public SnowPackSpawner snowPackSpawner;
     public LayerMask groundMask = ~0;
 
+    [Header("Avalanche visual")]
+    public float avalancheSlideDuration = 0.6f;
+    public float avalancheSlideOffset = 1.2f;
+    public float avalancheGraceSeconds = 2.0f;
+
     Transform _roofLayer;
+    float _startTime;
+    float _lastSuppressedLogTime;
+    RoofSnowMaskController _maskController;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;
     readonly List<MvpSnowChunkMotion> _chunkPool = new List<MvpSnowChunkMotion>();
+    bool _burstScaleLogOnce;
 
     public float ComputedThreshold { get; private set; }
     public float AngleDeg { get; private set; }
+    /// <summary>雪崩クールダウン中（この間は Pool返却・RemoveLayers を避ける）</summary>
+    public bool IsInAvalancheCooldown => Time.time < _nextAvalancheTime;
+    /// <summary>DebugSnowVisibility用。RoofSnowLayerのRenderer。</summary>
+    public Renderer GetRoofLayerRenderer()
+    {
+        if (_roofLayer == null) EnsureRoofVisual();
+        return _roofLayer != null ? _roofLayer.GetComponent<Renderer>() : null;
+    }
+
+    /// <summary>屋根の法線（上方向）</summary>
+    public Vector3 RoofUp => roofSlideCollider != null ? roofSlideCollider.transform.up.normalized : Vector3.up;
+    /// <summary>屋根法線（RoofUpと同じ）</summary>
+    public Vector3 RoofNormal => RoofUp;
 
     void Start()
     {
+        _startTime = Time.time;
         ResolveDefaults();
         EnsureRoofVisual();
         UpdateRoofVisual();
+        if (roofSlideCollider != null)
+        {
+            Vector3 rn = roofSlideCollider.transform.up.normalized;
+            Vector3 ru = roofSlideCollider.transform.up.normalized;
+            Debug.Log($"[RoofVectors] roofNormal=({rn.x:F3},{rn.y:F3},{rn.z:F3}) roofUp=({ru.x:F3},{ru.y:F3},{ru.z:F3}) worldUp=(0,1,0)");
+        }
+        float burstScale = (snowPackSpawner != null) ? snowPackSpawner.pieceSize : 0.11f;
+        Debug.Log($"[SnowPieceScale] kind=Burst scale=({burstScale:F3},{burstScale:F3},{burstScale:F3})");
+        Debug.Log($"[AutoAvalancheState] default=OFF current={(AssiDebugUI.AutoAvalancheOff ? "OFF" : "ON")}");
+        SnowPackSpawner.LastTapTime = -10f;
+        SnowPackSpawner.LastRemovedCount = 0;
+        SnowPackSpawner.LastPackedInRadiusBefore = 0;
+        var g = GameObject.Find("TapHitGizmo");
+        if (g != null) Object.Destroy(g);
+        g = GameObject.Find("BurstMarker");
+        if (g != null) Object.Destroy(g);
+        Debug.Log($"[TapMarkerState] atStart visible=No lastTapValid=No");
     }
 
     void Update()
     {
         if (roofSlideCollider == null) return;
+
+        UpdateRoofVisual();
+        UpdateMaskShaderParams();
+
         Vector3 roofUp = roofSlideCollider.transform.up.normalized;
         AngleDeg = Vector3.Angle(roofUp, Vector3.up);
         ComputedThreshold = Mathf.Max(minThresholdMeters, baseThresholdMeters - AngleDeg * slopeFactor);
 
+        Vector3 roofOrigin = roofSlideCollider.bounds.center;
+        Vector3 roofNormal = roofSlideCollider.transform.up.normalized;
+        Vector3 roofTangentDownSlope = Vector3.ProjectOnPlane(Vector3.down, roofNormal).normalized;
+        if (roofTangentDownSlope.sqrMagnitude < 0.0001f) roofTangentDownSlope = -roofSlideCollider.transform.forward.normalized;
+        Vector3 worldUp = Vector3.up;
+        float rayLen = 2f;
+        Debug.DrawRay(roofOrigin, roofNormal * rayLen, Color.red, 1f);
+        Debug.DrawRay(roofOrigin, roofTangentDownSlope * rayLen, Color.yellow, 1f);
+        Debug.DrawRay(roofOrigin, worldUp * rayLen, Color.blue, 1f);
+
         if (Time.time >= _nextRoofLogTime)
         {
             _nextRoofLogTime = Time.time + 1f;
+            string packEuler = snowPackSpawner != null ? snowPackSpawner.SnowPackRootEulerString : "N/A";
+            Debug.Log($"[RoofVectors] roofNormal=({roofNormal.x:F3},{roofNormal.y:F3},{roofNormal.z:F3}) roofUp=({roofUp.x:F3},{roofUp.y:F3},{roofUp.z:F3}) worldUp=({worldUp.x:F3},{worldUp.y:F3},{worldUp.z:F3}) SnowPackRootEuler={packEuler}");
             Debug.Log($"[RoofSnow] depth={roofSnowDepthMeters:F3} threshold={ComputedThreshold:F3} angleDeg={AngleDeg:F1}");
+            var cd = FindFirstObjectByType<ToolCooldownManager>();
+            float cdRem = cd != null ? cd.CooldownRemaining : 0f;
+            float avgSlide = SnowPackSpawner.LastAvgRoofSlideDuration;
+            int chainTriggers = SnowPackSpawner.LastChainTriggerCount;
+            Debug.Log($"[TempoDebug] cooldownRemaining={cdRem:F2}s avgRoofSlideDuration={avgSlide:F3}s chainTriggersLastHit={chainTriggers}");
+            string state = Time.time < _nextAvalancheTime ? "Avalanche" : "Freeze";
+            float groundTotal = groundSnowSystem != null ? groundSnowSystem.totalSnowAmount : 0f;
+            Debug.Log($"[AvalancheAudit1s] frame={Time.frameCount} t={Time.time:F2} state={state} roofDepth={roofSnowDepthMeters:F3} groundTotal={groundTotal:F3}");
         }
 
-        if (Time.time >= _nextAvalancheTime && roofSnowDepthMeters >= ComputedThreshold)
-            TriggerAvalanche();
+        if (AssiDebugUI.AutoAvalancheOff)
+        {
+            // デバッグトグル: 自動雪崩OFF。ボタンまたはタップのみ。
+        }
+        else if (Time.time >= _nextAvalancheTime && roofSnowDepthMeters >= ComputedThreshold)
+        {
+            if (Time.time - _startTime < avalancheGraceSeconds)
+            {
+                if (Time.time >= _lastSuppressedLogTime)
+                {
+                    _lastSuppressedLogTime = Time.time + 0.5f;
+                    Debug.Log($"[Avalanche] suppressed reason=Grace t={Time.time:F2} load={roofSnowDepthMeters:F3} threshold={ComputedThreshold:F3}");
+                }
+            }
+            else
+            {
+                TriggerAvalanche();
+            }
+        }
+    }
+
+    /// <summary>Paint a cleared patch at hit location. Call from LocalAvalanche (main hit) and chain waves.</summary>
+    public void PaintClearedPatchAt(Vector3 worldPoint, float radiusMeters = -1f)
+    {
+        if (_maskController != null)
+            _maskController.PaintEraseAt(worldPoint, radiusMeters);
     }
 
     public void AddRoofSnow(float amount)
@@ -69,20 +166,128 @@ public class RoofSnowSystem : MonoBehaviour
         UpdateRoofVisual();
     }
 
+    /// <summary>デバッグ用: F8で強制発火。閾値・クールダウンを無視して即時雪崩。</summary>
+    public void ForceAvalancheNow()
+    {
+        if (roofSlideCollider == null) ResolveDefaults();
+        if (roofSlideCollider == null) { Debug.LogWarning("[ForceAvalancheNow] roofSlideCollider が null"); return; }
+        TriggerAvalanche();
+        Debug.Log("[ForceAvalancheNow] fired by F8");
+    }
+
+    /// <summary>タップ時に呼ぶ。局所雪崩: hit中心半径内のグリッドセルを削り、Burstを斜面方向に流す。</summary>
+    public void RequestTapSlide(Vector3 tapWorldPoint)
+    {
+        if (roofSlideCollider == null || snowPackSpawner == null) return;
+        snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
+        _nextAvalancheTime = Time.time + 0.3f;
+        snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
+        int removed = SnowPackSpawner.LastRemovedCount;
+        if (removed > 0)
+        {
+            Vector3 roofUp = roofSlideCollider.transform.up.normalized;
+            Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
+            if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
+            SpawnLocalBurstAt(tapWorldPoint, removed, slopeDir);
+        }
+        int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter}");
+        PaintClearedPatchAt(tapWorldPoint, hitRadiusR);
+        if (removed >= 60) AvalancheFeedback.TriggerSmallShakeIfLarge(removed);
+
+        string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
+        int burstCount = removed > 0 ? Mathf.Min(removed, burstChunkCount) : 0;
+        int movedCount = removed + burstCount;
+        bool reachedGround = removed > 0;
+        SnowLoopLogCapture.AppendToAssiReport("=== TAP AVALANCHE ===");
+        SnowLoopLogCapture.AppendToAssiReport($"tapPos=({tapWorldPoint.x:F3},{tapWorldPoint.y:F3},{tapWorldPoint.z:F3}) radius=0.6 removedCount={removed}");
+        SnowLoopLogCapture.AppendToAssiReport($"size={sizeStr}");
+        SnowLoopLogCapture.AppendToAssiReport($"movedCount={movedCount} reachedGround={reachedGround}");
+    }
+
+    static int _spawnErrorCount;
+    static float _lastSpawnErrorLog;
+
+    public void SpawnLocalBurstAt(Vector3 origin, int removedCount, Vector3 slopeDir)
+    {
+        if (roofSlideCollider == null) return;
+        if (removedCount == 1)
+            PaintClearedPatchAt(origin, 0.2f);
+        int count = Mathf.Clamp(removedCount, 1, burstChunkCount);
+        Vector3 roofN = roofSlideCollider.transform.up.normalized;
+        float smallLift = 0.2f;
+        float roofSlideTime = 0.4f;
+        int spawnedOk = 0, spawnFailed = 0;
+        for (int i = 0; i < count; i++)
+        {
+            try
+            {
+                var chunk = AcquireChunk();
+                if (chunk == null)
+                {
+                    spawnFailed++;
+                    continue;
+                }
+                Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofN) * burstSpread * 0.5f;
+                Vector3 p = origin + roofN * 0.05f + jitter * 0.3f;
+                Vector3 vel = (slopeDir + jitter * 0.3f).normalized * burstChunkSpeed + roofN * smallLift;
+                float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
+                SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
+                chunk.Activate(p, vel, Mathf.Max(burstChunkLife * 0.8f, 0.8f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
+                float s = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
+                chunk.transform.localScale = Vector3.one * s * 0.8f;
+                spawnedOk++;
+            }
+            catch (System.Exception ex)
+            {
+                spawnFailed++;
+                _spawnErrorCount++;
+                if (Time.time - _lastSpawnErrorLog >= 2f)
+                {
+                    _lastSpawnErrorLog = Time.time;
+                    Debug.LogWarning($"[Hit] spawn exception (rate-limited): {ex.Message}");
+                }
+            }
+        }
+        int pooledNow = _chunkPool != null ? _chunkPool.Count : 0;
+        Debug.Log($"[HitAudit] removedCount={removedCount} spawnedChunks={count} spawnedOk={spawnedOk} spawnFailed={spawnFailed} pooledNow={pooledNow}");
+    }
+
     void TriggerAvalanche()
     {
         float before = roofSnowDepthMeters;
         float after = Mathf.Max(0f, before * Mathf.Clamp01(avalancheRetainRatio));
         float burstAmount = Mathf.Max(0f, before - after);
+
+        // C) before値を雪崩処理前にとる。Realtimeで統一（矛盾防止）
+        float packBefore = snowPackSpawner != null ? snowPackSpawner.packDepthMeters : before;
+        int packedBefore = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+
+        Vector3 roofUp = roofSlideCollider.transform.up.normalized;
+        Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
+        if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
+
+        if (snowPackSpawner != null)
+            snowPackSpawner.PlayAvalancheSlideVisual(burstAmount, slopeDir * avalancheSlideOffset, avalancheSlideDuration);
+
         roofSnowDepthMeters = after;
         _nextAvalancheTime = Time.time + Mathf.Max(0.2f, avalancheCooldownSeconds);
         UpdateRoofVisual();
 
-        SpawnAvalancheBurstVisual(burstAmount);
-        if (groundSnowSystem != null)
-            groundSnowSystem.AddSnow(burstAmount * 0.35f);
+        int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+        if (packedBefore >= 0 && packedAfter >= 0 && packedAfter > packedBefore)
+            Debug.LogWarning($"[AvalancheBeforeAfter] WARNING packedIncreased {packedBefore}->{packedAfter} (SpawnFreeze中でも増えた場合要調査)");
+        Debug.Log($"[AvalancheBeforeAfter] beforeDepth={before:F3} afterDepth={after:F3} packedCubeCountBefore={packedBefore} packedCubeCountAfter={packedAfter} burstAmount={burstAmount:F3}");
 
-        Debug.Log($"[Avalanche] fired depthBefore={before:F3} depthAfter={after:F3} burstAmount={burstAmount:F3}");
+        SpawnAvalancheBurstVisual(burstAmount);
+
+        Vector3 burstVel = slopeDir * burstChunkSpeed;
+        Vector3 roofFwd = roofSlideCollider.transform.forward.normalized;
+        Vector3 origin = roofSlideCollider.bounds.center + roofUp * roofSlideCollider.bounds.extents.y;
+        Debug.DrawRay(origin, burstVel * 2f, Color.red, 1f, false);
+        Debug.DrawRay(origin, roofFwd * 2f, Color.green, 1f, false);
+        Debug.DrawRay(origin, roofUp * 2f, Color.blue, 1f, false);
+        Debug.Log($"[Avalanche] fired depthBefore={before:F3} depthAfter={after:F3} burstAmount={burstAmount:F3} burstVel={burstVel}");
     }
 
     void ResolveDefaults()
@@ -92,6 +297,7 @@ public class RoofSnowSystem : MonoBehaviour
             var t = GameObject.Find("RoofSlideCollider");
             if (t != null) roofSlideCollider = t.GetComponent<Collider>();
         }
+        if (snowPackSpawner == null) snowPackSpawner = FindFirstObjectByType<SnowPackSpawner>();
     }
 
     void EnsureRoofVisual()
@@ -101,23 +307,38 @@ public class RoofSnowSystem : MonoBehaviour
         if (child != null)
         {
             _roofLayer = child;
+            var rend = child.GetComponent<Renderer>();
+            _roofLayerMat = rend != null ? rend.sharedMaterial : null;
+            _maskController = roofSlideCollider.GetComponentInChildren<RoofSnowMaskController>();
+            if (_maskController != null && _roofLayerMat != null && _roofLayerMat.HasProperty("_SnowMask") && snowPackSpawner != null)
+                _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
             return;
         }
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
         go.name = "RoofSnowLayer";
         go.transform.SetParent(roofSlideCollider.transform, false);
-        var c = go.GetComponent<Collider>();
-        if (c != null) c.enabled = false;
-        var r = go.GetComponent<Renderer>();
-        if (r != null)
+        var col = go.GetComponent<Collider>();
+        if (col != null) col.enabled = false;
+        var rend = go.GetComponent<Renderer>();
+        Shader maskSh = Shader.Find("SnowPanic/RoofSnowMask");
+        if (maskSh != null)
+        {
+            _roofLayerMat = new Material(maskSh);
+            _roofLayerMat.SetColor("_BaseColor", roofSnowColor);
+            if (rend != null) rend.sharedMaterial = _roofLayerMat;
+            _maskController = roofSlideCollider.GetComponent<RoofSnowMaskController>();
+            if (_maskController == null) _maskController = roofSlideCollider.gameObject.AddComponent<RoofSnowMaskController>();
+            _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
+        }
+        else
         {
             Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             _roofLayerMat = sh != null ? new Material(sh) : null;
             if (_roofLayerMat != null)
             {
                 _roofLayerMat.color = roofSnowColor;
-                r.sharedMaterial = _roofLayerMat;
+                if (rend != null) rend.sharedMaterial = _roofLayerMat;
             }
         }
         _roofLayer = go.transform;
@@ -129,23 +350,44 @@ public class RoofSnowSystem : MonoBehaviour
         if (_roofLayer == null) EnsureRoofVisual();
         if (_roofLayer == null) return;
 
+        float h = Mathf.Max(0.02f, roofSnowConstantThickness);
         if (roofSlideCollider is BoxCollider box)
         {
-            float h = Mathf.Max(0.02f, roofSnowDepthMeters);
             Vector3 size = new Vector3(Mathf.Max(0.1f, box.size.x), h, Mathf.Max(0.1f, box.size.z));
             Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + h * 0.5f);
             _roofLayer.localPosition = center;
-            _roofLayer.localRotation = Quaternion.identity;
+            _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = size;
         }
         else
         {
             Bounds b = roofSlideCollider.bounds;
-            float h = Mathf.Max(0.02f, roofSnowDepthMeters);
             _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f);
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = new Vector3(Mathf.Max(0.1f, b.size.x), h, Mathf.Max(0.1f, b.size.z));
         }
+    }
+
+    void UpdateMaskShaderParams()
+    {
+        if (_roofLayerMat == null || snowPackSpawner == null || !_roofLayerMat.HasProperty("_RoofCenter")) return;
+        var s = snowPackSpawner;
+        if (s.RoofWidth <= 0f || s.RoofLength <= 0f) return;
+        _roofLayerMat.SetVector("_RoofCenter", s.RoofCenter);
+        _roofLayerMat.SetVector("_RoofR", s.RoofR);
+        _roofLayerMat.SetVector("_RoofF", s.RoofF);
+        _roofLayerMat.SetFloat("_RoofWidth", s.RoofWidth);
+        _roofLayerMat.SetFloat("_RoofLength", s.RoofLength);
+    }
+
+    static string GetTransformPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new System.Collections.Generic.List<string>();
+        var cur = t;
+        while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
     }
 
     void SpawnAvalancheBurstVisual(float burstAmount)
@@ -155,7 +397,17 @@ public class RoofSnowSystem : MonoBehaviour
         Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
         if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
         Bounds b = roofSlideCollider.bounds;
+        Vector3 burstPos = new Vector3(b.center.x, b.max.y + 0.1f, b.center.z);
+        var marker = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        marker.name = "BurstMarker";
+        marker.transform.position = burstPos;
+        marker.transform.localScale = Vector3.one * 0.5f;
+        if (marker.GetComponent<Collider>() != null) marker.GetComponent<Collider>().enabled = false;
+        var r = marker.GetComponent<Renderer>();
+        if (r != null) r.material.color = Color.red;
+        UnityEngine.Object.Destroy(marker, 1f);
         int count = Mathf.Max(6, burstChunkCount);
+        float roofSlideTime = 0.35f;
         for (int i = 0; i < count; i++)
         {
             var chunk = AcquireChunk();
@@ -164,9 +416,11 @@ public class RoofSnowSystem : MonoBehaviour
                 b.max.y + 0.05f,
                 Random.Range(b.min.z, b.max.z));
             Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofUp) * burstSpread;
-            Vector3 vel = (slopeDir + jitter * 0.25f).normalized * burstChunkSpeed;
+            Vector3 vel = (slopeDir + jitter * 0.25f).normalized * burstChunkSpeed + roofUp * 0.15f;
             float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk + burstAmount * 0.005f / count);
-            chunk.Activate(p, vel, burstChunkLife, groundSnowSystem, groundMask, perChunkDeposit);
+            chunk.Activate(p, vel, burstChunkLife, groundSnowSystem, groundMask, perChunkDeposit, roofUp, roofSlideTime);
+            float unifiedScale = (snowPackSpawner != null) ? snowPackSpawner.pieceSize : 0.11f;
+            chunk.transform.localScale = Vector3.one * unifiedScale; // Pool復帰時も再適用
         }
     }
 
@@ -181,7 +435,9 @@ public class RoofSnowSystem : MonoBehaviour
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = "AvalancheChunk";
         go.transform.SetParent(transform, false);
-        go.transform.localScale = Vector3.one * 0.07f;
+        float unifiedScale = (snowPackSpawner != null) ? snowPackSpawner.pieceSize : 0.11f;
+        go.transform.localScale = Vector3.one * unifiedScale;
+        if (!_burstScaleLogOnce) { _burstScaleLogOnce = true; Debug.Log($"[SnowPieceScale] kind=Burst scale=({unifiedScale:F3},{unifiedScale:F3},{unifiedScale:F3})"); }
         var col = go.GetComponent<Collider>();
         if (col != null) col.enabled = false;
         var r = go.GetComponent<Renderer>();
@@ -191,7 +447,7 @@ public class RoofSnowSystem : MonoBehaviour
             var mat = sh != null ? new Material(sh) : null;
             if (mat != null)
             {
-                mat.color = roofSnowColor;
+                mat.color = new Color(0.3f, 0.7f, 1f); // 雪崩中=シアンで視認性
                 r.sharedMaterial = mat;
             }
         }
