@@ -21,7 +21,7 @@ public class RoofSnowSystem : MonoBehaviour
     [Range(0.01f, 1f)] public float roofSnowVisualThicknessScale = 0.5f;
 
     [Header("Burst visual")]
-    public int burstChunkCount = 24;
+    public int burstChunkCount = 48;
     public float burstChunkLife = 1.8f;
     public float burstChunkSpeed = 2.2f;
     [Tooltip("Slower = think & watch tempo.")]
@@ -43,6 +43,12 @@ public class RoofSnowSystem : MonoBehaviour
     float _startTime;
     bool _snowRenderThicknessLogOnce;
     float _lastSuppressedLogTime;
+    float _visualDepthRoof;
+    bool _visualDepthRoofInitialized;
+    int _packedCountAtFull = -1;
+    float _baseDepthAtFull = 0.5f;
+    [Tooltip("Smoothing: no sudden thickness pop. Higher = faster response.")]
+    public float roofVisualSmoothSpeed = 3f;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;
@@ -93,6 +99,47 @@ public class RoofSnowSystem : MonoBehaviour
     void Update()
     {
         if (roofSlideCollider == null) return;
+
+        if (snowPackSpawner != null)
+        {
+            int packed = snowPackSpawner.GetPackedCubeCountRealtime();
+            if (_packedCountAtFull < 0 && packed > 50)
+            {
+                _packedCountAtFull = packed;
+                _baseDepthAtFull = roofSnowDepthMeters;
+            }
+            if (packed > _packedCountAtFull && _packedCountAtFull > 0)
+            {
+                _packedCountAtFull = packed;
+                _baseDepthAtFull = roofSnowDepthMeters;
+            }
+            float targetDepth = _baseDepthAtFull;
+            if (_packedCountAtFull > 0)
+                targetDepth = Mathf.Max(0.02f, _baseDepthAtFull * (float)packed / _packedCountAtFull);
+            if (roofSnowDepthMeters > targetDepth && packed > 0)
+            {
+                _packedCountAtFull = packed;
+                _baseDepthAtFull = roofSnowDepthMeters;
+                targetDepth = roofSnowDepthMeters;
+            }
+            roofSnowDepthMeters = targetDepth;
+            if (!_visualDepthRoofInitialized) { _visualDepthRoof = targetDepth; _visualDepthRoofInitialized = true; }
+            _visualDepthRoof = Mathf.Lerp(_visualDepthRoof, targetDepth, roofVisualSmoothSpeed * Time.deltaTime);
+            if (Time.frameCount % 60 == 0)
+                Debug.Log($"[RoofDepthSync] packed={packed} packedAtFull={_packedCountAtFull} targetDepth={targetDepth:F3} visualDepth={_visualDepthRoof:F3}");
+        }
+        else if (!_visualDepthRoofInitialized)
+        {
+            _visualDepthRoof = roofSnowDepthMeters;
+            _visualDepthRoofInitialized = true;
+        }
+        else
+        {
+            _visualDepthRoof = Mathf.Lerp(_visualDepthRoof, roofSnowDepthMeters, roofVisualSmoothSpeed * Time.deltaTime);
+        }
+
+        UpdateRoofVisual();
+
         Vector3 roofUp = roofSlideCollider.transform.up.normalized;
         AngleDeg = Vector3.Angle(roofUp, Vector3.up);
         ComputedThreshold = Mathf.Max(minThresholdMeters, baseThresholdMeters - AngleDeg * slopeFactor);
@@ -175,10 +222,8 @@ public class RoofSnowSystem : MonoBehaviour
             if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
             SpawnLocalBurstAt(tapWorldPoint, removed, slopeDir);
         }
-        float estRemove = Mathf.Max(0f, removed * 0.005f);
-        roofSnowDepthMeters = Mathf.Max(0.02f, roofSnowDepthMeters - estRemove);
-        UpdateRoofVisual();
-        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} R=0.6");
+        int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} (depth synced from packed in Update)");
 
         string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
         int burstCount = removed > 0 ? Mathf.Min(removed * 2, 24) : 0;
@@ -192,7 +237,7 @@ public class RoofSnowSystem : MonoBehaviour
 
     void SpawnLocalBurstAt(Vector3 origin, int removedCount, Vector3 slopeDir)
     {
-        int count = Mathf.Min(removedCount * 2, 24);
+        int count = Mathf.Min(removedCount * 2, burstChunkCount);
         Vector3 roofN = roofSlideCollider.transform.up.normalized;
         float smallLift = 0.2f;
         float roofSlideTime = 0.4f;
@@ -237,8 +282,6 @@ public class RoofSnowSystem : MonoBehaviour
         Debug.Log($"[AvalancheBeforeAfter] beforeDepth={before:F3} afterDepth={after:F3} packedCubeCountBefore={packedBefore} packedCubeCountAfter={packedAfter} burstAmount={burstAmount:F3}");
 
         SpawnAvalancheBurstVisual(burstAmount);
-        if (groundSnowSystem != null)
-            groundSnowSystem.AddSnow(burstAmount * 0.35f);
 
         Vector3 burstVel = slopeDir * burstChunkSpeed;
         Vector3 roofFwd = roofSlideCollider.transform.forward.normalized;
@@ -296,7 +339,7 @@ public class RoofSnowSystem : MonoBehaviour
 
         if (roofSlideCollider is BoxCollider box)
         {
-            float hRaw = Mathf.Max(0.02f, roofSnowDepthMeters);
+            float hRaw = Mathf.Max(0.02f, _visualDepthRoof);
             float h = hRaw * roofSnowVisualThicknessScale;
             Vector3 size = new Vector3(Mathf.Max(0.1f, box.size.x), h, Mathf.Max(0.1f, box.size.z));
             Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + h * 0.5f);
@@ -315,7 +358,7 @@ public class RoofSnowSystem : MonoBehaviour
         else
         {
             Bounds b = roofSlideCollider.bounds;
-            float hRaw = Mathf.Max(0.02f, roofSnowDepthMeters);
+            float hRaw = Mathf.Max(0.02f, _visualDepthRoof);
             float h = hRaw * roofSnowVisualThicknessScale;
             _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f);
             _roofLayer.rotation = roofSlideCollider.transform.rotation;

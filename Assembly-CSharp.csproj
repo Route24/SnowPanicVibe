@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp/obj/$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -64,6 +64,7 @@
     <Compile Include="Assets/Scripts/RoofDebugGizmo.cs" />
     <Compile Include="Assets/Scripts/RoofAlignToSnow.cs" />
     <Compile Include="Assets/Scripts/GroundSnowSystem.cs" />
+    <Compile Include="Assets/Scripts/GridVisualWatchdog.cs" />
     <Compile Include="Assets/Scripts/RoofSnow.cs" />
     <Compile Include="Assets/Scripts/ToolCooldownManager.cs" />
     <Compile Include="Assets/Scripts/SnowMinReproBootstrap.cs" />
@@ -80,10 +81,10 @@
     <Compile Include="Assets/Scripts/RoofDebugAutoSetup.cs" />
     <Compile Include="Assets/Scripts/SnowLoopLogCapture.cs" />
     <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
+    <Compile Include="Assets/Scripts/GroundSnowPile.cs" />
     <Compile Include="Assets/Scripts/CorniceRuntimeSnowSetup.cs" />
     <Compile Include="Assets/Scripts/GroundSnowAccumulator.cs" />
     <Compile Include="Assets/Scripts/DebugSnowVisibility.cs" />
-    <Compile Include="Assets/Scripts/GridVisualWatchdog.cs" />
     <Compile Include="Assets/Scripts/CorniceHitter.cs" />
     <Compile Include="Assets/Scripts/SnowTestCube.cs" />
     <Compile Include="Assets/Scripts/AssiDebugUI.cs" />

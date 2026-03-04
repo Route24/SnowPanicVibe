@@ -585,7 +585,12 @@ public class SnowPackSpawner : MonoBehaviour
         _avgRoofSlideDuration += (duration - _avgRoofSlideDuration) / _roofSlideSampleCount;
     }
 
-    /// <summary>局所雪崩: 屋根面basis(u,v)で半径R内のグリッドセルを削る。removedCount>=1を保証。</summary>
+    [Tooltip("Minimum pieces to detach per hit (expand radius if needed).")]
+    public int localAvalancheMinDetach = 20;
+    [Tooltip("Maximum pieces to detach per hit (chain reaction for rest).")]
+    public int localAvalancheMaxDetach = 80;
+
+    /// <summary>局所雪崩: 屋根面basis(u,v)で半径R内のグリッドセルを削る。removedCount>=minを目指す（半径拡張）。</summary>
     public void PlayLocalAvalancheAt(Vector3 worldCenter, float radius = 0.6f, float slideSpeed = 1.5f)
     {
         if (_piecesRoot == null || roofCollider == null) return;
@@ -605,37 +610,54 @@ public class SnowPackSpawner : MonoBehaviour
         cx = Mathf.Clamp(cx, 0, _cachedNx - 1);
         cz = Mathf.Clamp(cz, 0, _cachedNz - 1);
 
-        int radX = Mathf.CeilToInt(radius / Mathf.Max(0.01f, _roofCellSize));
-        int radZ = radX;
-
         int packedBefore = GetPackedCubeCountRealtime();
         int packedInRadiusBefore = 0;
         var toRemove = new List<Transform>();
         var seen = new HashSet<Transform>();
+        float r = radius;
+        const float radiusMax = 1.5f;
 
-        for (int dz = -radZ; dz <= radZ; dz++)
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            for (int dx = -radX; dx <= radX; dx++)
-            {
-                int x = cx + dx, z = cz + dz;
-                if (x < 0 || x >= _cachedNx || z < 0 || z >= _cachedNz) continue;
-                Vector3 dp = _roofR * (dx * _roofCellSize) + _roofF * (dz * _roofCellSize);
-                if (dp.magnitude > radius) continue;
+            int radX = Mathf.CeilToInt(r / Mathf.Max(0.01f, _roofCellSize));
+            int radZ = radX;
+            packedInRadiusBefore = 0;
+            toRemove.Clear();
+            seen.Clear();
 
-                var key = (x, z);
-                if (_gridPieces.TryGetValue(key, out var cellList))
+            for (int dz = -radZ; dz <= radZ; dz++)
+            {
+                for (int dx = -radX; dx <= radX; dx++)
                 {
-                    foreach (var t in cellList)
+                    int x = cx + dx, z = cz + dz;
+                    if (x < 0 || x >= _cachedNx || z < 0 || z >= _cachedNz) continue;
+                    Vector3 dp = _roofR * (dx * _roofCellSize) + _roofF * (dz * _roofCellSize);
+                    if (dp.magnitude > r) continue;
+
+                    var key = (x, z);
+                    if (_gridPieces.TryGetValue(key, out var cellList))
                     {
-                        if (t != null && !seen.Contains(t))
+                        foreach (var t in cellList)
                         {
-                            seen.Add(t);
-                            toRemove.Add(t);
-                            packedInRadiusBefore++;
+                            if (t != null && !seen.Contains(t))
+                            {
+                                seen.Add(t);
+                                toRemove.Add(t);
+                                packedInRadiusBefore++;
+                            }
                         }
                     }
                 }
             }
+            if (toRemove.Count >= localAvalancheMinDetach || r >= radiusMax || packedBefore < localAvalancheMinDetach) break;
+            r = Mathf.Min(r * 1.4f, radiusMax);
+        }
+
+        int capped = Mathf.Min(toRemove.Count, localAvalancheMaxDetach);
+        if (toRemove.Count > capped)
+        {
+            for (int i = toRemove.Count - 1; i >= capped; i--)
+                toRemove.RemoveAt(i);
         }
 
         foreach (var t in toRemove)
@@ -712,10 +734,11 @@ public class SnowPackSpawner : MonoBehaviour
             packDepthMeters = Mathf.Max(minVisibleDepth, _layerPieces.Count * _cachedLayerStep);
         _visualDepth = packDepthMeters;
 
-        UnityEngine.Debug.Log($"[LocalAvalanche] R={radius:F2} u={u:F3} v={v:F3} cx={cx} cz={cz} removedCount={removedCount} packedInRadiusBefore={packedInRadiusBefore} packedTotalBefore={packedBefore} packedTotalAfter={packedAfter}");
+        int radXFinal = Mathf.CeilToInt(r / Mathf.Max(0.01f, _roofCellSize));
+        UnityEngine.Debug.Log($"[LocalAvalanche] R={r:F2} u={u:F3} v={v:F3} cx={cx} cz={cz} removedCount={removedCount} packedInRadiusBefore={packedInRadiusBefore} packedTotalBefore={packedBefore} packedTotalAfter={packedAfter}");
         UnityEngine.Debug.Log($"[AvalancheBeforeAfter] beforeDepth={packDepthMeters + removedCount * _cachedLayerStep * 0.01f:F3} afterDepth={packDepthMeters:F3} packedCubeCountBefore={packedBefore} packedCubeCountAfter={packedAfter} burstAmount={removedCount * _cachedLayerStep * 0.01f:F3}");
         if (removedCount > 0)
-            MarkNeighborsUnstable(cx, cz, radX, radX + 2);
+            MarkNeighborsUnstable(cx, cz, radXFinal, radXFinal + 2);
         _inAvalancheSlide = true;
         StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, slideSpeed));
     }
@@ -2437,17 +2460,17 @@ public class SnowPackSpawner : MonoBehaviour
 
     void OnGUI()
     {
-        // FAIL または ACTIVE=0: 巨大赤Text 2秒表示（理由 enum / frame / t）
         bool showFail = _failUIFadeAt > 0f && Time.time <= _failUIFadeAt;
         if (!showFail) return;
         float tw = Screen.width, th = Screen.height;
-        int baseFont = Mathf.Max(40, (int)(th * 0.08f));
-        int hugeFont = Mathf.Max(120, baseFont * 4); // 通常の3倍以上
+        int fontSize = AssiDebugUI.debugOverlayEnabled
+            ? Mathf.Max(120, (int)(th * 0.3f))
+            : 14;
         var style = new GUIStyle(GUI.skin.label)
         {
-            fontSize = hugeFont,
+            fontSize = fontSize,
             fontStyle = FontStyle.Bold,
-            alignment = TextAnchor.MiddleCenter,
+            alignment = AssiDebugUI.debugOverlayEnabled ? TextAnchor.MiddleCenter : TextAnchor.UpperLeft,
             normal = { textColor = new Color(1f, 0.2f, 0.2f) }
         };
         string reasonStr = _autoRebuildFailReason != AutoRebuildFailReason.None
@@ -2456,9 +2479,12 @@ public class SnowPackSpawner : MonoBehaviour
         int frame = _autoRebuildFailReason != AutoRebuildFailReason.None ? _failFrame : _firstActiveZeroFrame;
         float t = _autoRebuildFailReason != AutoRebuildFailReason.None ? _failTime : _firstActiveZeroTime;
         if (_firstActiveZeroTime < 0f) t = Time.time;
-        string msg = $"{reasonStr}\nframe={frame}  t={t:F1}";
-        GUI.Label(new Rect(0, th * 0.2f, tw, th * 0.5f), msg, style);
-        if (_autoRebuildFired && _autoRebuildFailReason == AutoRebuildFailReason.None)
+        string msg = $"{reasonStr} frame={frame} t={t:F1}";
+        if (AssiDebugUI.debugOverlayEnabled)
+            GUI.Label(new Rect(0, th * 0.2f, tw, th * 0.5f), msg + "\n", style);
+        else
+            GUI.Label(new Rect(8f, 8f, tw - 16f, 24f), msg, style);
+        if (_autoRebuildFired && _autoRebuildFailReason == AutoRebuildFailReason.None && AssiDebugUI.debugOverlayEnabled)
         {
             style.fontSize = Mathf.Max(72, (int)(th * 0.15f));
             style.normal.textColor = _autoRebuildRecovered ? Color.green : Color.red;

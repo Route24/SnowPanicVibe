@@ -1,11 +1,23 @@
 using UnityEngine;
 
-/// <summary>画面上のDebug UIボタン。macOSショートカット回避。F8非依存。</summary>
+/// <summary>画面上のDebug UIボタン。F1でオーバーレイON/OFF。通常プレイではオーバーレイ非表示。</summary>
 public class AssiDebugUI : MonoBehaviour
 {
+    /// <summary>true時のみデバッグボタン・HUD表示。F1で切り替え。通常はfalse。</summary>
+    public static bool debugOverlayEnabled;
+
     void Start()
     {
         ClearTapMarkerState();
+    }
+
+    void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.F1))
+        {
+            debugOverlayEnabled = !debugOverlayEnabled;
+            Debug.Log($"[AssiDebugUI] debugOverlayEnabled={debugOverlayEnabled}");
+        }
     }
 
     static void ClearTapMarkerState()
@@ -32,6 +44,10 @@ public class AssiDebugUI : MonoBehaviour
 
     void OnGUI()
     {
+        var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>();
+        if (cooldownMgr != null) DrawCooldownRing(cooldownMgr);
+        if (!debugOverlayEnabled) return;
+
         float x = Pad;
         float y = Pad;
 
@@ -154,6 +170,7 @@ public class AssiDebugUI : MonoBehaviour
         DrawHud();
     }
 
+
     static bool _freezeSpawn;
     static bool _showGridGizmos;
 
@@ -180,12 +197,6 @@ public class AssiDebugUI : MonoBehaviour
             if (gameOver) GUI.Label(new Rect(HudX, yy, 350, 20), "GAME OVER", new GUIStyle(style) { normal = { textColor = Color.red } }); yy += 18;
         }
 
-        // Cooldown ring
-        var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>();
-        if (cooldownMgr != null)
-        {
-            DrawCooldownRing(cooldownMgr);
-        }
         int packedInRadius = SnowPackSpawner.LastPackedInRadiusBefore;
         int removedLast = SnowPackSpawner.LastRemovedCount;
         float slopeDeg = roof != null ? roof.AngleDeg : 0f;
