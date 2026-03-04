@@ -89,20 +89,22 @@ public class SnowPackSpawner : MonoBehaviour
     public bool enableStateIndicator = false;
 
     [Header("Chain reaction (feel-good avalanche growth)")]
-    [Tooltip("After hit, first secondary detach happens after this delay.")]
-    public float chainUnstableMinDelay = 0.35f;
-    [Tooltip("Unstable duration - cells may detach up to this long after hit.")]
-    public float chainUnstableMaxDelay = 1.2f;
-    [Tooltip("Unstable radius = this * hitRadius.")]
-    public float unstableRadiusScale = 1.2f;
-    [Range(0f, 1f), Tooltip("Chance unstable cells detach when neighbors pass.")]
-    public float chainDetachChance = 0.45f;
-    [Tooltip("Min secondary detachments per hit.")]
-    public int secondaryDetachMin = 8;
-    [Tooltip("Max secondary detachments per hit (avalanche growth cap).")]
-    public int maxSecondaryDetachPerHit = 40;
-    [Tooltip("Max chain waves per hit.")]
-    public int maxChainWavesPerHit = 2;
+    [Tooltip("Unstable radius = hitRadius * this.")]
+    public float unstableRadiusScale = 1.4f;
+    [Tooltip("Unstable duration - cells stay marked for chain trigger.")]
+    public float unstableDurationSec = 1.4f;
+    [Tooltip("Guaranteed secondary wave: delay after hit.")]
+    public float secondaryDetachDelaySec = 0.35f;
+    [Tooltip("Secondary wave count = clamp(removed*this, 12, 45).")]
+    [Range(0.2f, 0.5f)] public float secondaryDetachFraction = 0.35f;
+    [Tooltip("Third wave delay (only when removedCount >= 60).")]
+    public float thirdWaveDelaySec = 0.85f;
+    [Tooltip("Third wave count = clamp(removed*this, 8, 30).")]
+    [Range(0.1f, 0.3f)] public float thirdWaveFraction = 0.20f;
+    [Range(0f, 1f), Tooltip("Chance unstable cells detach when expiry/passing.")]
+    public float chainDetachChance = 0.55f;
+    [Tooltip("Max total chain detachments per hit (avalanche growth cap).")]
+    public int maxSecondaryDetachPerHit = 60;
 
     Transform _visualRoot;
     Transform _piecesRoot;
@@ -180,6 +182,8 @@ public class SnowPackSpawner : MonoBehaviour
     readonly System.Collections.Generic.Dictionary<(int, int), float> _unstableCellExpiry = new System.Collections.Generic.Dictionary<(int, int), float>();
     int _chainTriggersThisHit;
     int _chainDetachCountSinceTap;
+    bool _scheduledSecondaryWaveFired;
+    bool _scheduledThirdWaveFired;
     readonly List<TransitionSample> _transitionSamples = new List<TransitionSample>(120);
     const float TransitionSampleInterval = 0.1f;
     float _lastTransitionSampleTime = -10f;
@@ -715,6 +719,8 @@ public class SnowPackSpawner : MonoBehaviour
         LastTapTime = Time.time;
         LastTapRadius = radius;
         _chainDetachCountSinceTap = 0;
+        _scheduledSecondaryWaveFired = false;
+        _scheduledThirdWaveFired = false;
         LastPackedTotalBefore = packedBefore;
         LastPackedTotalAfter = packedBefore - removedCount;
 
@@ -753,13 +759,13 @@ public class SnowPackSpawner : MonoBehaviour
         if (removedCount > 0)
         {
             int outerRad = Mathf.Max(radXFinal + 2, Mathf.CeilToInt(radXFinal * unstableRadiusScale));
-            MarkNeighborsUnstable(cx, cz, radXFinal, outerRad);
+            MarkNeighborsUnstable(cx, cz, radXFinal, outerRad, unstableDurationSec);
         }
         _inAvalancheSlide = true;
         StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, slideSpeed));
     }
 
-    void MarkNeighborsUnstable(int cx, int cz, int innerRad, int outerRad)
+    void MarkNeighborsUnstable(int cx, int cz, int innerRad, int outerRad, float unstableDurSec)
     {
         float now = Time.time;
         for (int dz = -outerRad; dz <= outerRad; dz++)
@@ -772,10 +778,66 @@ public class SnowPackSpawner : MonoBehaviour
                 if (x < 0 || x >= _cachedNx || z < 0 || z >= _cachedNz) continue;
                 var key = (x, z);
                 if (!_gridPieces.ContainsKey(key) || _gridPieces[key].Count == 0) continue;
-                float delay = UnityEngine.Random.Range(chainUnstableMinDelay, chainUnstableMaxDelay);
+                float delay = UnityEngine.Random.Range(secondaryDetachDelaySec * 0.5f, unstableDurSec);
                 _unstableCellExpiry[key] = now + delay;
             }
         }
+    }
+
+    void ProcessScheduledWaves()
+    {
+        float tSinceTap = Time.time - LastTapTime;
+        if (tSinceTap < 0f || tSinceTap > 2.5f) return;
+        int lastRemoved = LastRemovedCount;
+
+        if (!_scheduledSecondaryWaveFired && tSinceTap >= secondaryDetachDelaySec && lastRemoved > 0)
+        {
+            _scheduledSecondaryWaveFired = true;
+            int count = Mathf.Clamp(Mathf.RoundToInt(lastRemoved * secondaryDetachFraction), 12, 45);
+            FireScheduledWave(count);
+        }
+        if (!_scheduledThirdWaveFired && lastRemoved >= 60 && tSinceTap >= thirdWaveDelaySec)
+        {
+            _scheduledThirdWaveFired = true;
+            int count = Mathf.Clamp(Mathf.RoundToInt(lastRemoved * thirdWaveFraction), 8, 30);
+            FireScheduledWave(count);
+        }
+    }
+
+    void FireScheduledWave(int count)
+    {
+        if (_unstableCellExpiry.Count == 0) return;
+        var keys = new System.Collections.Generic.List<(int, int)>(_unstableCellExpiry.Keys);
+        int detached = 0;
+        for (int i = 0; i < keys.Count && detached < count && _chainDetachCountSinceTap < maxSecondaryDetachPerHit; i++)
+        {
+            var key = keys[i];
+            if (!_unstableCellExpiry.ContainsKey(key)) continue;
+            _unstableCellExpiry.Remove(key);
+            if (!_gridPieces.TryGetValue(key, out var cellList) || cellList.Count == 0) continue;
+            var t = cellList[cellList.Count - 1];
+            if (t == null) continue;
+            var toRemove = new System.Collections.Generic.List<Transform> { t };
+            cellList.Remove(t);
+            if (cellList.Count == 0) _gridPieces.Remove(key);
+            _pieceToGridData.Remove(t);
+            for (int li = _layerPieces.Count - 1; li >= 0; li--)
+            {
+                if (_layerPieces[li].Remove(t)) break;
+            }
+            _chainTriggersThisHit++;
+            _chainDetachCountSinceTap++;
+            _inAvalancheSlide = true;
+            StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, localAvalancheSlideSpeed));
+            if (roofSnowSystem != null && roofSnowSystem.isActiveAndEnabled)
+            {
+                Vector3 worldCenter = _roofCenter + _roofR * ((key.Item1 + 0.5f) / Mathf.Max(1, _cachedNx) - 0.5f) * _roofWidth + _roofF * ((key.Item2 + 0.5f) / Mathf.Max(1, _cachedNz) - 0.5f) * _roofLength + _roofN * RoofSurfaceOffset;
+                roofSnowSystem.SpawnLocalBurstAt(worldCenter, 1, _roofDownhill.normalized);
+            }
+            detached++;
+        }
+        if (detached > 0)
+            UnityEngine.Debug.Log($"[ChainWave] scheduled wave detached={detached} chainTotal={_chainDetachCountSinceTap}");
     }
 
     void ProcessChainReaction()
@@ -2169,6 +2231,7 @@ public class SnowPackSpawner : MonoBehaviour
 
         RefreshPackedTransformsFromRoofBasis();
 
+        ProcessScheduledWaves();
         ProcessChainReaction();
 
         if (Time.time - LastTapTime < 2f && roofCollider != null)

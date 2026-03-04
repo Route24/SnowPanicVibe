@@ -50,7 +50,9 @@ public class RoofSnowSystem : MonoBehaviour
     int _packedCountAtFull = -1;
     float _baseDepthAtFull = 0.5f;
     [Tooltip("Smoothing: no sudden thickness pop. Higher = faster response.")]
-    public float roofVisualSmoothSpeed = 3f;
+    public float roofVisualSmoothSpeed = 8f;
+    [Tooltip("Min visual depth as fraction of full (keeps readability when nearly cleared).")]
+    [Range(0.05f, 0.3f)] public float roofVisualDepthMinFraction = 0.10f;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;
@@ -115,14 +117,18 @@ public class RoofSnowSystem : MonoBehaviour
                 _packedCountAtFull = packed;
                 _baseDepthAtFull = roofSnowDepthMeters;
             }
-            float targetDepth = _baseDepthAtFull;
-            if (_packedCountAtFull > 0)
-                targetDepth = Mathf.Max(0.02f, _baseDepthAtFull * (float)packed / _packedCountAtFull);
+            float depthMax = _baseDepthAtFull;
+            float depthMin = Mathf.Max(0.02f, roofVisualDepthMinFraction * depthMax);
+            float packedRatio = _packedCountAtFull > 0 ? (float)packed / _packedCountAtFull : 1f;
+            float targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(packedRatio);
             if (roofSnowDepthMeters > targetDepth && packed > 0)
             {
                 _packedCountAtFull = packed;
                 _baseDepthAtFull = roofSnowDepthMeters;
-                targetDepth = roofSnowDepthMeters;
+                depthMax = _baseDepthAtFull;
+                depthMin = Mathf.Max(0.02f, roofVisualDepthMinFraction * depthMax);
+                packedRatio = (float)packed / _packedCountAtFull;
+                targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(packedRatio);
             }
             roofSnowDepthMeters = targetDepth;
             if (!_visualDepthRoofInitialized) { _visualDepthRoof = targetDepth; _visualDepthRoofInitialized = true; }
@@ -226,6 +232,7 @@ public class RoofSnowSystem : MonoBehaviour
         }
         int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
         Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} (depth synced from packed in Update)");
+        LogRoofVisualAfterHit(packedAfter);
         if (removed >= 60) AvalancheFeedback.TriggerSmallShakeIfLarge(removed);
 
         string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
@@ -401,6 +408,16 @@ public class RoofSnowSystem : MonoBehaviour
                 SnowLoopLogCapture.AppendToAssiReport($"beforeScale=(...,{hRaw:F3},...) afterScale=(...,{h:F3},...)");
             }
         }
+    }
+
+    void LogRoofVisualAfterHit(int packedCurrent)
+    {
+        int full = _packedCountAtFull > 0 ? _packedCountAtFull : 1;
+        float ratio = (float)packedCurrent / full;
+        float depthMax = _baseDepthAtFull;
+        float depthMin = Mathf.Max(0.02f, roofVisualDepthMinFraction * depthMax);
+        float targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(ratio);
+        Debug.Log($"[RoofVisual] packed={packedCurrent}/{full} ratio={ratio:F3} targetDepth={targetDepth:F3} visualDepth={_visualDepthRoof:F3}");
     }
 
     static string GetTransformPath(Transform t)
