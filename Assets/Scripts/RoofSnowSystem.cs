@@ -3,7 +3,9 @@ using UnityEngine;
 
 /// <summary>
 /// Source-of-truth roof accumulation + auto avalanche trigger.
+/// RoofSnowVisualSync: ONLY this class updates RoofSnowLayer.localScale (single authority).
 /// </summary>
+[DefaultExecutionOrder(100)] // Run late so no other script overwrites RoofSnowLayer scale after us
 public class RoofSnowSystem : MonoBehaviour
 {
     [Header("Source of truth")]
@@ -17,8 +19,8 @@ public class RoofSnowSystem : MonoBehaviour
     [Header("Visual")]
     public Collider roofSlideCollider;
     public Color roofSnowColor = new Color(0.92f, 0.95f, 1f, 1f);
-    [Tooltip("RoofSnowLayer描画厚みスケール。0.5=半分")]
-    [Range(0.01f, 1f)] public float roofSnowVisualThicknessScale = 0.5f;
+    [Tooltip("RoofSnowLayer描画厚みスケール。1.0=full depth (visibly shrinks with packed). Legacy 0.5 made it too subtle.")]
+    [Range(0.3f, 1f)] public float roofSnowVisualThicknessScale = 1f;
 
     [Header("Burst visual")]
     public int burstChunkCount = 48;
@@ -44,15 +46,15 @@ public class RoofSnowSystem : MonoBehaviour
     Transform _roofLayer;
     float _startTime;
     bool _snowRenderThicknessLogOnce;
+    float _lastAppliedScaleY = -1f;
+    static bool _scaleOverrideGuardLogged;
     float _lastSuppressedLogTime;
     float _visualDepthRoof;
     bool _visualDepthRoofInitialized;
     int _packedCountAtFull = -1;
     float _baseDepthAtFull = 0.5f;
     [Tooltip("Smoothing: no sudden thickness pop. Higher = faster response.")]
-    public float roofVisualSmoothSpeed = 8f;
-    [Tooltip("Min visual depth as fraction of full (keeps readability when nearly cleared).")]
-    [Range(0.08f, 0.25f)] public float roofVisualDepthMinFraction = 0.15f;
+    public float roofVisualSmoothSpeed = 10f;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;
@@ -112,24 +114,16 @@ public class RoofSnowSystem : MonoBehaviour
                 _packedCountAtFull = packed;
                 _baseDepthAtFull = roofSnowDepthMeters;
             }
+            // Only update baseline when snow is ADDED (never on removal - that would shrink baseline incorrectly)
             if (packed > _packedCountAtFull && _packedCountAtFull > 0)
             {
                 _packedCountAtFull = packed;
                 _baseDepthAtFull = roofSnowDepthMeters;
             }
             float depthMax = _baseDepthAtFull;
-            float depthMin = Mathf.Max(0.02f, roofVisualDepthMinFraction * depthMax);
+            float depthMin = Mathf.Max(0.02f, 0.05f * depthMax); // 5% min: almost flat when cleared, roof visible
             float packedRatio = _packedCountAtFull > 0 ? (float)packed / _packedCountAtFull : 1f;
             float targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(packedRatio);
-            if (roofSnowDepthMeters > targetDepth && packed > 0)
-            {
-                _packedCountAtFull = packed;
-                _baseDepthAtFull = roofSnowDepthMeters;
-                depthMax = _baseDepthAtFull;
-                depthMin = Mathf.Max(0.02f, roofVisualDepthMinFraction * depthMax);
-                packedRatio = (float)packed / _packedCountAtFull;
-                targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(packedRatio);
-            }
             roofSnowDepthMeters = targetDepth;
             if (!_visualDepthRoofInitialized) { _visualDepthRoof = targetDepth; _visualDepthRoofInitialized = true; }
             _visualDepthRoof = Mathf.Lerp(_visualDepthRoof, targetDepth, roofVisualSmoothSpeed * Time.deltaTime);
@@ -147,6 +141,7 @@ public class RoofSnowSystem : MonoBehaviour
         }
 
         UpdateRoofVisual();
+        GuardRoofLayerScaleAuthority();
 
         Vector3 roofUp = roofSlideCollider.transform.up.normalized;
         AngleDeg = Vector3.Angle(roofUp, Vector3.up);
@@ -197,6 +192,13 @@ public class RoofSnowSystem : MonoBehaviour
                 TriggerAvalanche();
             }
         }
+    }
+
+    /// <summary>RoofSnowVisualSync: Run last so no other script overwrites RoofSnowLayer scale.</summary>
+    void LateUpdate()
+    {
+        if (roofSlideCollider != null && _roofLayer != null)
+            UpdateRoofVisual();
     }
 
     public void AddRoofSnow(float amount)
@@ -382,6 +384,7 @@ public class RoofSnowSystem : MonoBehaviour
             _roofLayer.localPosition = center;
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = size;
+            _lastAppliedScaleY = h;
             if (!_snowRenderThicknessLogOnce)
             {
                 _snowRenderThicknessLogOnce = true;
@@ -399,6 +402,7 @@ public class RoofSnowSystem : MonoBehaviour
             _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f);
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = new Vector3(Mathf.Max(0.1f, b.size.x), h, Mathf.Max(0.1f, b.size.z));
+            _lastAppliedScaleY = h;
             if (!_snowRenderThicknessLogOnce)
             {
                 _snowRenderThicknessLogOnce = true;
@@ -410,14 +414,27 @@ public class RoofSnowSystem : MonoBehaviour
         }
     }
 
+    void GuardRoofLayerScaleAuthority()
+    {
+        if (_roofLayer == null || _scaleOverrideGuardLogged) return;
+        float actualY = _roofLayer.localScale.y;
+        if (_lastAppliedScaleY >= 0f && Mathf.Abs(actualY - _lastAppliedScaleY) > 0.001f)
+        {
+            _scaleOverrideGuardLogged = true;
+            Debug.LogError($"[RoofSnowVisualGuard] RoofSnowLayer scale was overwritten! expectedY={_lastAppliedScaleY:F4} actualY={actualY:F4}\n{System.Environment.StackTrace}");
+            UpdateRoofVisual(); // Re-apply our authority
+        }
+    }
+
     void LogRoofVisualAfterHit(int packedCurrent)
     {
         int full = _packedCountAtFull > 0 ? _packedCountAtFull : 1;
         float ratio = (float)packedCurrent / full;
         float depthMax = _baseDepthAtFull;
-        float depthMin = Mathf.Max(0.02f, roofVisualDepthMinFraction * depthMax);
+        float depthMin = Mathf.Max(0.02f, 0.05f * depthMax);
         float targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(ratio);
-        Debug.Log($"[RoofVisual] packed={packedCurrent}/{full} ratio={ratio:F3} targetDepth={targetDepth:F3} visualDepth={_visualDepthRoof:F3}");
+        float scaleY = _roofLayer != null ? _roofLayer.localScale.y : -1f;
+        Debug.Log($"[RoofVisual] packed={packedCurrent}/{full} ratio={ratio:F3} depth={_visualDepthRoof:F3} target={targetDepth:F3} scaleY={scaleY:F3}");
     }
 
     static string GetTransformPath(Transform t)
