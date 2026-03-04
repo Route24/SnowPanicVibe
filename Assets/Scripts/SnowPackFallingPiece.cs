@@ -37,7 +37,7 @@ public class SnowPackFallingPiece : MonoBehaviour
 
     void OnCollisionEnter(Collision collision)
     {
-        if (collision == null || collision.collider == null) return;
+        if (this == null || gameObject == null || collision == null || collision.collider == null) return;
         int layer = collision.gameObject.layer;
         if (((1 << layer) & groundMask.value) != 0)
         {
@@ -59,11 +59,13 @@ public class SnowPackFallingPiece : MonoBehaviour
 
     void ReturnFromFall(string reason)
     {
+        if (this == null || gameObject == null) return;
         var rb = GetComponent<Rigidbody>();
         if (rb != null) Destroy(rb);
         var comp = GetComponent<SnowPackFallingPiece>();
         if (comp != null) Destroy(comp);
-        if (spawner != null) spawner.ReturnToPoolFromFalling(transform, reason);
+        if (spawner != null && spawner.gameObject != null)
+            spawner.ReturnToPoolFromFalling(transform, reason);
     }
 
     public static int GroundHitCount => _groundHitCount;

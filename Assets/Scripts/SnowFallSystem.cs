@@ -113,7 +113,7 @@ public class SnowFallSystem : MonoBehaviour
                 }
                 else if (((1 << hit.collider.gameObject.layer) & groundMask.value) != 0 || hit.collider.name.Contains("Ground") || hit.collider.name.Contains("Plane"))
                 {
-                    if (groundSnowSystem != null) groundSnowSystem.AddSnow(addPerGroundHit);
+                    if (groundSnowSystem != null) groundSnowSystem.SpawnPileAt(hit.point, addPerGroundHit);
                     _groundHits++;
                     Deactivate(ref p);
                 }

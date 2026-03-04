@@ -19,6 +19,9 @@ public class MvpSnowChunkMotion : MonoBehaviour
     public Action<MvpSnowChunkMotion> onFinished;
     Vector3 _roofNormal;
     float _roofSlideRemaining;
+    float _activatedAt;
+    [Tooltip("Min seconds before ground hit is allowed (prevents immediate despawn from roof).")]
+    public float minLifetimeBeforeGroundCheck = 0.5f;
 
     public void Activate(Vector3 pos, Vector3 vel, float life, GroundSnowSystem ground, LayerMask mask, float deposit)
     {
@@ -36,6 +39,7 @@ public class MvpSnowChunkMotion : MonoBehaviour
         depositAmount = deposit;
         _roofNormal = roofN.sqrMagnitude > 0.001f ? roofN.normalized : Vector3.zero;
         _roofSlideRemaining = Mathf.Max(0f, roofSlideTime);
+        _activatedAt = Time.time;
         gameObject.SetActive(true);
     }
 
@@ -62,9 +66,10 @@ public class MvpSnowChunkMotion : MonoBehaviour
         Vector3 next = prev + velocity * dt;
         Vector3 dir = next - prev;
         float dist = dir.magnitude;
-        if (dist > 0.0001f && Physics.Raycast(prev, dir / dist, out RaycastHit hit, dist, groundMask, QueryTriggerInteraction.Ignore))
+        bool allowGroundCheck = (Time.time - _activatedAt) >= minLifetimeBeforeGroundCheck;
+        if (allowGroundCheck && dist > 0.0001f && Physics.Raycast(prev, dir / dist, out RaycastHit hit, dist, groundMask, QueryTriggerInteraction.Ignore))
         {
-            if (groundSnow != null) groundSnow.AddSnow(depositAmount);
+            if (groundSnow != null && hit.collider != null) groundSnow.SpawnPileAt(hit.point, depositAmount);
             CoreGameplayManager.Instance?.AddMoneyFromChunkLanding(depositAmount);
             Finish();
             return;

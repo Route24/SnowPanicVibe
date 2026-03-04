@@ -89,10 +89,14 @@ public class SnowPackSpawner : MonoBehaviour
     public bool enableStateIndicator = false;
 
     [Header("Chain reaction")]
-    [Tooltip("Delay range before unstable cell may detach (think & watch).")]
+    [Tooltip("Min delay before unstable cell may secondary detach.")]
     public float chainUnstableMinDelay = 0.3f;
-    public float chainUnstableMaxDelay = 1.5f;
-    [Range(0f, 1f)] public float chainDetachChance = 0.45f;
+    [Tooltip("Chain reaction: max delay before secondary detach.")]
+    public float chainUnstableMaxDelay = 1.2f;
+    [Range(0f, 1f), Tooltip("Chain reaction: chance to detach when unstable cell expires.")]
+    public float chainDetachChance = 0.6f;
+    [Tooltip("Max secondary detachments per hit (avalanche growth cap).")]
+    public int maxSecondaryDetachPerHit = 12;
 
     Transform _visualRoot;
     Transform _piecesRoot;
@@ -169,6 +173,7 @@ public class SnowPackSpawner : MonoBehaviour
     struct TransitionSample { public float t; public int rootCh; public int pooled; public int active; }
     readonly System.Collections.Generic.Dictionary<(int, int), float> _unstableCellExpiry = new System.Collections.Generic.Dictionary<(int, int), float>();
     int _chainTriggersThisHit;
+    int _chainDetachCountSinceTap;
     readonly List<TransitionSample> _transitionSamples = new List<TransitionSample>(120);
     const float TransitionSampleInterval = 0.1f;
     float _lastTransitionSampleTime = -10f;
@@ -702,6 +707,7 @@ public class SnowPackSpawner : MonoBehaviour
         LastTapRoofLocal = new Vector2(u, v);
         LastTapTime = Time.time;
         LastTapRadius = radius;
+        _chainDetachCountSinceTap = 0;
         LastPackedTotalBefore = packedBefore;
         LastPackedTotalAfter = packedBefore - removedCount;
 
@@ -764,7 +770,7 @@ public class SnowPackSpawner : MonoBehaviour
 
     void ProcessChainReaction()
     {
-        if (_unstableCellExpiry.Count == 0) return;
+        if (_unstableCellExpiry.Count == 0 || _chainDetachCountSinceTap >= maxSecondaryDetachPerHit) return;
         float now = Time.time;
         var toProcess = new System.Collections.Generic.List<(int, int)>();
         foreach (var kv in _unstableCellExpiry)
@@ -774,6 +780,7 @@ public class SnowPackSpawner : MonoBehaviour
         }
         foreach (var key in toProcess)
         {
+            if (_chainDetachCountSinceTap >= maxSecondaryDetachPerHit) break;
             _unstableCellExpiry.Remove(key);
             if (UnityEngine.Random.value >= chainDetachChance) continue;
             if (!_gridPieces.TryGetValue(key, out var cellList) || cellList.Count == 0) continue;
@@ -788,8 +795,14 @@ public class SnowPackSpawner : MonoBehaviour
                 if (_layerPieces[li].Remove(t)) break;
             }
             _chainTriggersThisHit++;
+            _chainDetachCountSinceTap++;
             _inAvalancheSlide = true;
             StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, localAvalancheSlideSpeed));
+            if (roofSnowSystem != null && roofSnowSystem.isActiveAndEnabled)
+            {
+                Vector3 worldCenter = _roofCenter + _roofR * ((key.Item1 + 0.5f) / Mathf.Max(1, _cachedNx) - 0.5f) * _roofWidth + _roofF * ((key.Item2 + 0.5f) / Mathf.Max(1, _cachedNz) - 0.5f) * _roofLength + _roofN * RoofSurfaceOffset;
+                roofSnowSystem.SpawnLocalBurstAt(worldCenter, 1, _roofDownhill.normalized);
+            }
         }
     }
 
@@ -2128,8 +2141,7 @@ public class SnowPackSpawner : MonoBehaviour
 
         RefreshPackedTransformsFromRoofBasis();
 
-        if (!_inAvalancheSlide)
-            ProcessChainReaction();
+        ProcessChainReaction();
 
         if (Time.time - LastTapTime < 2f && roofCollider != null)
         {

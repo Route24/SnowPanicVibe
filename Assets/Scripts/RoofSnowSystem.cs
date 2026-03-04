@@ -226,7 +226,7 @@ public class RoofSnowSystem : MonoBehaviour
         Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} (depth synced from packed in Update)");
 
         string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
-        int burstCount = removed > 0 ? Mathf.Min(removed * 2, 24) : 0;
+        int burstCount = removed > 0 ? Mathf.Min(removed, burstChunkCount) : 0;
         int movedCount = removed + burstCount;
         bool reachedGround = removed > 0;
         SnowLoopLogCapture.AppendToAssiReport("=== TAP AVALANCHE ===");
@@ -235,24 +235,49 @@ public class RoofSnowSystem : MonoBehaviour
         SnowLoopLogCapture.AppendToAssiReport($"movedCount={movedCount} reachedGround={reachedGround}");
     }
 
-    void SpawnLocalBurstAt(Vector3 origin, int removedCount, Vector3 slopeDir)
+    static int _spawnErrorCount;
+    static float _lastSpawnErrorLog;
+
+    public void SpawnLocalBurstAt(Vector3 origin, int removedCount, Vector3 slopeDir)
     {
-        int count = Mathf.Min(removedCount * 2, burstChunkCount);
+        if (roofSlideCollider == null) return;
+        int count = Mathf.Clamp(removedCount, 1, burstChunkCount);
         Vector3 roofN = roofSlideCollider.transform.up.normalized;
         float smallLift = 0.2f;
         float roofSlideTime = 0.4f;
+        int spawnedOk = 0, spawnFailed = 0;
         for (int i = 0; i < count; i++)
         {
-            var chunk = AcquireChunk();
-            Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofN) * burstSpread * 0.5f;
-            Vector3 p = origin + roofN * 0.02f + jitter * 0.2f;
-            Vector3 vel = (slopeDir + jitter * 0.3f).normalized * burstChunkSpeed + roofN * smallLift;
-            float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
-            SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
-            chunk.Activate(p, vel, burstChunkLife * 0.8f, groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
-            float s = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
-            chunk.transform.localScale = Vector3.one * s * 0.8f;
+            try
+            {
+                var chunk = AcquireChunk();
+                if (chunk == null)
+                {
+                    spawnFailed++;
+                    continue;
+                }
+                Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofN) * burstSpread * 0.5f;
+                Vector3 p = origin + roofN * 0.05f + jitter * 0.3f;
+                Vector3 vel = (slopeDir + jitter * 0.3f).normalized * burstChunkSpeed + roofN * smallLift;
+                float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
+                SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
+                chunk.Activate(p, vel, Mathf.Max(burstChunkLife * 0.8f, 1.5f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
+                float s = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
+                chunk.transform.localScale = Vector3.one * s * 0.8f;
+                spawnedOk++;
+            }
+            catch (System.Exception ex)
+            {
+                spawnFailed++;
+                _spawnErrorCount++;
+                if (Time.time - _lastSpawnErrorLog >= 2f)
+                {
+                    _lastSpawnErrorLog = Time.time;
+                    Debug.LogWarning($"[Hit] spawn exception (rate-limited): {ex.Message}");
+                }
+            }
         }
+        Debug.Log($"[Hit] removedCount={removedCount} spawnedChunks={count} spawnedOk={spawnedOk} spawnFailed={spawnFailed}");
     }
 
     void TriggerAvalanche()
