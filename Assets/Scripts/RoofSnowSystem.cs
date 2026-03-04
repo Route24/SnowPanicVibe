@@ -52,7 +52,7 @@ public class RoofSnowSystem : MonoBehaviour
     [Tooltip("Smoothing: no sudden thickness pop. Higher = faster response.")]
     public float roofVisualSmoothSpeed = 8f;
     [Tooltip("Min visual depth as fraction of full (keeps readability when nearly cleared).")]
-    [Range(0.05f, 0.3f)] public float roofVisualDepthMinFraction = 0.10f;
+    [Range(0.08f, 0.25f)] public float roofVisualDepthMinFraction = 0.15f;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;

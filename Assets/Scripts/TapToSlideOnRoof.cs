@@ -35,27 +35,64 @@ public class TapToSlideOnRoof : MonoBehaviour
         if (cam == null) return;
 
         Ray ray = cam.ScreenPointToRay(screenPos);
-        if (!Physics.Raycast(ray, out RaycastHit hit, maxDistance, hitMask, QueryTriggerInteraction.Ignore))
+        var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
+        RaycastHit hit;
+        bool hitSomething = Physics.Raycast(ray, out hit, maxDistance, hitMask, QueryTriggerInteraction.Ignore);
+
+        bool isRoof = false;
+        Vector3 tapPoint = hitSomething ? hit.point : Vector3.zero;
+
+        if (roofSys != null && roofSys.roofSlideCollider != null)
         {
-            Debug.Log($"[TapMiss] frame={Time.frameCount} t={Time.time:F2} screen=({screenPos.x:F0},{screenPos.y:F0})");
-            return;
+            if (hitSomething && (hit.collider == roofSys.roofSlideCollider || hit.collider.transform.IsChildOf(roofSys.roofSlideCollider.transform)))
+            {
+                isRoof = true;
+            }
+            else if (hitSomething)
+            {
+                Vector3 closest = roofSys.roofSlideCollider.ClosestPoint(hit.point);
+                float distSq = (closest - hit.point).sqrMagnitude;
+                Bounds b = roofSys.roofSlideCollider.bounds;
+                b.Expand(0.5f);
+                if (distSq < 0.25f || b.Contains(hit.point))
+                {
+                    isRoof = true;
+                    tapPoint = closest;
+                }
+            }
         }
 
-        var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
-        bool isRoof = roofSys != null && roofSys.roofSlideCollider == hit.collider;
-
-        if (isRoof)
+        if (hitSomething && isRoof)
         {
             if (cooldown != null) cooldown.OnHit();
-            Vector3 roofLocal = hit.collider.transform.InverseTransformPoint(hit.point);
-            Debug.Log($"[TapHit] frame={Time.frameCount} t={Time.time:F2} hit=({hit.point.x:F3},{hit.point.y:F3},{hit.point.z:F3}) roofLocal=({roofLocal.x:F3},{roofLocal.y:F3},{roofLocal.z:F3})");
-            StartCoroutine(ShowHitGizmo(hit.point));
-            roofSys.RequestTapSlide(hit.point);
+            Vector3 roofLocal = roofSys.roofSlideCollider.transform.InverseTransformPoint(tapPoint);
+            string colliderPath = hit.collider != null ? GetTransformPath(hit.collider.transform) : "?";
+            float u = 0f, v = 0f;
+            var spawner = Object.FindFirstObjectByType<SnowPackSpawner>();
+            if (spawner != null) spawner.ComputeTapUV(tapPoint, out u, out v);
+            Debug.Log($"[TapHit] rayOrig=({ray.origin.x:F2},{ray.origin.y:F2},{ray.origin.z:F2}) hitCollider={colliderPath} hitPt=({tapPoint.x:F3},{tapPoint.y:F3},{tapPoint.z:F3}) roofLocal=({roofLocal.x:F3},{roofLocal.y:F3},{roofLocal.z:F3}) u={u:F3} v={v:F3} accepted=Yes");
+            StartCoroutine(ShowHitGizmo(tapPoint));
+            roofSys.RequestTapSlide(tapPoint);
+        }
+        else if (hitSomething)
+        {
+            string colliderPath = hit.collider != null ? GetTransformPath(hit.collider.transform) : "?";
+            Debug.Log($"[TapMiss] rayOrig=({ray.origin.x:F2},{ray.origin.y:F2},{ray.origin.z:F2}) hitCollider={colliderPath} hitPt=({hit.point.x:F3},{hit.point.y:F3},{hit.point.z:F3}) accepted=No");
         }
         else
         {
-            Debug.Log($"[TapMiss] frame={Time.frameCount} t={Time.time:F2} screen=({screenPos.x:F0},{screenPos.y:F0}) hitOther={hit.collider.name}");
+            Debug.Log($"[TapMiss] rayOrig=({ray.origin.x:F2},{ray.origin.y:F2},{ray.origin.z:F2}) noHit screen=({screenPos.x:F0},{screenPos.y:F0})");
         }
+    }
+
+    static string GetTransformPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new System.Collections.Generic.List<string>();
+        var cur = t;
+        while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
     }
 
     IEnumerator ShowHitGizmo(Vector3 worldPos)

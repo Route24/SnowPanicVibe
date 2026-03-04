@@ -606,6 +606,16 @@ public class SnowPackSpawner : MonoBehaviour
     [Tooltip("Maximum pieces to detach per hit (chain reaction for rest).")]
     public int localAvalancheMaxDetach = 80;
 
+    /// <summary>Convert world point to roof (u,v) in basis. Used for tap debug log. CacheGridParams must have been called.</summary>
+    public void ComputeTapUV(Vector3 worldPoint, out float u, out float v)
+    {
+        u = v = 0f;
+        if (roofCollider == null || _roofWidth <= 0f || _roofLength <= 0f) return;
+        Vector3 d = worldPoint - _roofCenter;
+        u = Vector3.Dot(d, _roofR) / Mathf.Max(0.01f, _roofWidth);
+        v = Vector3.Dot(d, _roofF) / Mathf.Max(0.01f, _roofLength);
+    }
+
     /// <summary>局所雪崩: 屋根面basis(u,v)で半径R内のグリッドセルを削る。removedCount>=minを目指す（半径拡張）。</summary>
     public void PlayLocalAvalancheAt(Vector3 worldCenter, float radius = 0.6f, float slideSpeed = 1.5f)
     {
