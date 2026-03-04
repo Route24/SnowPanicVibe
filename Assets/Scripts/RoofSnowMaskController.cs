@@ -75,9 +75,9 @@ public class RoofSnowMaskController : MonoBehaviour
                 float dist = Mathf.Sqrt(du * du + dv * dv);
                 float t = (dist - radiusPx) / Mathf.Max(1f, softEdge * maskResolution);
                 float erase = 1f - Mathf.Clamp01(t); // smoothstep-like
-                int idx = py * maskResolution + px;
-                byte prev = _mask.GetPixel(px, py).r;
-                byte next = (byte)Mathf.Clamp(prev * (1f - erase), 0, 255);
+                float prevF = _mask.GetPixel(px, py).r;
+                byte prev = (byte)Mathf.Clamp(Mathf.RoundToInt(prevF * 255f), 0, 255);
+                byte next = (byte)Mathf.Clamp(Mathf.RoundToInt(prevF * (1f - erase) * 255f), 0, 255);
                 if (next < prev) paints++;
                 _mask.SetPixel(px, py, new Color32(next, next, next, 255));
             }

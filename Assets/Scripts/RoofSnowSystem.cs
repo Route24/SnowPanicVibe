@@ -310,8 +310,12 @@ public class RoofSnowSystem : MonoBehaviour
             var rend = child.GetComponent<Renderer>();
             _roofLayerMat = rend != null ? rend.sharedMaterial : null;
             _maskController = roofSlideCollider.GetComponentInChildren<RoofSnowMaskController>();
-            if (_maskController != null && _roofLayerMat != null && _roofLayerMat.HasProperty("_SnowMask") && snowPackSpawner != null)
-                _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
+            try
+            {
+                if (_maskController != null && _roofLayerMat != null && snowPackSpawner != null && _roofLayerMat.HasProperty("_SnowMask"))
+                    _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
+            }
+            catch (System.Exception) { _maskController = null; }
             return;
         }
 
@@ -320,26 +324,13 @@ public class RoofSnowSystem : MonoBehaviour
         go.transform.SetParent(roofSlideCollider.transform, false);
         var col = go.GetComponent<Collider>();
         if (col != null) col.enabled = false;
-        var rend = go.GetComponent<Renderer>();
-        Shader maskSh = Shader.Find("SnowPanic/RoofSnowMask");
-        if (maskSh != null)
+        var goRend = go.GetComponent<Renderer>();
+        Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        _roofLayerMat = sh != null ? new Material(sh) : null;
+        if (_roofLayerMat != null)
         {
-            _roofLayerMat = new Material(maskSh);
-            _roofLayerMat.SetColor("_BaseColor", roofSnowColor);
-            if (rend != null) rend.sharedMaterial = _roofLayerMat;
-            _maskController = roofSlideCollider.GetComponent<RoofSnowMaskController>();
-            if (_maskController == null) _maskController = roofSlideCollider.gameObject.AddComponent<RoofSnowMaskController>();
-            _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
-        }
-        else
-        {
-            Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
-            _roofLayerMat = sh != null ? new Material(sh) : null;
-            if (_roofLayerMat != null)
-            {
-                _roofLayerMat.color = roofSnowColor;
-                if (rend != null) rend.sharedMaterial = _roofLayerMat;
-            }
+            _roofLayerMat.color = roofSnowColor;
+            if (goRend != null) goRend.sharedMaterial = _roofLayerMat;
         }
         _roofLayer = go.transform;
     }
@@ -370,7 +361,12 @@ public class RoofSnowSystem : MonoBehaviour
 
     void UpdateMaskShaderParams()
     {
-        if (_roofLayerMat == null || snowPackSpawner == null || !_roofLayerMat.HasProperty("_RoofCenter")) return;
+        if (_roofLayerMat == null || snowPackSpawner == null) return;
+        try
+        {
+            if (!_roofLayerMat.HasProperty("_RoofCenter")) return;
+        }
+        catch { return; }
         var s = snowPackSpawner;
         if (s.RoofWidth <= 0f || s.RoofLength <= 0f) return;
         _roofLayerMat.SetVector("_RoofCenter", s.RoofCenter);
