@@ -30,6 +30,7 @@ public class SnowLoopLogCapture : MonoBehaviour
         _instance = go.AddComponent<SnowLoopLogCapture>();
         go.AddComponent<AssiDebugUI>();
         go.AddComponent<DebugSnowVisibility>();
+        go.AddComponent<GridVisualWatchdog>();
         go.AddComponent<CabinRoofForceHide>();
         go.AddComponent<RendererWatch>();
         _assiBootEmitted = false;

@@ -9,6 +9,10 @@ public class MvpSnowChunkMotion : MonoBehaviour
     public Vector3 velocity;
     public float lifeRemaining;
     public float gravity = 9.81f;
+    [Tooltip("Clamp speed while sliding on roof (slow tempo).")]
+    public float maxSpeedOnRoof = 0.6f;
+    [Tooltip("Airborne gravity multiplier (higher = shorter arcs).")]
+    public float airborneGravityScale = 1.2f;
     public LayerMask groundMask = ~0;
     public float depositAmount = 0.02f;
     public GroundSnowSystem groundSnow;
@@ -45,12 +49,15 @@ public class MvpSnowChunkMotion : MonoBehaviour
         {
             velocity = Vector3.ProjectOnPlane(velocity, _roofNormal);
             float mag = velocity.magnitude;
-            if (mag > 0.0001f) velocity = velocity.normalized * mag;
+            if (mag > 0.0001f)
+            {
+                velocity = velocity.normalized * Mathf.Min(mag, maxSpeedOnRoof);
+            }
             _roofSlideRemaining -= dt;
         }
         else
         {
-            velocity += Vector3.down * gravity * dt;
+            velocity += Vector3.down * (gravity * airborneGravityScale) * dt;
         }
         Vector3 next = prev + velocity * dt;
         Vector3 dir = next - prev;
@@ -58,6 +65,7 @@ public class MvpSnowChunkMotion : MonoBehaviour
         if (dist > 0.0001f && Physics.Raycast(prev, dir / dist, out RaycastHit hit, dist, groundMask, QueryTriggerInteraction.Ignore))
         {
             if (groundSnow != null) groundSnow.AddSnow(depositAmount);
+            CoreGameplayManager.Instance?.AddMoneyFromChunkLanding(depositAmount);
             Finish();
             return;
         }

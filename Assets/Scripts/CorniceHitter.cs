@@ -56,6 +56,9 @@ public class CorniceHitter : MonoBehaviour
                 var roofSys = UnityEngine.Object.FindFirstObjectByType<RoofSnowSystem>();
                 if (roofSys != null && roofSys.roofSlideCollider == hit.collider)
                 {
+                    var cooldown = UnityEngine.Object.FindFirstObjectByType<ToolCooldownManager>();
+                    if (cooldown != null && !cooldown.CanHit) return;
+                    if (cooldown != null) cooldown.OnHit();
                     roofSys.RequestTapSlide(hit.point);
                     return;
                 }

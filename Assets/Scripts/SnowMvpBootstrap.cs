@@ -46,6 +46,12 @@ public class SnowMvpBootstrap : MonoBehaviour
         fall.addPerLandingMeters = 0.01f;
         fall.addPerGroundHit = 0.01f;
 
+        var core = GetOrCreate<CoreGameplayManager>(gameObject);
+        core.collapseThresholdMeters = 0.95f;
+
+        var cooldown = GetOrCreate<ToolCooldownManager>(gameObject);
+        cooldown.cooldownSec = 1.2f;
+
         EnsureTapToSlide();
         DisableLegacyPrototype();
         Debug.Log("[SnowMVP] bootstrap complete (RoofSnowSystem/SnowFallSystem/GroundSnowSystem)");

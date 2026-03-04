@@ -24,6 +24,8 @@ public class RoofSnowSystem : MonoBehaviour
     public int burstChunkCount = 24;
     public float burstChunkLife = 1.8f;
     public float burstChunkSpeed = 2.2f;
+    [Tooltip("Slower = think & watch tempo.")]
+    public float localAvalancheSlideSpeed = 0.9f;
     public float burstSpread = 0.8f;
     public float burstGroundDepositPerChunk = 0.015f;
 
@@ -111,6 +113,11 @@ public class RoofSnowSystem : MonoBehaviour
             string packEuler = snowPackSpawner != null ? snowPackSpawner.SnowPackRootEulerString : "N/A";
             Debug.Log($"[RoofVectors] roofNormal=({roofNormal.x:F3},{roofNormal.y:F3},{roofNormal.z:F3}) roofUp=({roofUp.x:F3},{roofUp.y:F3},{roofUp.z:F3}) worldUp=({worldUp.x:F3},{worldUp.y:F3},{worldUp.z:F3}) SnowPackRootEuler={packEuler}");
             Debug.Log($"[RoofSnow] depth={roofSnowDepthMeters:F3} threshold={ComputedThreshold:F3} angleDeg={AngleDeg:F1}");
+            var cd = FindFirstObjectByType<ToolCooldownManager>();
+            float cdRem = cd != null ? cd.CooldownRemaining : 0f;
+            float avgSlide = SnowPackSpawner.LastAvgRoofSlideDuration;
+            int chainTriggers = SnowPackSpawner.LastChainTriggerCount;
+            Debug.Log($"[TempoDebug] cooldownRemaining={cdRem:F2}s avgRoofSlideDuration={avgSlide:F3}s chainTriggersLastHit={chainTriggers}");
             string state = Time.time < _nextAvalancheTime ? "Avalanche" : "Freeze";
             float groundTotal = groundSnowSystem != null ? groundSnowSystem.totalSnowAmount : 0f;
             Debug.Log($"[AvalancheAudit1s] frame={Time.frameCount} t={Time.time:F2} state={state} roofDepth={roofSnowDepthMeters:F3} groundTotal={groundTotal:F3}");
@@ -159,7 +166,7 @@ public class RoofSnowSystem : MonoBehaviour
         if (roofSlideCollider == null || snowPackSpawner == null) return;
         snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
         _nextAvalancheTime = Time.time + 0.3f;
-        snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, 0.6f, 1.5f);
+        snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, 0.6f, localAvalancheSlideSpeed);
         int removed = SnowPackSpawner.LastRemovedCount;
         if (removed > 0)
         {
@@ -196,6 +203,7 @@ public class RoofSnowSystem : MonoBehaviour
             Vector3 p = origin + roofN * 0.02f + jitter * 0.2f;
             Vector3 vel = (slopeDir + jitter * 0.3f).normalized * burstChunkSpeed + roofN * smallLift;
             float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
+            SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
             chunk.Activate(p, vel, burstChunkLife * 0.8f, groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
             float s = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
             chunk.transform.localScale = Vector3.one * s * 0.8f;

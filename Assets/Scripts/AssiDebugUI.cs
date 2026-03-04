@@ -112,6 +112,13 @@ public class AssiDebugUI : MonoBehaviour
         }
         y += ButtonH + Margin;
 
+        if (Button(x, y, GridVisualWatchdog.showSnowGridDebug ? "[BTN] ShowSnowGrid OFF" : "[BTN] ShowSnowGrid ON"))
+        {
+            GridVisualWatchdog.showSnowGridDebug = !GridVisualWatchdog.showSnowGridDebug;
+            Debug.Log($"[AssiDebugUI] showSnowGridDebug={GridVisualWatchdog.showSnowGridDebug}");
+        }
+        y += ButtonH + Margin;
+
         if (Button(x, y, DebugSnowVisibility.ShowOnlyPieces ? "[BTN] ShowOnlyPieces OFF" : "[BTN] ShowOnlyPieces ON"))
         {
             DebugSnowVisibility.ShowOnlyPieces = !DebugSnowVisibility.ShowOnlyPieces;
@@ -155,23 +162,82 @@ public class AssiDebugUI : MonoBehaviour
         var roof = Object.FindFirstObjectByType<RoofSnowSystem>();
         var spawner = Object.FindFirstObjectByType<SnowPackSpawner>();
         var fall = Object.FindFirstObjectByType<SnowFallSystem>();
+        var core = Object.FindFirstObjectByType<CoreGameplayManager>();
         float depth = roof != null ? roof.roofSnowDepthMeters : 0f;
         int packedTotal = spawner != null ? spawner.GetPackedCubeCountRealtime() : 0;
+
+        // Core gameplay debug: Money, Roof weight
+        if (core != null)
+        {
+            int money = core.Money;
+            float roofWeight = core.RoofWeightMeters;
+            float threshold = core.CollapseThreshold;
+            bool gameOver = core.IsGameOver;
+            var style = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold };
+            float yy = 8f;
+            GUI.Label(new Rect(HudX, yy, 350, 20), $"Money: {money}", style); yy += 18;
+            GUI.Label(new Rect(HudX, yy, 350, 20), $"Roof weight: {roofWeight:F3} / {threshold:F3}", style); yy += 18;
+            if (gameOver) GUI.Label(new Rect(HudX, yy, 350, 20), "GAME OVER", new GUIStyle(style) { normal = { textColor = Color.red } }); yy += 18;
+        }
+
+        // Cooldown ring
+        var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>();
+        if (cooldownMgr != null)
+        {
+            DrawCooldownRing(cooldownMgr);
+        }
         int packedInRadius = SnowPackSpawner.LastPackedInRadiusBefore;
         int removedLast = SnowPackSpawner.LastRemovedCount;
         float slopeDeg = roof != null ? roof.AngleDeg : 0f;
         float rate = fall != null ? fall.spawnIntervalSeconds : 0f;
         var uv = SnowPackSpawner.LastTapRoofLocal;
         var downhill = spawner != null ? spawner.RoofDownhill : Vector3.zero;
-        var style = new GUIStyle(GUI.skin.label) { fontSize = 10 };
-        float yy = HudY;
-        GUI.Label(new Rect(HudX, yy, 450, 18), $"PackedTotal={packedTotal} PackedInRadius={packedInRadius} RemovedLastTap={removedLast}", style); yy += 14;
-        GUI.Label(new Rect(HudX, yy, 450, 18), $"RoofSlopeDeg={slopeDeg:F1} downhill=({downhill.x:F2},{downhill.y:F2},{downhill.z:F2}) tap(u,v)=({uv.x:F2},{uv.y:F2})", style); yy += 14;
-        GUI.Label(new Rect(HudX, yy, 450, 18), $"Depth={depth:F3} AutoAvalanche={(_autoAvalancheOff ? "OFF" : "ON")} SnowFallRate={rate:F3} Freeze={(spawner != null && spawner.IsSpawnFrozen)} DebugFreeze={DebugFreezeSpawn}", style);
+        var hudStyle = new GUIStyle(GUI.skin.label) { fontSize = 10 };
+        float hudY = HudY;
+        GUI.Label(new Rect(HudX, hudY, 450, 18), $"PackedTotal={packedTotal} PackedInRadius={packedInRadius} RemovedLastTap={removedLast}", hudStyle); hudY += 14;
+        GUI.Label(new Rect(HudX, hudY, 450, 18), $"RoofSlopeDeg={slopeDeg:F1} downhill=({downhill.x:F2},{downhill.y:F2},{downhill.z:F2}) tap(u,v)=({uv.x:F2},{uv.y:F2})", hudStyle); hudY += 14;
+        GUI.Label(new Rect(HudX, hudY, 450, 18), $"Depth={depth:F3} AutoAvalanche={(_autoAvalancheOff ? "OFF" : "ON")} SnowFallRate={rate:F3} Freeze={(spawner != null && spawner.IsSpawnFrozen)} DebugFreeze={DebugFreezeSpawn}", hudStyle); hudY += 14;
+        var cooldownMgr2 = Object.FindFirstObjectByType<ToolCooldownManager>();
+        float cdRem = cooldownMgr2 != null ? cooldownMgr2.CooldownRemaining : 0f;
+        float avgSlide = SnowPackSpawner.LastAvgRoofSlideDuration;
+        int chainCount = SnowPackSpawner.LastChainTriggerCount;
+        GUI.Label(new Rect(HudX, hudY, 500, 18), $"Tempo: cooldownRemaining={cdRem:F2}s avgRoofSlideDuration={avgSlide:F3}s chainTriggersLastHit={chainCount}", hudStyle);
         if (SnowPackSpawner.LastRemovedCount > 0 && SnowPackSpawner.LastTapTime > 0)
         {
-            yy += 14;
-            GUI.Label(new Rect(HudX, yy, 450, 18), $"LastTap: Before={SnowPackSpawner.LastPackedTotalBefore} After={SnowPackSpawner.LastPackedTotalAfter}", style);
+            hudY += 14;
+            GUI.Label(new Rect(HudX, hudY, 450, 18), $"LastTap: Before={SnowPackSpawner.LastPackedTotalBefore} After={SnowPackSpawner.LastPackedTotalAfter}", hudStyle);
+        }
+    }
+
+    void DrawCooldownRing(ToolCooldownManager cooldown)
+    {
+        float rem = cooldown.CooldownRemaining;
+        float total = cooldown.cooldownSec;
+        float fill01 = total > 0.001f ? Mathf.Clamp01(rem / total) : 0f;
+        float cx = Screen.width * 0.5f;
+        float cy = Screen.height - 60f;
+        float r = 26f;
+        int segments = 36;
+        Color fillColor = new Color(0.3f, 0.55f, 0.95f, 0.85f);
+        Color emptyColor = new Color(0.5f, 0.5f, 0.55f, 0.35f);
+        float segW = 4f;
+        float segH = 6f;
+        for (int i = 0; i < segments; i++)
+        {
+            float segEnd = (i + 1f) / segments;
+            bool active = segEnd <= fill01;
+            float a = (i + 0.5f) / segments * Mathf.PI * 2f - Mathf.PI * 0.5f;
+            float px = cx + Mathf.Cos(a) * r - segW * 0.5f;
+            float py = cy + Mathf.Sin(a) * r - segH * 0.5f;
+            var prev = GUI.color;
+            GUI.color = active ? fillColor : emptyColor;
+            GUI.DrawTexture(new Rect(px, py, segW, segH), Texture2D.whiteTexture);
+            GUI.color = prev;
+        }
+        if (rem > 0.01f)
+        {
+            var lbl = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
+            GUI.Label(new Rect(cx - 30f, cy - 8f, 60f, 16f), $"{rem:F1}s", lbl);
         }
     }
 

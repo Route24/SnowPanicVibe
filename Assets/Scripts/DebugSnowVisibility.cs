@@ -6,6 +6,8 @@ public class DebugSnowVisibility : MonoBehaviour
     public static bool ShowOnlyPieces { get; set; }
     public static bool ShowOnlyRoofLayer { get; set; }
     public static bool ShowOnlyGroundVisual { get; set; }
+    /// <summary>When OFF (default): SnowPackPiece grid hidden. RoofSnowLayer is visual surface. When ON: grid visible for debug. Alias for GridVisualWatchdog.showSnowGridDebug.</summary>
+    public static bool ShowSnowGrid { get => GridVisualWatchdog.showSnowGridDebug; set => GridVisualWatchdog.showSnowGridDebug = value; }
 
     public static bool DebugNonSymMesh { get; set; }
 
@@ -56,7 +58,7 @@ public class DebugSnowVisibility : MonoBehaviour
 
         if (_cachedPieceRenderers != null)
         {
-            bool show = !anyOverride || onlyPieces;
+            bool show = GridVisualWatchdog.showSnowGridDebug && (!anyOverride || onlyPieces);
             foreach (var r in _cachedPieceRenderers)
             {
                 if (r != null) r.enabled = show;
@@ -105,7 +107,7 @@ public class DebugSnowVisibility : MonoBehaviour
         else if (ShowOnlyRoofLayer && !ShowOnlyPieces && !ShowOnlyGroundVisual) source = "RoofLayer";
         else if (ShowOnlyGroundVisual && !ShowOnlyPieces && !ShowOnlyRoofLayer) source = "Ground";
 
-        Debug.Log($"[SceneObjectsVisible] pieces={(pieces ? "ON" : "OFF")} roofLayer={(roofLayer ? "ON" : "OFF")} groundVisual={(groundVisual ? "ON" : "OFF")}");
+        Debug.Log($"[SceneObjectsVisible] showSnowGridDebug={GridVisualWatchdog.showSnowGridDebug} pieces={(pieces ? "ON" : "OFF")} roofLayer={(roofLayer ? "ON" : "OFF")} groundVisual={(groundVisual ? "ON" : "OFF")}");
         Debug.Log($"[VisibleSnowSource] {source}");
         Debug.Log($"[NonSymMesh] {(DebugNonSymMesh ? "ON" : "OFF")}");
     }

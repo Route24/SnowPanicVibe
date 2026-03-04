@@ -27,6 +27,9 @@ public class TapToSlideOnRoof : MonoBehaviour
         }
         if (!pressed) return;
 
+        var cooldown = Object.FindFirstObjectByType<ToolCooldownManager>();
+        if (cooldown != null && !cooldown.CanHit) return;
+
         var cam = GetComponent<Camera>();
         if (cam == null) cam = Camera.main;
         if (cam == null) return;
@@ -43,6 +46,7 @@ public class TapToSlideOnRoof : MonoBehaviour
 
         if (isRoof)
         {
+            if (cooldown != null) cooldown.OnHit();
             Vector3 roofLocal = hit.collider.transform.InverseTransformPoint(hit.point);
             Debug.Log($"[TapHit] frame={Time.frameCount} t={Time.time:F2} hit=({hit.point.x:F3},{hit.point.y:F3},{hit.point.z:F3}) roofLocal=({roofLocal.x:F3},{roofLocal.y:F3},{roofLocal.z:F3})");
             StartCoroutine(ShowHitGizmo(hit.point));

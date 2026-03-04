@@ -42,6 +42,7 @@ public class SnowPackFallingPiece : MonoBehaviour
         if (((1 << layer) & groundMask.value) != 0)
         {
             _groundHitCount++;
+            CoreGameplayManager.Instance?.AddMoneyFromFallingPiece();
             SnowLoopLogCapture.AppendToAssiReport($"=== GroundHit === count={_groundHitCount}");
             ReturnFromFall("GroundHit");
             return;
@@ -50,6 +51,7 @@ public class SnowPackFallingPiece : MonoBehaviour
         if (name.Contains("Ground") || name.Contains("Plane") || name.Contains("Porch"))
         {
             _groundHitCount++;
+            CoreGameplayManager.Instance?.AddMoneyFromFallingPiece();
             SnowLoopLogCapture.AppendToAssiReport($"=== GroundHit === count={_groundHitCount}");
             ReturnFromFall("GroundHit");
         }
