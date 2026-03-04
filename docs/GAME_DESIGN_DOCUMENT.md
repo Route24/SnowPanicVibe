@@ -58,7 +58,48 @@ Tap or flick.
 
 ---
 
-# 4. Player Character
+# 4. Gameplay Tempo Philosophy
+
+Snow Panic! is not a rapid tapping game.
+
+The intended gameplay tempo is thoughtful and observational.
+
+Players should take a few seconds to think about:
+
+- Which part of the roof to strike
+- Which tool to use
+
+Tools have a short cooldown, so players cannot continuously tap.
+
+During this cooldown period, snow slowly slides down the roof.
+
+Snow pieces may interact with each other and trigger chain reactions.
+
+Small collapses can gradually grow into larger avalanches.
+
+A key pleasure of the game is watching these slow chain reactions develop.
+
+The player strikes the snow, then watches the situation evolve.
+
+This creates a rhythm:
+
+Think → Strike → Watch → Avalanche
+
+The avalanche buildup is an essential part of the game's emotional payoff.
+
+---
+
+Implementation Notes (developer reference):
+
+- Tools have cooldown timers.
+- Snow sliding speed should be moderate (not too fast).
+- Snow pieces can enter an unstable state after a hit.
+- Unstable snow may detach later due to interaction with other pieces.
+- Avalanche growth can happen during player cooldown.
+
+---
+
+# 5. Player Character
 
 The player character is a boy around 10 years old.
 
@@ -77,7 +118,7 @@ Examples:
 
 ---
 
-# 5. Village Setting
+# 6. Village Setting
 
 A peaceful snowy village.
 
@@ -97,7 +138,7 @@ Background elements:
 
 ---
 
-# 6. Failure Condition
+# 7. Failure Condition
 
 If the snow weight on any roof exceeds the threshold:
 
@@ -105,7 +146,7 @@ House collapses → Game Over.
 
 ---
 
-# 7. Game Modes
+# 8. Game Modes
 
 Time Attack
 
@@ -127,7 +168,7 @@ Game continues until a house collapses.
 
 ---
 
-# 8. Economy
+# 9. Economy
 
 Removing snow earns money.
 
@@ -141,7 +182,7 @@ Money is used to purchase tools.
 
 ---
 
-# 9. Tool System
+# 10. Tool System
 
 Tools are divided into two categories.
 
@@ -190,7 +231,7 @@ Bombs remove large amounts of snow instantly.
 
 ---
 
-# 10. Snow Types
+# 11. Snow Types
 
 Different snow types affect gameplay.
 
@@ -212,7 +253,7 @@ May cause large avalanches.
 
 ---
 
-# 11. Weather Events
+# 12. Weather Events
 
 Weather changes during gameplay.
 
@@ -227,7 +268,7 @@ Weather affects snow accumulation speed.
 
 ---
 
-# 12. Avalanche System
+# 13. Avalanche System
 
 Large snow movements trigger avalanche bonuses.
 
@@ -244,7 +285,7 @@ Boy reaction animation
 
 ---
 
-# 13. Mission System
+# 14. Mission System
 
 Small optional objectives appear during gameplay.
 
@@ -262,7 +303,7 @@ Mission completion grants bonus money.
 
 ---
 
-# 14. Camera
+# 15. Camera
 
 Horizontal scrolling camera.
 
@@ -272,7 +313,7 @@ Camera moves left and right across houses.
 
 ---
 
-# 15. UI
+# 16. UI
 
 HUD Elements:
 
@@ -286,7 +327,7 @@ Reaction window (boy character).
 
 ---
 
-# 16. Development Priority
+# 17. Development Priority
 
 Development focus order:
 
@@ -305,7 +346,7 @@ Art, sound, and visual polish will be implemented later.
 
 ---
 
-# 17. Development Roadmap
+# 18. Development Roadmap
 
 Phase 1
 Snow physics prototype
@@ -333,7 +374,7 @@ Polish and balancing
 
 ---
 
-# 18. Current Status
+# 19. Current Status
 
 Core snow physics
 In progress
