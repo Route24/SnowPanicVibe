@@ -305,11 +305,44 @@ Mission completion grants bonus money.
 
 # 15. Camera
 
-Horizontal scrolling camera.
+## Camera Design (Observation Camera + Eaves Line Lock)
 
-Village houses arranged in a row.
+Snow Panic! uses an "observation camera" to support the intended tempo:
+Think → Strike → Watch → Avalanche.
 
-Camera moves left and right across houses.
+### Goals
+
+- Always show the full satisfying flow:
+  sliding on roof → falling at the eaves → landing near the eaves → ground pile → blink despawn
+- Avoid motion sickness and unnecessary camera complexity.
+- Support thoughtful gameplay rather than rapid tapping.
+
+### Core Rules
+
+1) Horizontal scrolling across the village (6 houses in a row).
+
+2) Vertical movement is minimized / mostly fixed.
+
+3) **Eaves Line Lock (Key Composition Rule):**
+   Keep the roof eaves line (roof edge) at a consistent screen height (recommended around 45–60% from the top).
+   This makes the falling moment and landing behavior easy to read and consistently satisfying.
+
+4) Do NOT track individual snow chunks with the camera (avoid "follow the snow").
+
+5) For big avalanche moments only:
+   - small camera shake
+   - optional tiny zoom-out (<= 5%) if needed
+
+### Controls (PC)
+
+- Scroll camera horizontally via screen edge or A/D keys (final mapping can be decided later).
+- Optional: number keys 1–6 to jump focus to a house (later).
+
+### Implementation Notes (developer reference)
+
+- Camera Y is determined by eavesY + offset and kept stable.
+- Camera X moves smoothly within limits.
+- If houses have different eaves height, update eavesY when switching house focus.
 
 ---
 
