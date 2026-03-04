@@ -6,7 +6,8 @@ public class ToolCooldownManager : MonoBehaviour
     public static ToolCooldownManager Instance { get; private set; }
 
     [Header("Cooldown")]
-    public float cooldownSec = 1.2f;
+    [Tooltip("Cannot spam; gives watch time for avalanche growth.")]
+    public float cooldownSec = 0.80f;
 
     float _cooldownEndTime;
     float _lastHitTime;

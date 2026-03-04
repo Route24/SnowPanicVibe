@@ -9,10 +9,14 @@ public class MvpSnowChunkMotion : MonoBehaviour
     public Vector3 velocity;
     public float lifeRemaining;
     public float gravity = 9.81f;
-    [Tooltip("Clamp speed while sliding on roof (slow tempo).")]
-    public float maxSpeedOnRoof = 0.6f;
+    [Tooltip("Clamp horizontal slide speed on roof (slow, readable).")]
+    public float maxSpeedOnRoof = 1.2f;
+    [Tooltip("Velocity damp while on roof (creeps, not rockets).")]
+    [Range(0f, 1f)] public float roofDrag = 0.6f;
     [Tooltip("Airborne gravity multiplier (higher = shorter arcs).")]
-    public float airborneGravityScale = 1.2f;
+    public float airborneGravityScale = 1.6f;
+    [Tooltip("Air drag when falling.")]
+    [Range(0f, 0.5f)] public float airborneDrag = 0.2f;
     public LayerMask groundMask = ~0;
     public float depositAmount = 0.02f;
     public GroundSnowSystem groundSnow;
@@ -21,7 +25,7 @@ public class MvpSnowChunkMotion : MonoBehaviour
     float _roofSlideRemaining;
     float _activatedAt;
     [Tooltip("Min seconds before ground hit is allowed (prevents immediate despawn from roof).")]
-    public float minLifetimeBeforeGroundCheck = 0.5f;
+    public float minLifetimeBeforeGroundCheck = 0.8f;
 
     public void Activate(Vector3 pos, Vector3 vel, float life, GroundSnowSystem ground, LayerMask mask, float deposit)
     {
@@ -57,11 +61,13 @@ public class MvpSnowChunkMotion : MonoBehaviour
             {
                 velocity = velocity.normalized * Mathf.Min(mag, maxSpeedOnRoof);
             }
+            velocity *= Mathf.Max(0.7f, 1f - roofDrag * dt * 8f);
             _roofSlideRemaining -= dt;
         }
         else
         {
             velocity += Vector3.down * (gravity * airborneGravityScale) * dt;
+            velocity *= Mathf.Max(0.97f, 1f - airborneDrag * dt * 4f);
         }
         Vector3 next = prev + velocity * dt;
         Vector3 dir = next - prev;

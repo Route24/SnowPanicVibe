@@ -24,6 +24,8 @@ public class RoofSnowSystem : MonoBehaviour
     public int burstChunkCount = 48;
     public float burstChunkLife = 1.8f;
     public float burstChunkSpeed = 2.2f;
+    [Tooltip("Hit radius for initial detach. Slightly larger = more pieces.")]
+    [Range(0.6f, 1.2f)] public float hitRadiusR = 0.80f;
     [Tooltip("Slower = think & watch tempo.")]
     public float localAvalancheSlideSpeed = 0.9f;
     public float burstSpread = 0.8f;
@@ -213,7 +215,7 @@ public class RoofSnowSystem : MonoBehaviour
         if (roofSlideCollider == null || snowPackSpawner == null) return;
         snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
         _nextAvalancheTime = Time.time + 0.3f;
-        snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, 0.6f, localAvalancheSlideSpeed);
+        snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
         int removed = SnowPackSpawner.LastRemovedCount;
         if (removed > 0)
         {
@@ -224,6 +226,7 @@ public class RoofSnowSystem : MonoBehaviour
         }
         int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
         Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} (depth synced from packed in Update)");
+        if (removed >= 60) AvalancheFeedback.TriggerSmallShakeIfLarge(removed);
 
         string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
         int burstCount = removed > 0 ? Mathf.Min(removed, burstChunkCount) : 0;
@@ -261,7 +264,7 @@ public class RoofSnowSystem : MonoBehaviour
                 Vector3 vel = (slopeDir + jitter * 0.3f).normalized * burstChunkSpeed + roofN * smallLift;
                 float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
                 SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
-                chunk.Activate(p, vel, Mathf.Max(burstChunkLife * 0.8f, 1.5f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
+                chunk.Activate(p, vel, Mathf.Max(burstChunkLife * 0.8f, 0.8f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
                 float s = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
                 chunk.transform.localScale = Vector3.one * s * 0.8f;
                 spawnedOk++;
@@ -277,7 +280,8 @@ public class RoofSnowSystem : MonoBehaviour
                 }
             }
         }
-        Debug.Log($"[Hit] removedCount={removedCount} spawnedChunks={count} spawnedOk={spawnedOk} spawnFailed={spawnFailed}");
+        int pooledNow = _chunkPool != null ? _chunkPool.Count : 0;
+        Debug.Log($"[HitAudit] removedCount={removedCount} spawnedChunks={count} spawnedOk={spawnedOk} spawnFailed={spawnFailed} pooledNow={pooledNow}");
     }
 
     void TriggerAvalanche()

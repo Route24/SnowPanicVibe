@@ -88,15 +88,21 @@ public class SnowPackSpawner : MonoBehaviour
     [Tooltip("false=SnowPackStateIndicator(透明パネル点滅)を表示しない")]
     public bool enableStateIndicator = false;
 
-    [Header("Chain reaction")]
-    [Tooltip("Min delay before unstable cell may secondary detach.")]
-    public float chainUnstableMinDelay = 0.3f;
-    [Tooltip("Chain reaction: max delay before secondary detach.")]
+    [Header("Chain reaction (feel-good avalanche growth)")]
+    [Tooltip("After hit, first secondary detach happens after this delay.")]
+    public float chainUnstableMinDelay = 0.35f;
+    [Tooltip("Unstable duration - cells may detach up to this long after hit.")]
     public float chainUnstableMaxDelay = 1.2f;
-    [Range(0f, 1f), Tooltip("Chain reaction: chance to detach when unstable cell expires.")]
-    public float chainDetachChance = 0.6f;
+    [Tooltip("Unstable radius = this * hitRadius.")]
+    public float unstableRadiusScale = 1.2f;
+    [Range(0f, 1f), Tooltip("Chance unstable cells detach when neighbors pass.")]
+    public float chainDetachChance = 0.45f;
+    [Tooltip("Min secondary detachments per hit.")]
+    public int secondaryDetachMin = 8;
     [Tooltip("Max secondary detachments per hit (avalanche growth cap).")]
-    public int maxSecondaryDetachPerHit = 12;
+    public int maxSecondaryDetachPerHit = 40;
+    [Tooltip("Max chain waves per hit.")]
+    public int maxChainWavesPerHit = 2;
 
     Transform _visualRoot;
     Transform _piecesRoot;
@@ -187,6 +193,7 @@ public class SnowPackSpawner : MonoBehaviour
         if (Application.isPlaying)
         {
             _exceptionCount = 0;
+            _exceptionSuppressedLoggedOnce = false;
             _assiBootLoggedStatic = false;
         }
         if (!Application.isPlaying || _generatedThisPlay) return;
@@ -744,7 +751,10 @@ public class SnowPackSpawner : MonoBehaviour
         UnityEngine.Debug.Log($"[LocalAvalanche] R={r:F2} u={u:F3} v={v:F3} cx={cx} cz={cz} removedCount={removedCount} packedInRadiusBefore={packedInRadiusBefore} packedTotalBefore={packedBefore} packedTotalAfter={packedAfter}");
         UnityEngine.Debug.Log($"[AvalancheBeforeAfter] beforeDepth={packDepthMeters + removedCount * _cachedLayerStep * 0.01f:F3} afterDepth={packDepthMeters:F3} packedCubeCountBefore={packedBefore} packedCubeCountAfter={packedAfter} burstAmount={removedCount * _cachedLayerStep * 0.01f:F3}");
         if (removedCount > 0)
-            MarkNeighborsUnstable(cx, cz, radXFinal, radXFinal + 2);
+        {
+            int outerRad = Mathf.Max(radXFinal + 2, Mathf.CeilToInt(radXFinal * unstableRadiusScale));
+            MarkNeighborsUnstable(cx, cz, radXFinal, outerRad);
+        }
         _inAvalancheSlide = true;
         StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, slideSpeed));
     }
@@ -993,6 +1003,7 @@ public class SnowPackSpawner : MonoBehaviour
             int idx = _piecePool.Count - 1;
             t = _piecePool[idx];
             _piecePool.RemoveAt(idx);
+            _returnedToPoolIds.Remove(t != null ? t.GetInstanceID() : 0);
             _poolReused++;
         }
         if (t == null)
@@ -1028,6 +1039,7 @@ public class SnowPackSpawner : MonoBehaviour
             int idx = _piecePool.Count - 1;
             t = _piecePool[idx];
             _piecePool.RemoveAt(idx);
+            _returnedToPoolIds.Remove(t != null ? t.GetInstanceID() : 0);
             _poolReused++;
         }
         if (t == null)
@@ -1584,6 +1596,7 @@ public class SnowPackSpawner : MonoBehaviour
     public void ClearSnowPack(string reason)
     {
         PushLastEvent("Clear", reason);
+        _returnedToPoolIds.Clear();
         EnsureRoot();
         _poolReturnQueue.Clear();
         if (_pendingSlideRootToDestroy != null)
@@ -1783,13 +1796,17 @@ public class SnowPackSpawner : MonoBehaviour
         UnityEngine.Debug.Log(sb.ToString());
     }
 
-    /// <summary>activePieces を減らす処理の唯一の入口。Pool返却・Destroy いずれもここを通す。</summary>
+    static readonly HashSet<int> _returnedToPoolIds = new HashSet<int>();
+
+    /// <summary>activePieces を減らす処理の唯一の入口。Pool返却・Destroy いずれもここを通す。Idempotent.</summary>
     void OnPieceDeactivated(Transform t, string reason, string source, bool toPool, bool allowDuringSlide = false)
     {
-        if (t == null) return;
+        if (t == null || t.gameObject == null) return;
+        int pieceId = t.GetInstanceID();
+        if (toPool && _returnedToPoolIds.Contains(pieceId)) return;
+        if (toPool && _poolRoot != null && t.parent == _poolRoot && _piecePool != null && _piecePool.Contains(t)) return;
         if (_inAvalancheSlide && toPool && !allowDuringSlide) return;
 
-        int pieceId = t.GetInstanceID();
         int frame = Time.frameCount;
         float timeVal = Time.time;
 
@@ -1822,6 +1839,7 @@ public class SnowPackSpawner : MonoBehaviour
             t.gameObject.SetActive(false);
             t.SetParent(_poolRoot, false);
             _piecePool.Add(t);
+            _returnedToPoolIds.Add(pieceId);
         }
         else
         {
@@ -1947,9 +1965,19 @@ public class SnowPackSpawner : MonoBehaviour
         else UnityEngine.Debug.Log($"[SnowPackRootMutation] before={before} after={after} reason={reason} frame={frame} t={Time.time:F2}");
     }
 
+    static bool _exceptionSuppressedLoggedOnce;
+
     static bool TryLogException(string msg)
     {
-        if (_exceptionCount >= MaxExceptionCount) { UnityEngine.Debug.LogWarning($"[SnowPack] Exception suppressed (max {MaxExceptionCount}): {msg}"); return false; }
+        if (_exceptionCount >= MaxExceptionCount)
+        {
+            if (!_exceptionSuppressedLoggedOnce)
+            {
+                _exceptionSuppressedLoggedOnce = true;
+                UnityEngine.Debug.LogWarning($"[SnowPack] Exception logging paused (max {MaxExceptionCount} reached). Root cause should be fixed.");
+            }
+            return false;
+        }
         _exceptionCount++;
         UnityEngine.Debug.LogException(new System.Exception(msg));
         return true;

@@ -5,7 +5,8 @@ public class SnowPackFallingPiece : MonoBehaviour
 {
     public SnowPackSpawner spawner;
     public LayerMask groundMask = ~0;
-    public float fallTimeoutSeconds = 2f;
+    [Tooltip("Min visible lifetime before timeout despawn (do not pool too quickly).")]
+    public float fallTimeoutSeconds = 2.5f;
 
     Rigidbody _rb;
     float _startTime;

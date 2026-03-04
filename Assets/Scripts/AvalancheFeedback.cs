@@ -30,6 +30,30 @@ public class AvalancheFeedback : MonoBehaviour
         Trigger();
     }
 
+    public static void TriggerSmallShakeIfLarge(int totalDetachedThisHit)
+    {
+        if (totalDetachedThisHit < 60) return;
+        if (_instance == null) EnsureInstance();
+        if (_instance == null) return;
+        _instance.StartCoroutine(_instance.SmallShakeRoutine(0.15f, 0.04f));
+    }
+
+    IEnumerator SmallShakeRoutine(float duration, float intensity)
+    {
+        var cam = Camera.main;
+        if (cam == null) yield break;
+        Vector3 basePos = cam.transform.position;
+        float t = 0f;
+        while (t < duration)
+        {
+            t += Time.deltaTime;
+            float k = 1f - Mathf.Clamp01(t / duration);
+            cam.transform.position = basePos + Random.insideUnitSphere * intensity * k;
+            yield return null;
+        }
+        if (cam != null) cam.transform.position = basePos;
+    }
+
     void StartTwoHitShake()
     {
         if (_shakeCoroutine != null) StopCoroutine(_shakeCoroutine);
