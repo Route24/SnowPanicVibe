@@ -3,9 +3,9 @@ using UnityEngine;
 
 /// <summary>
 /// Source-of-truth roof accumulation + auto avalanche trigger.
-/// RoofSnowVisualSync: ONLY this class updates RoofSnowLayer.localScale (single authority).
+/// Roof snow uses LOCAL cleared patches (mask) - no global thickness pulsing.
 /// </summary>
-[DefaultExecutionOrder(100)] // Run late so no other script overwrites RoofSnowLayer scale after us
+[DefaultExecutionOrder(100)]
 public class RoofSnowSystem : MonoBehaviour
 {
     [Header("Source of truth")]
@@ -19,8 +19,8 @@ public class RoofSnowSystem : MonoBehaviour
     [Header("Visual")]
     public Collider roofSlideCollider;
     public Color roofSnowColor = new Color(0.92f, 0.95f, 1f, 1f);
-    [Tooltip("RoofSnowLayer描画厚みスケール。1.0=full depth (visibly shrinks with packed). Legacy 0.5 made it too subtle.")]
-    [Range(0.3f, 1f)] public float roofSnowVisualThicknessScale = 1f;
+    [Tooltip("Constant snow surface thickness (no global pulsing).")]
+    public float roofSnowConstantThickness = 0.08f;
 
     [Header("Burst visual")]
     public int burstChunkCount = 48;
@@ -45,16 +45,8 @@ public class RoofSnowSystem : MonoBehaviour
 
     Transform _roofLayer;
     float _startTime;
-    bool _snowRenderThicknessLogOnce;
-    float _lastAppliedScaleY = -1f;
-    static bool _scaleOverrideGuardLogged;
     float _lastSuppressedLogTime;
-    float _visualDepthRoof;
-    bool _visualDepthRoofInitialized;
-    int _packedCountAtFull = -1;
-    float _baseDepthAtFull = 0.5f;
-    [Tooltip("Smoothing: no sudden thickness pop. Higher = faster response.")]
-    public float roofVisualSmoothSpeed = 10f;
+    RoofSnowMaskController _maskController;
     Material _roofLayerMat;
     float _nextRoofLogTime;
     float _nextAvalancheTime;
@@ -106,42 +98,8 @@ public class RoofSnowSystem : MonoBehaviour
     {
         if (roofSlideCollider == null) return;
 
-        if (snowPackSpawner != null)
-        {
-            int packed = snowPackSpawner.GetPackedCubeCountRealtime();
-            if (_packedCountAtFull < 0 && packed > 50)
-            {
-                _packedCountAtFull = packed;
-                _baseDepthAtFull = roofSnowDepthMeters;
-            }
-            // Only update baseline when snow is ADDED (never on removal - that would shrink baseline incorrectly)
-            if (packed > _packedCountAtFull && _packedCountAtFull > 0)
-            {
-                _packedCountAtFull = packed;
-                _baseDepthAtFull = roofSnowDepthMeters;
-            }
-            float depthMax = _baseDepthAtFull;
-            float depthMin = Mathf.Max(0.02f, 0.05f * depthMax); // 5% min: almost flat when cleared, roof visible
-            float packedRatio = _packedCountAtFull > 0 ? (float)packed / _packedCountAtFull : 1f;
-            float targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(packedRatio);
-            roofSnowDepthMeters = targetDepth;
-            if (!_visualDepthRoofInitialized) { _visualDepthRoof = targetDepth; _visualDepthRoofInitialized = true; }
-            _visualDepthRoof = Mathf.Lerp(_visualDepthRoof, targetDepth, roofVisualSmoothSpeed * Time.deltaTime);
-            if (Time.frameCount % 60 == 0)
-                Debug.Log($"[RoofDepthSync] packed={packed} packedAtFull={_packedCountAtFull} targetDepth={targetDepth:F3} visualDepth={_visualDepthRoof:F3}");
-        }
-        else if (!_visualDepthRoofInitialized)
-        {
-            _visualDepthRoof = roofSnowDepthMeters;
-            _visualDepthRoofInitialized = true;
-        }
-        else
-        {
-            _visualDepthRoof = Mathf.Lerp(_visualDepthRoof, roofSnowDepthMeters, roofVisualSmoothSpeed * Time.deltaTime);
-        }
-
         UpdateRoofVisual();
-        GuardRoofLayerScaleAuthority();
+        UpdateMaskShaderParams();
 
         Vector3 roofUp = roofSlideCollider.transform.up.normalized;
         AngleDeg = Vector3.Angle(roofUp, Vector3.up);
@@ -194,11 +152,11 @@ public class RoofSnowSystem : MonoBehaviour
         }
     }
 
-    /// <summary>RoofSnowVisualSync: Run last so no other script overwrites RoofSnowLayer scale.</summary>
-    void LateUpdate()
+    /// <summary>Paint a cleared patch at hit location. Call from LocalAvalanche (main hit) and chain waves.</summary>
+    public void PaintClearedPatchAt(Vector3 worldPoint, float radiusMeters = -1f)
     {
-        if (roofSlideCollider != null && _roofLayer != null)
-            UpdateRoofVisual();
+        if (_maskController != null)
+            _maskController.PaintEraseAt(worldPoint, radiusMeters);
     }
 
     public void AddRoofSnow(float amount)
@@ -233,8 +191,8 @@ public class RoofSnowSystem : MonoBehaviour
             SpawnLocalBurstAt(tapWorldPoint, removed, slopeDir);
         }
         int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
-        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} (depth synced from packed in Update)");
-        LogRoofVisualAfterHit(packedAfter);
+        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter}");
+        PaintClearedPatchAt(tapWorldPoint, hitRadiusR);
         if (removed >= 60) AvalancheFeedback.TriggerSmallShakeIfLarge(removed);
 
         string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
@@ -253,6 +211,8 @@ public class RoofSnowSystem : MonoBehaviour
     public void SpawnLocalBurstAt(Vector3 origin, int removedCount, Vector3 slopeDir)
     {
         if (roofSlideCollider == null) return;
+        if (removedCount == 1)
+            PaintClearedPatchAt(origin, 0.2f);
         int count = Mathf.Clamp(removedCount, 1, burstChunkCount);
         Vector3 roofN = roofSlideCollider.transform.up.normalized;
         float smallLift = 0.2f;
@@ -347,23 +307,38 @@ public class RoofSnowSystem : MonoBehaviour
         if (child != null)
         {
             _roofLayer = child;
+            var rend = child.GetComponent<Renderer>();
+            _roofLayerMat = rend != null ? rend.sharedMaterial : null;
+            _maskController = roofSlideCollider.GetComponentInChildren<RoofSnowMaskController>();
+            if (_maskController != null && _roofLayerMat != null && _roofLayerMat.HasProperty("_SnowMask") && snowPackSpawner != null)
+                _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
             return;
         }
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
         go.name = "RoofSnowLayer";
         go.transform.SetParent(roofSlideCollider.transform, false);
-        var c = go.GetComponent<Collider>();
-        if (c != null) c.enabled = false;
-        var r = go.GetComponent<Renderer>();
-        if (r != null)
+        var col = go.GetComponent<Collider>();
+        if (col != null) col.enabled = false;
+        var rend = go.GetComponent<Renderer>();
+        Shader maskSh = Shader.Find("SnowPanic/RoofSnowMask");
+        if (maskSh != null)
+        {
+            _roofLayerMat = new Material(maskSh);
+            _roofLayerMat.SetColor("_BaseColor", roofSnowColor);
+            if (rend != null) rend.sharedMaterial = _roofLayerMat;
+            _maskController = roofSlideCollider.GetComponent<RoofSnowMaskController>();
+            if (_maskController == null) _maskController = roofSlideCollider.gameObject.AddComponent<RoofSnowMaskController>();
+            _maskController.Init(_roofLayerMat, snowPackSpawner, roofSlideCollider);
+        }
+        else
         {
             Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             _roofLayerMat = sh != null ? new Material(sh) : null;
             if (_roofLayerMat != null)
             {
                 _roofLayerMat.color = roofSnowColor;
-                r.sharedMaterial = _roofLayerMat;
+                if (rend != null) rend.sharedMaterial = _roofLayerMat;
             }
         }
         _roofLayer = go.transform;
@@ -375,66 +350,34 @@ public class RoofSnowSystem : MonoBehaviour
         if (_roofLayer == null) EnsureRoofVisual();
         if (_roofLayer == null) return;
 
+        float h = Mathf.Max(0.02f, roofSnowConstantThickness);
         if (roofSlideCollider is BoxCollider box)
         {
-            float hRaw = Mathf.Max(0.02f, _visualDepthRoof);
-            float h = hRaw * roofSnowVisualThicknessScale;
             Vector3 size = new Vector3(Mathf.Max(0.1f, box.size.x), h, Mathf.Max(0.1f, box.size.z));
             Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + h * 0.5f);
             _roofLayer.localPosition = center;
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = size;
-            _lastAppliedScaleY = h;
-            if (!_snowRenderThicknessLogOnce)
-            {
-                _snowRenderThicknessLogOnce = true;
-                string path = roofSlideCollider != null ? GetTransformPath(roofSlideCollider.transform) + "/RoofSnowLayer" : "RoofSnowLayer";
-                SnowLoopLogCapture.AppendToAssiReport("=== SNOW_RENDER_THICKNESS_HALF (RoofSnowLayer) ===");
-                SnowLoopLogCapture.AppendToAssiReport($"targetPath={path}");
-                SnowLoopLogCapture.AppendToAssiReport($"beforeScale=(...,{hRaw:F3},...) afterScale=(...,{h:F3},...)");
-            }
         }
         else
         {
             Bounds b = roofSlideCollider.bounds;
-            float hRaw = Mathf.Max(0.02f, _visualDepthRoof);
-            float h = hRaw * roofSnowVisualThicknessScale;
             _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f);
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = new Vector3(Mathf.Max(0.1f, b.size.x), h, Mathf.Max(0.1f, b.size.z));
-            _lastAppliedScaleY = h;
-            if (!_snowRenderThicknessLogOnce)
-            {
-                _snowRenderThicknessLogOnce = true;
-                string path = roofSlideCollider != null ? GetTransformPath(roofSlideCollider.transform) + "/RoofSnowLayer" : "RoofSnowLayer";
-                SnowLoopLogCapture.AppendToAssiReport("=== SNOW_RENDER_THICKNESS_HALF (RoofSnowLayer) ===");
-                SnowLoopLogCapture.AppendToAssiReport($"targetPath={path}");
-                SnowLoopLogCapture.AppendToAssiReport($"beforeScale=(...,{hRaw:F3},...) afterScale=(...,{h:F3},...)");
-            }
         }
     }
 
-    void GuardRoofLayerScaleAuthority()
+    void UpdateMaskShaderParams()
     {
-        if (_roofLayer == null || _scaleOverrideGuardLogged) return;
-        float actualY = _roofLayer.localScale.y;
-        if (_lastAppliedScaleY >= 0f && Mathf.Abs(actualY - _lastAppliedScaleY) > 0.001f)
-        {
-            _scaleOverrideGuardLogged = true;
-            Debug.LogError($"[RoofSnowVisualGuard] RoofSnowLayer scale was overwritten! expectedY={_lastAppliedScaleY:F4} actualY={actualY:F4}\n{System.Environment.StackTrace}");
-            UpdateRoofVisual(); // Re-apply our authority
-        }
-    }
-
-    void LogRoofVisualAfterHit(int packedCurrent)
-    {
-        int full = _packedCountAtFull > 0 ? _packedCountAtFull : 1;
-        float ratio = (float)packedCurrent / full;
-        float depthMax = _baseDepthAtFull;
-        float depthMin = Mathf.Max(0.02f, 0.05f * depthMax);
-        float targetDepth = depthMin + (depthMax - depthMin) * Mathf.Clamp01(ratio);
-        float scaleY = _roofLayer != null ? _roofLayer.localScale.y : -1f;
-        Debug.Log($"[RoofVisual] packed={packedCurrent}/{full} ratio={ratio:F3} depth={_visualDepthRoof:F3} target={targetDepth:F3} scaleY={scaleY:F3}");
+        if (_roofLayerMat == null || snowPackSpawner == null || !_roofLayerMat.HasProperty("_RoofCenter")) return;
+        var s = snowPackSpawner;
+        if (s.RoofWidth <= 0f || s.RoofLength <= 0f) return;
+        _roofLayerMat.SetVector("_RoofCenter", s.RoofCenter);
+        _roofLayerMat.SetVector("_RoofR", s.RoofR);
+        _roofLayerMat.SetVector("_RoofF", s.RoofF);
+        _roofLayerMat.SetFloat("_RoofWidth", s.RoofWidth);
+        _roofLayerMat.SetFloat("_RoofLength", s.RoofLength);
     }
 
     static string GetTransformPath(Transform t)

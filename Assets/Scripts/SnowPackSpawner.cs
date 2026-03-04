@@ -606,6 +606,12 @@ public class SnowPackSpawner : MonoBehaviour
     [Tooltip("Maximum pieces to detach per hit (chain reaction for rest).")]
     public int localAvalancheMaxDetach = 80;
 
+    public float RoofWidth => _roofWidth;
+    public float RoofLength => _roofLength;
+    public Vector3 RoofR => _roofR;
+    public Vector3 RoofF => _roofF;
+    public Vector3 RoofCenter => _roofCenter;
+
     /// <summary>Convert world point to roof (u,v) in basis. Used for tap debug log. CacheGridParams must have been called.</summary>
     public void ComputeTapUV(Vector3 worldPoint, out float u, out float v)
     {
