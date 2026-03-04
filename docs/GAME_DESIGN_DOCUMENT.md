@@ -1,304 +1,354 @@
-# Snow Panic! - Game Design Document
+# Snow Panic! – Game Design Document
 
-Version: 1.0  
-Date: 2026-03-05  
-Author: Ken & Noah
+Version: 1.2  
+Author: Ken & Noah  
+Date: 2026-03
 
 ---
 
 # 1. Game Overview
 
-Snow Panic! is a physics-based snow removal game.
+Snow Panic! is a physics-based snow-clearing game.
 
-The player removes snow from rooftops to prevent houses from collapsing under the weight.
+The player must prevent village houses from collapsing under heavy snow.
 
-The core appeal of the game is **the satisfying physics of snow sliding and falling**.
+Snow accumulates on rooftops, and the player clears it using various tools.
 
----
+The core gameplay focuses on satisfying snow physics and avalanche mechanics.
 
-# 2. Platform
-
-Primary platform:
-
+Primary Platform:
 Steam (PC)
 
-Possible future ports:
+Future Platform:
+Mobile (tap / flick controls)
 
-- iOS
-- Android
-
----
-
-# 3. Game Field
-
-Village with **6 houses**
-
-Layout:
-
-Horizontal row of houses.
-
-Camera:
-
-Side scrolling camera (final implementation TBD)
+Development Priority:
+Playable gameplay first.
+Visual polish, sound, and effects will be implemented later.
 
 ---
 
-# 4. Initial Game State
+# 2. Core Gameplay Loop
 
-When the game starts:
+1. Snow accumulates on roofs
+2. Player clears snow
+3. Snow falls off roofs
+4. Player earns money
+5. Player buys tools
+6. Snowstorms increase difficulty
+7. Player prevents houses from collapsing
 
-- Snow is NOT falling
-- Snow is already accumulated on rooftops
-
-The player begins immediately clearing snow.
-
----
-
-# 5. Snow Physics
-
-When the player clicks snow:
-
-1. The snow is hit with a tool
-2. It becomes a small snow chunk
-3. It slides along the roof angle
-4. It falls off the roof
-5. It lands on the ground
-6. It disappears after a short time
+Game continues until a house collapses.
 
 ---
 
-# 6. Ground Snow
+# 3. Player Interaction
 
-Snow that falls from rooftops:
+Mouse click:
 
-- temporarily accumulates on the ground
-- disappears after a short time
+Click snow to strike it with the equipped tool.
 
----
+The tool animation appears where the player clicks.
 
-# 7. Player Controls
+Snow detaches and slides down the roof.
 
-Input:
+Mobile version:
 
-Mouse click.
-
-When snow is clicked:
-
-A tool animation appears (e.g., shovel).
-
-The tool **hits the snow and knocks it loose.**
+Tap or flick.
 
 ---
 
-# 8. Player Character Representation
+# 4. Player Character
 
-The protagonist:
+The player character is a boy around 10 years old.
 
-A boy around **10 years old**.
+The boy does not appear inside the gameplay world.
 
-He does NOT appear as a controllable character.
+Instead he appears in a UI reaction window (wipe).
 
-Instead:
+The boy reacts emotionally to gameplay events.
 
-He appears in a **reaction window (wipe)** in the top corner of the screen.
+Examples:
 
-Possible reactions:
-
-- surprised
-- happy
-- worried
-- excited
-
-These reactions respond to gameplay events.
+- Surprise
+- Happiness
+- Panic
+- Excitement
 
 ---
 
-# 9. Snowfall System
-
-At the start of the game:
-
-No snowfall.
-
-Snowfall occurs as events during gameplay.
-
-Levels:
-
-- light snow
-- heavy snowstorm
-
----
-
-# 10. Scoring System
-
-Removing snow generates **pocket money**.
-
-Example:
-
-Normal snow removal  
-+10 money
-
-Large snow drop (avalanche)  
-+combo bonus
-
----
-
-# 11. Upgrade System
-
-The player can spend money to upgrade snow removal tools.
-
-Tool progression:
-
-1. Bare hands
-2. Stick
-3. Shovel
-4. Large shovel
-5. Bomb (blasts large snow areas)
-
-Upgrades increase:
-
-- snow removal power
-- efficiency
-
----
-
-# 12. Failure Condition
-
-If **even one house collapses** due to snow weight:
-
-Game Over.
-
----
-
-# 13. Game Modes
-
-## Time Attack Mode
-
-Duration:
-
-90 seconds (temporary value)
-
-Goal:
-
-Earn the highest score within the time limit.
-
----
-
-## Endless Mode
-
-Inspired by Tetris style survival gameplay.
-
-- snow falls continuously
-- difficulty increases over time
-- houses collapse if not maintained
-
----
-
-# 14. Title Screen
-
-Visual:
+# 5. Village Setting
 
 A peaceful snowy village.
 
-Village life scenes:
+Houses are arranged in a horizontal row.
 
-- children playing
-- villagers chatting outside houses
-- the protagonist's dog running around
+Initial prototype:
+Single house.
 
-However:
+Final structure:
+6 houses in a horizontal layout.
 
-Dark snow clouds gather in the distant sky.
+Background elements:
 
-A major snowstorm is coming.
-
----
-
-# 15. Story
-
-The village is peaceful.
-
-The protagonist is a **10-year-old boy**.
-
-His father goes to town to buy supplies.
-
-The boy is left home alone.
-
-Then a massive snowstorm approaches.
-
-Snow begins to pile up on rooftops.
-
-If the snow gets too heavy, houses will collapse.
-
-The boy must protect the village by clearing snow.
+- Dog running around
+- Villagers talking
+- Children playing
 
 ---
 
-# 16. Opening Sequence (10 seconds)
+# 6. Failure Condition
 
-0:00  
-Peaceful snowy village
+If the snow weight on any roof exceeds the threshold:
 
-children playing  
-villagers chatting  
-dog running
-
-0:04  
-camera pans to sky
-
-dark snow clouds
-
-0:07  
-snow already piled on rooftops
-
-0:09  
-boy looks up at the sky
-
-0:10  
-
-Snow Panic!
+House collapses → Game Over.
 
 ---
 
-# 17. Development Priority
+# 7. Game Modes
 
-1. Snow physics feel
-2. Sound effects
-3. Visual effects
-4. Graphics
+Time Attack
 
----
+Duration:
+90 seconds
 
-# 18. Development Phases
-
-Phase 1  
-Core physics
-
-Phase 2  
-Game loop
-
-Phase 3  
-6 house system
-
-Phase 4  
-Camera / scrolling
-
-Phase 5  
-Art pass
-
-Phase 6  
-Sound implementation
-
-Phase 7  
-Visual effects
-
-Phase 8  
-Polish
+Goal:
+Earn as much money as possible.
 
 ---
 
-# 19. Pending Decisions
+Endless Mode
 
-- final scrolling implementation
-- UI layout
-- difficulty curve
-- tool upgrade balancing
+Snowfall gradually increases.
+
+Difficulty escalates over time.
+
+Game continues until a house collapses.
+
+---
+
+# 8. Economy
+
+Removing snow earns money.
+
+Large avalanches give bonus rewards.
+
+Example:
+
+Avalanche Combo Bonus.
+
+Money is used to purchase tools.
+
+---
+
+# 9. Tool System
+
+Tools are divided into two categories.
+
+Permanent Tools
+Consumable Tools
+
+---
+
+Permanent Tools
+
+Unlocked permanently after purchase.
+
+Can be switched during gameplay.
+
+Tools:
+
+Hands
+Stick
+Shovel
+Big Shovel
+Blower
+
+---
+
+Blower
+
+Blows snow using wind.
+
+Instead of removing snow, it pushes snow across the roof.
+
+Best used to trigger avalanches.
+
+---
+
+Consumable Tools
+
+Single-use tools.
+
+Must be repurchased after use.
+
+Example:
+
+Bomb
+
+Bombs remove large amounts of snow instantly.
+
+---
+
+# 10. Snow Types
+
+Different snow types affect gameplay.
+
+Powder Snow
+Light and easy to move.
+Best tool: Blower.
+
+Wet Snow
+Heavy and sticky.
+Best tool: Shovel.
+
+Packed Snow
+Hard compressed snow.
+Best tool: Big Shovel.
+
+Ice Snow
+Rare large chunks.
+May cause large avalanches.
+
+---
+
+# 11. Weather Events
+
+Weather changes during gameplay.
+
+Examples:
+
+Light Snowfall
+Heavy Snowfall
+Blizzard
+Clear Weather
+
+Weather affects snow accumulation speed.
+
+---
+
+# 12. Avalanche System
+
+Large snow movements trigger avalanche bonuses.
+
+Conditions:
+
+Large number of snow pieces falling simultaneously.
+
+Effects:
+
+Camera shake
+Snow particle burst
+Score multiplier
+Boy reaction animation
+
+---
+
+# 13. Mission System
+
+Small optional objectives appear during gameplay.
+
+Examples:
+
+Protect three houses.
+
+Trigger a large avalanche.
+
+Remove 500 units of snow.
+
+Use blower to move snow.
+
+Mission completion grants bonus money.
+
+---
+
+# 14. Camera
+
+Horizontal scrolling camera.
+
+Village houses arranged in a row.
+
+Camera moves left and right across houses.
+
+---
+
+# 15. UI
+
+HUD Elements:
+
+Money counter
+Timer
+Tool selection
+Combo indicator
+Mission display
+
+Reaction window (boy character).
+
+---
+
+# 16. Development Priority
+
+Development focus order:
+
+1 Core snow physics
+2 Snow removal gameplay
+3 House collapse system
+4 Economy
+5 Tools
+6 Village layout
+7 Camera
+8 UI
+9 Missions
+10 Weather events
+
+Art, sound, and visual polish will be implemented later.
+
+---
+
+# 17. Development Roadmap
+
+Phase 1
+Snow physics prototype
+
+Phase 2
+Core gameplay loop
+
+Phase 3
+Village layout
+
+Phase 4
+Camera
+
+Phase 5
+Tools
+
+Phase 6
+Missions
+
+Phase 7
+Weather system
+
+Phase 8
+Polish and balancing
+
+---
+
+# 18. Current Status
+
+Core snow physics
+In progress
+
+Gameplay loop
+Not started
+
+Village layout
+Not started
+
+Tools
+Not started
+
+Weather system
+Not started
+
+UI
+Not started
