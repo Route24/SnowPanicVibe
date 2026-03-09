@@ -598,9 +598,16 @@ public class SnowPackSpawner : MonoBehaviour
             projectedW = Mathf.Max(0.5f, maxR - minR);
             projectedL = Mathf.Max(0.5f, maxF - minF);
         }
-        _roofWidth = projectedW;
-        _roofLength = projectedL;
+        _roofWidth = projectedW * SnowCoverScaleMultiplierX;
+        _roofLength = projectedL * SnowCoverScaleMultiplierZ;
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
+
+        float roofW = projectedW, roofL = projectedL;
+        float tol = 0.05f;
+        bool matches = (Mathf.Abs(roofW - _roofWidth) <= tol && Mathf.Abs(roofL - _roofLength) <= tol) || (Mathf.Abs(roofW - _roofLength) <= tol && Mathf.Abs(roofL - _roofWidth) <= tol);
+        float marginX = 0.5f * (roofW - _roofWidth);
+        float marginZ = 0.5f * (roofL - _roofLength);
+        UnityEngine.Debug.Log($"[SNOW_COVER] roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2}) current_snow_scale_multiplier_x={SnowCoverScaleMultiplierX:F2} current_snow_scale_multiplier_z={SnowCoverScaleMultiplierZ:F2} margin_x={marginX:F3} margin_z={marginZ:F3} snow_cover_matches_roof={matches.ToString().ToLower()}");
 
         float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
@@ -731,6 +738,10 @@ public class SnowPackSpawner : MonoBehaviour
     public static bool ForceDownhillTowardCamera;
     /// <summary>OneHouse時: 積雪範囲を屋根全面に一致。inset=0, ClosestPoint閾値緩和。</summary>
     public static bool UseFullRoofCoverage;
+    /// <summary>積雪範囲の倍率(X=横幅)。1.0=屋根投影値そのまま。</summary>
+    public static float SnowCoverScaleMultiplierX = 1.2f;
+    /// <summary>積雪範囲の倍率(Z=縦幅/奥行き)。Z方向だけ調整用。</summary>
+    public static float SnowCoverScaleMultiplierZ = 1.35f;
 
     /// <summary>Editor専用。ExitingPlayMode時にtrueにして、activePieces=0 FAILを抑止。</summary>
 #if UNITY_EDITOR
