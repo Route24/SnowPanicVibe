@@ -270,20 +270,34 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         Vector2 roofSurfaceSize = Vector2.zero;
         Vector2 snowCoverSize = Vector2.zero;
         bool snowCoverMatches = false;
-        if (spawner != null)
-        {
-            roofSurfaceSize = new Vector2(spawner.RoofWidth, spawner.RoofLength);
-            snowCoverSize = roofSurfaceSize;
-            snowCoverMatches = true;
-        }
+        string activeRoofTarget = "none";
+        string roofShape = "mono_slope";
+        string roofSlopeDir = "front";
+
         if (roofColLog != null)
         {
-            var b = roofColLog.bounds;
-            float rw = Mathf.Max(b.size.x, b.size.z);
-            float rl = Mathf.Min(b.size.x, b.size.z);
-            if (spawner != null && Mathf.Abs(b.size.x - spawner.RoofWidth) < 0.5f) { rw = b.size.x; rl = b.size.z; }
-            roofSurfaceSize = new Vector2(rw, rl);
+            activeRoofTarget = roofColLog.name;
+            if (roofColLog is BoxCollider box)
+            {
+                roofSurfaceSize = new Vector2(Mathf.Max(0.1f, box.size.x), Mathf.Max(0.1f, box.size.z));
+            }
+            else
+            {
+                var b = roofColLog.bounds;
+                roofSurfaceSize = new Vector2(Mathf.Max(0.1f, b.size.x), Mathf.Max(0.1f, b.size.z));
+            }
         }
+        if (spawner != null)
+        {
+            snowCoverSize = new Vector2(spawner.RoofWidth, spawner.RoofLength);
+            float tol = 0.08f;
+            bool matchDirect = Mathf.Abs(roofSurfaceSize.x - snowCoverSize.x) <= tol && Mathf.Abs(roofSurfaceSize.y - snowCoverSize.y) <= tol;
+            bool matchSwap = Mathf.Abs(roofSurfaceSize.x - snowCoverSize.y) <= tol && Mathf.Abs(roofSurfaceSize.y - snowCoverSize.x) <= tol;
+            snowCoverMatches = matchDirect || matchSwap;
+        }
+        Vector3 downhill = spawner != null ? spawner.RoofDownhill : Vector3.zero;
+        roofSlopeDir = GetFallDirectionLabel(downhill, cam != null ? cam.transform.forward : Vector3.forward);
+
         var groundSys = Object.FindFirstObjectByType<GroundSnowSystem>();
         bool groundSpawned = groundSys != null;
         float groundLifetime = groundSys != null ? groundSys.groundPileLifetimeSec : 0f;
@@ -292,19 +306,15 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         string roofSurfStr = string.Format("({0:F2},{1:F2})", roofSurfaceSize.x, roofSurfaceSize.y);
         string snowCoverStr = string.Format("({0:F2},{1:F2})", snowCoverSize.x, snowCoverSize.y);
 
-        Debug.Log($"[SNOW_COVER] roof_surface_size={roofSurfStr} snow_cover_size={snowCoverStr} snow_cover_matches_roof={snowCoverMatches.ToString().ToLower()} ground_snow_spawned={groundSpawned.ToString().ToLower()} ground_snow_lifetime={groundLifetime:F1} ground_snow_active_count={groundActiveCount} largest_fall_group={largestFall}");
+        Debug.Log($"[SNOW_COVER] roof_surface_size={roofSurfStr} snow_cover_size={snowCoverStr} snow_cover_matches_roof={snowCoverMatches.ToString().ToLower()} active_roof_target={activeRoofTarget} roof_shape={roofShape} roof_slope_direction={roofSlopeDir} ground_snow_spawned={groundSpawned.ToString().ToLower()} ground_snow_lifetime={groundLifetime:F1} ground_snow_active_count={groundActiveCount} largest_fall_group={SnowPackSpawner.LastRemovedCount}");
+        RoofSnowReportWriter.Write(roofSurfStr, snowCoverStr, snowCoverMatches);
 
-        string roofShape = "mono_slope";
-        Vector3 downhill = spawner != null ? spawner.RoofDownhill : Vector3.zero;
         string visualFallDir = GetFallDirectionLabel(downhill, cam != null ? cam.transform.forward : Vector3.forward);
-        string roofSlopeDir = "front";
         var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
         float snowOffset = roofSys != null ? roofSys.roofSnowSurfaceOffsetY : 0f;
         bool snowAttached = roofSys != null && roofSys.roofSlideCollider != null;
-        var roofCol = GameObject.Find("RoofSlideCollider") ?? GameObject.Find("RoofSurface");
-        string hitTarget = roofCol != null ? roofCol.name : "none";
 
-        Debug.Log($"[ROOF_FALL_DIR] roof_shape={roofShape} roof_slope_direction={roofSlopeDir} visual_fall_direction={visualFallDir} snow_surface_offset={snowOffset:F3} snow_visual_attached={snowAttached.ToString().ToLower()} hit_target={hitTarget} camera_position={rtPosStr} camera_rotation={rtRotStr}");
+        Debug.Log($"[ROOF_FALL_DIR] roof_shape={roofShape} roof_slope_direction={roofSlopeDir} visual_fall_direction={visualFallDir} snow_surface_offset={snowOffset:F3} snow_visual_attached={snowAttached.ToString().ToLower()} hit_target={activeRoofTarget} camera_position={rtPosStr} camera_rotation={rtRotStr}");
     }
 
     static string GetFallDirectionLabel(Vector3 downhill, Vector3 camForward)

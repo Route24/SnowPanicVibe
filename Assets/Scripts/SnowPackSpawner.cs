@@ -526,27 +526,64 @@ public class SnowPackSpawner : MonoBehaviour
 
         Bounds b = roofCollider.bounds;
         _roofCenter = b.center;
-        float minR = float.MaxValue, maxR = float.MinValue, minF = float.MaxValue, maxF = float.MinValue;
-        for (int i = 0; i < 8; i++)
+        float projectedW, projectedL;
+        if (UseFullRoofCoverage && roofCollider is BoxCollider box)
         {
-            Vector3 corner = b.center + new Vector3(
-                (i & 1) != 0 ? b.extents.x : -b.extents.x,
-                (i & 2) != 0 ? b.extents.y : -b.extents.y,
-                (i & 4) != 0 ? b.extents.z : -b.extents.z);
-            float cr = Vector3.Dot(corner - b.center, r);
-            float cf = Vector3.Dot(corner - b.center, f);
-            if (cr < minR) minR = cr;
-            if (cr > maxR) maxR = cr;
-            if (cf < minF) minF = cf;
-            if (cf > maxF) maxF = cf;
+            var t = roofCollider.transform;
+            Vector3 c = box.center;
+            float sx = box.size.x, sy = box.size.y, sz = box.size.z;
+            float minR = float.MaxValue, maxR = float.MinValue, minF = float.MaxValue, maxF = float.MinValue;
+            for (int ix = 0; ix <= 1; ix++)
+            for (int iz = 0; iz <= 1; iz++)
+            {
+                Vector3 local = c + new Vector3((ix - 0.5f) * sx, sy * 0.5f, (iz - 0.5f) * sz);
+                Vector3 world = t.TransformPoint(local);
+                float cr = Vector3.Dot(world - _roofCenter, r);
+                float cf = Vector3.Dot(world - _roofCenter, f);
+                if (cr < minR) minR = cr;
+                if (cr > maxR) maxR = cr;
+                if (cf < minF) minF = cf;
+                if (cf > maxF) maxF = cf;
+            }
+            projectedW = Mathf.Max(0.5f, maxR - minR);
+            projectedL = Mathf.Max(0.5f, maxF - minF);
         }
-        _roofWidth = Mathf.Max(0.5f, maxR - minR);
-        _roofLength = Mathf.Max(0.5f, maxF - minF);
+        else
+        {
+            float minR = float.MaxValue, maxR = float.MinValue, minF = float.MaxValue, maxF = float.MinValue;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = b.center + new Vector3(
+                    (i & 1) != 0 ? b.extents.x : -b.extents.x,
+                    (i & 2) != 0 ? b.extents.y : -b.extents.y,
+                    (i & 4) != 0 ? b.extents.z : -b.extents.z);
+                float cr = Vector3.Dot(corner - b.center, r);
+                float cf = Vector3.Dot(corner - b.center, f);
+                if (cr < minR) minR = cr;
+                if (cr > maxR) maxR = cr;
+                if (cf < minF) minF = cf;
+                if (cf > maxF) maxF = cf;
+            }
+            projectedW = Mathf.Max(0.5f, maxR - minR);
+            projectedL = Mathf.Max(0.5f, maxF - minF);
+        }
+        _roofWidth = projectedW;
+        _roofLength = projectedL;
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
 
         float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
-        _cachedNx = Mathf.Max(1, Mathf.FloorToInt((_roofWidth - inset * 2f) / _roofCellSize));
-        _cachedNz = Mathf.Max(1, Mathf.FloorToInt((_roofLength - inset * 2f) / _roofCellSize));
+        float usableW = _roofWidth - inset * 2f;
+        float usableL = _roofLength - inset * 2f;
+        if (UseFullRoofCoverage)
+        {
+            _cachedNx = Mathf.Max(1, Mathf.CeilToInt(usableW / _roofCellSize));
+            _cachedNz = Mathf.Max(1, Mathf.CeilToInt(usableL / _roofCellSize));
+        }
+        else
+        {
+            _cachedNx = Mathf.Max(1, Mathf.FloorToInt(usableW / _roofCellSize));
+            _cachedNz = Mathf.Max(1, Mathf.FloorToInt(usableL / _roofCellSize));
+        }
         _cachedLayerStep = Mathf.Max(0.02f, _roofCellSize * pieceHeightScale);
 
         float dotRN = Vector3.Dot(r, n);
@@ -585,9 +622,11 @@ public class SnowPackSpawner : MonoBehaviour
                 float jz = UnityEngine.Random.Range(-jitter, jitter);
                 float layerOffset = RoofSurfaceOffset + layerIndex * _cachedLayerStep;
                 Vector3 p = _roofCenter + _roofR * (u * _roofWidth + jx) + _roofF * (v * _roofLength + jz) + _roofN * layerOffset;
-                Vector3 cp = roofCollider.ClosestPoint(p + _roofN * 0.1f);
-                float sqDistLimit = UseFullRoofCoverage ? 1.5f : 0.35f;
-                if ((cp - p).sqrMagnitude > sqDistLimit) continue;
+                if (!UseFullRoofCoverage)
+                {
+                    Vector3 cp = roofCollider.ClosestPoint(p + _roofN * 0.1f);
+                    if ((cp - p).sqrMagnitude > 0.35f) continue;
+                }
 
                 var angleT = GetRoofAngleTransform();
                 Quaternion rot = angleT != null ? angleT.rotation : roofCollider.transform.rotation;
@@ -649,6 +688,11 @@ public class SnowPackSpawner : MonoBehaviour
     public static bool ForceDownhillTowardCamera;
     /// <summary>OneHouse時: 積雪範囲を屋根全面に一致。inset=0, ClosestPoint閾値緩和。</summary>
     public static bool UseFullRoofCoverage;
+
+    /// <summary>Editor専用。ExitingPlayMode時にtrueにして、activePieces=0 FAILを抑止。</summary>
+#if UNITY_EDITOR
+    public static bool EditorExitingPlayMode;
+#endif
 
     public static int LastRemovedCount;
     public static int LastPackedInRadiusBefore;
@@ -2762,7 +2806,14 @@ public class SnowPackSpawner : MonoBehaviour
             bool activePiecesZero = (activePiecesCount == 0);
             if (activePiecesZero)
             {
-                if (!_snowPackPassErrorLogged && Application.isPlaying && rootChildren > 0)
+#if UNITY_EDITOR
+                bool skipFail = SnowPackSpawner.EditorExitingPlayMode;
+#else
+                bool skipFail = false;
+#endif
+                // rootChildren<=1: SnowPackAnchorのみ残る「積雪ゼロ」状態は正常
+                bool allCleared = rootChildren <= 1 && poolCount > 0;
+                if (!_snowPackPassErrorLogged && Application.isPlaying && rootChildren > 0 && !skipFail && !allCleared)
                 {
                     _snowPackPassErrorLogged = true;
                     UnityEngine.Debug.LogError($"[SnowPackPASS] activePieces=0 FAIL frame={Time.frameCount} t={Time.time:F2} rootChildren={rootChildren} pooled={poolCount} (1回のみ表示)");
