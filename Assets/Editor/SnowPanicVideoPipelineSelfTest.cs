@@ -124,12 +124,37 @@ public static class SnowPanicVideoPipelineSelfTest
     static string _previewErrorReason = "";
     static bool _uploadStarted;
     static bool _uploadFinished;
+    static bool _earlyReportEmitted;
+    static long _reportCopyReadyTimeMs;
+    static bool _finalResultEmitted;
+    static bool _previewStartedAsync;
+    static bool _uploadStartedAsync;
+    static bool _slackStartedAsync;
+    static bool _backgroundWorkComplete;
+    static bool _backgroundFallbackToMainThread;
+    static DateTime _earlyReportEmittedAt;
+    static string _roofSurfaceSize;
+    static string _snowCoverSize;
+    static bool _snowCoverMatchesRoof;
 
     /// <summary>SelfTestセッション中ならtrue。レポート生成後にクリップボードコピーする。</summary>
     public static bool IsSelfTestSession;
 
     /// <summary>SelfTestを開始可能か。Idleのときtrue。</summary>
     public static bool IsIdleForSelfTest() => _state == State.Idle;
+
+    /// <summary>早出しレポート中か（後追い未完了）。</summary>
+    public static bool IsEarlyReportPhase => _earlyReportEmitted && _backgroundTasksPending;
+    /// <summary>後追い完了済みか。</summary>
+    public static bool IsFinalResultAvailable => _earlyReportEmitted && !_backgroundTasksPending;
+
+    /// <summary>屋根全面積雪レポート用。Runtime から Play 中に設定。</summary>
+    public static void SetRoofSnowReport(string roofSurfaceSize, string snowCoverSize, bool matchesRoof)
+    {
+        _roofSurfaceSize = roofSurfaceSize;
+        _snowCoverSize = snowCoverSize;
+        _snowCoverMatchesRoof = matchesRoof;
+    }
 
     const string PrefAutoRecordOnPlay = "SnowPanic.AutoRecordOnPlay";
     /// <summary>通常Playでも自動録画するか。 true=Play押下で10秒録画→mp4保存→レポート。</summary>
@@ -243,6 +268,7 @@ public static class SnowPanicVideoPipelineSelfTest
     }
 
     public static string GetAssiLogPath() => Path.Combine(GetOutputDir(), "video_pipeline_assi_log.txt");
+    public static string GetEarlySnapshotPath() => Path.Combine(GetOutputDir(), "video_pipeline_early_snapshot.txt");
     public static string GetConsoleFilteredLogPath() => Path.Combine(GetOutputDir(), "video_pipeline_console_filtered.txt");
     public static string GetSessionDataPath() => Path.Combine(GetOutputDir(), "video_pipeline_session.txt");
     public static string GetLastRunPath() => Path.Combine(GetOutputDir(), "video_pipeline_last_run.txt");
@@ -398,10 +424,38 @@ public static class SnowPanicVideoPipelineSelfTest
         catch (Exception ex) { AssiLog("WriteSessionDataAtStart failed ex=" + ex.ToString().Replace("\r", " ").Replace("\n", " | ")); }
     }
 
+    static void LoadRoofSnowReportIfExists()
+    {
+        try
+        {
+            var dir = GetOutputDir();
+            if (string.IsNullOrEmpty(dir)) return;
+            var reportPath = Path.Combine(dir, "roof_snow_report.txt");
+            if (!File.Exists(reportPath)) return;
+            var lines = File.ReadAllLines(reportPath);
+            foreach (var line in lines)
+            {
+                var eq = line.IndexOf('=');
+                if (eq <= 0) continue;
+                var key = line.Substring(0, eq).Trim();
+                var val = line.Substring(eq + 1).Trim();
+                if (key.Equals("roof_surface_size", System.StringComparison.OrdinalIgnoreCase)) _roofSurfaceSize = val;
+                else if (key.Equals("snow_cover_size", System.StringComparison.OrdinalIgnoreCase)) _snowCoverSize = val;
+                else if (key.Equals("snow_cover_matches_roof", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    bool b;
+                    if (bool.TryParse(val, out b)) _snowCoverMatchesRoof = b;
+                }
+            }
+        }
+        catch { }
+    }
+
     static void WriteSessionData()
     {
         try
         {
+            LoadRoofSnowReportIfExists();
             var path = GetSessionDataPath();
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
@@ -412,6 +466,19 @@ public static class SnowPanicVideoPipelineSelfTest
             if (sessTempExists) try { sessTempBytes = new FileInfo(sessTempPath).Length; } catch { }
             var sessPlayKeptAliveSec = _endedAt.HasValue ? (_endedAt.Value - _startedAt).TotalSeconds : 0;
             sb.AppendLine("=== VIDEO PIPELINE STATUS ===");
+            sb.AppendLine("execution_mode=" + (_executionMode ?? "play"));
+            sb.AppendLine("report_emitted_early=" + _earlyReportEmitted.ToString().ToLower());
+            sb.AppendLine("report_copy_ready_time_ms=" + _reportCopyReadyTimeMs);
+            sb.AppendLine("final_result_emitted=" + _finalResultEmitted.ToString().ToLower());
+            sb.AppendLine("start_hook_called=" + _startHookCalled.ToString().ToLower());
+            sb.AppendLine("stop_hook_called=" + _stopHookCalled.ToString().ToLower());
+            sb.AppendLine("background_tasks_started=" + _backgroundTasksRequested.ToString().ToLower());
+            sb.AppendLine("preview_start_called=" + _previewStartCalled.ToString().ToLower());
+            sb.AppendLine("preview_done_called=" + _previewDoneCalled.ToString().ToLower());
+            sb.AppendLine("preview_error_reason=" + (_previewErrorReason ?? ""));
+            sb.AppendLine("upload_started=" + _uploadStarted.ToString().ToLower());
+            sb.AppendLine("upload_finished=" + _uploadFinished.ToString().ToLower());
+            sb.AppendLine("final_pipeline_state=" + GetFinalResult());
             sb.AppendLine("selftest_auto_stop_disabled: " + VideoPipelineSelfTestMode.ManualStopOnly.ToString().ToLower());
             sb.AppendLine("auto_stop_bypassed: " + _autoStopBypassed.ToString().ToLower());
             sb.AppendLine("manual_stop_available: true");
@@ -432,7 +499,7 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("");
             var elapsedSec = _endedAt.HasValue ? (_endedAt.Value - _startedAt).TotalSeconds : 0;
             sb.AppendLine("sessionId=" + (_sessionId ?? ""));
-            sb.AppendLine("result=" + (_result ?? ""));
+            sb.AppendLine("result=" + (string.IsNullOrEmpty(_result) ? GetFinalResult() : _result));
             sb.AppendLine("errorStep=" + (_errorStep ?? "none"));
             sb.AppendLine("unityVersion=" + Application.unityVersion);
             sb.AppendLine("platform=" + Application.platform);
@@ -467,7 +534,11 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("preview_fallback_used=" + _previewFallbackUsed.ToString().ToLower());
             sb.AppendLine("ffmpeg_path=" + (_ffmpegPathUsed ?? ""));
             sb.AppendLine("ffmpeg_available=" + _ffmpegAvailable.ToString().ToLower());
-            sb.AppendLine("preview_status=" + (_previewStatus ?? "PREVIEW_ERROR"));
+            string ffmpegStatus = "PENDING";
+            if (_previewStatus != "PENDING" && _previewStatus != null && !_previewStatus.StartsWith("PENDING"))
+                ffmpegStatus = _ffmpegAvailable ? "READY" : "ERROR";
+            sb.AppendLine("ffmpeg_status=" + ffmpegStatus);
+            sb.AppendLine("preview_status=" + (_previewStatus ?? "PENDING"));
             sb.AppendLine("preview_gif_path=" + (_previewPath != null && _previewPath.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ? _previewPath : (_gifPath ?? "")));
             sb.AppendLine("preview_gif_size=" + (_previewPath != null && _previewPath.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ? _previewGifSize : 0));
             sb.AppendLine("preview_gif_drive_link=" + (_previewGifDriveLink ?? ""));
@@ -504,6 +575,9 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("slack_message=" + (_slackMessageStatus ?? ""));
             sb.AppendLine("slack_posted=" + (_slackMessageStatus != null && _slackMessageStatus.StartsWith("posted") ? "true" : "false"));
             sb.AppendLine("slack_error=" + (_slackError ?? ""));
+            sb.AppendLine("roof_surface_size=" + (_roofSurfaceSize ?? "(pending)"));
+            sb.AppendLine("snow_cover_size=" + (_snowCoverSize ?? "(pending)"));
+            sb.AppendLine("snow_cover_matches_roof=" + _snowCoverMatchesRoof.ToString().ToLower());
             if (!string.IsNullOrEmpty(_lastRecorderExceptionMessage))
                 sb.AppendLine("exception=" + (_lastRecorderExceptionMessage ?? "").Replace("\r", " ").Replace("\n", " | "));
             if (!string.IsNullOrEmpty(_lastRecorderExceptionStackTrace))
@@ -511,6 +585,29 @@ public static class SnowPanicVideoPipelineSelfTest
             File.WriteAllText(path, sb.ToString());
         }
         catch { }
+    }
+
+    /// <summary>mp4確定時点で最小レポートを即出力し、コピー可能にする。</summary>
+    static void EmitEarlyReportAndCopy()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        _earlyReportEmitted = true;
+        _earlyReportEmittedAt = DateTime.Now;
+        WriteSessionData();
+        if (SnowLoopNoaReportAutoCopy.TryBuildReportOrSelfTestReport())
+        {
+            AssiReportWindow.OpenAndShowReport();
+            var report = SnowLoopNoaReportAutoCopy.GetReportContent();
+            if (!string.IsNullOrEmpty(report))
+                EditorGUIUtility.systemCopyBuffer = report;
+        }
+        sw.Stop();
+        _reportCopyReadyTimeMs = sw.ElapsedMilliseconds;
+        AssiLog("report_emitted_early=true");
+        AssiLog("report_copy_ready_time_ms=" + _reportCopyReadyTimeMs);
+        AssiLog("preview_started_async=" + _previewStartedAsync.ToString().ToLower());
+        AssiLog("upload_started_async=" + _uploadStartedAsync.ToString().ToLower());
+        AssiLog("slack_started_async=" + _slackStartedAsync.ToString().ToLower());
     }
 
     static string GetFinalResult()
@@ -586,23 +683,32 @@ public static class SnowPanicVideoPipelineSelfTest
             {
                 AssiLog("step=finalize_from_temp (RunExitRoutine last-chance)");
                 if (_errorStep == "mp4_not_created") _errorStep = "none";
+                _result = "LOCAL_READY";
                 _previewStatus = "PENDING";
                 _driveFileStatus = "pending";
                 _backgroundTasksPending = true;
                 _backgroundTasksRequested = true;
                 AssiLog("[VideoPipeline] background_tasks_started=true");
+                AssiLog("background_tasks_started=true");
+                _previewStartedAsync = true;
+                _uploadStartedAsync = true;
+                _slackStartedAsync = true;
+                WriteSessionData();
+                EmitEarlyReportAndCopy();
                 Task.Run(() =>
                 {
-                    try { RunUploadPhaseFromLatest(); }
-                    finally
+                    try
                     {
-                        _backgroundTasksPending = false;
-                        EditorApplication.delayCall += () =>
-                        {
-                            WriteSessionData();
-                            AssiLog("step=background_complete preview_status=" + (_previewStatus ?? "?") + " upload=" + (_driveFileStatus ?? "?"));
-                        };
+                        RunUploadPhaseFromLatest();
                     }
+                    catch (Exception ex)
+                    {
+                        AssiLog("step=background_exception ex=" + (ex.Message ?? "").Replace("\r", " ").Replace("\n", " | ") + " -> fallback_to_main_thread");
+                        _backgroundFallbackToMainThread = true;
+                        return;
+                    }
+                    _backgroundTasksPending = false;
+                    _backgroundWorkComplete = true;
                 });
             }
             else if (_errorStep == "mp4_not_created")
@@ -633,6 +739,7 @@ public static class SnowPanicVideoPipelineSelfTest
         AssiLog("movie file created: " + _localMp4Exists.ToString().ToLower());
         AssiLog("movie path: " + (_localPath ?? _mp4Path ?? "(none)"));
         AssiLog("fail step: " + (_errorStep ?? "none"));
+        AssiLog("execution_mode=" + (_executionMode ?? "unknown") + " start_hook_called=" + _startHookCalled.ToString().ToLower() + " stop_hook_called=" + _stopHookCalled.ToString().ToLower() + " background_tasks_started=" + _backgroundTasksRequested.ToString().ToLower() + " preview_start_called=" + _previewStartCalled.ToString().ToLower() + " preview_done_called=" + _previewDoneCalled.ToString().ToLower() + " preview_error_reason=" + (_previewErrorReason ?? "") + " upload_started=" + _uploadStarted.ToString().ToLower() + " upload_finished=" + _uploadFinished.ToString().ToLower() + " final_pipeline_state=" + GetFinalResult());
         WriteSessionData();
         IsSelfTestSession = true;
         VideoPipelineSelfTestMode.SetActive(false);
@@ -644,7 +751,7 @@ public static class SnowPanicVideoPipelineSelfTest
 
         EditorApplication.delayCall += () =>
         {
-            if (SnowLoopNoaReportAutoCopy.TryBuildReportOrSelfTestReport())
+            if (!_earlyReportEmitted && SnowLoopNoaReportAutoCopy.TryBuildReportOrSelfTestReport())
             {
                 AssiReportWindow.OpenAndShowReport();
                 if (IsSelfTestSession)
@@ -654,6 +761,10 @@ public static class SnowPanicVideoPipelineSelfTest
                         EditorGUIUtility.systemCopyBuffer = report;
                     IsSelfTestSession = false;
                 }
+            }
+            else if (_earlyReportEmitted)
+            {
+                IsSelfTestSession = false;
             }
             if (_state == State.Done) _state = State.Idle;
         };
@@ -685,68 +796,95 @@ public static class SnowPanicVideoPipelineSelfTest
     /// <summary>_latestMp4Path / _localPath から archive → preview → rclone → slack を実行。TryFinalizeFromTemp 後の last-chance 用。</summary>
     static void RunUploadPhaseFromLatest()
     {
-        var latestPath = !string.IsNullOrEmpty(_latestMp4Path) ? _latestMp4Path : _mp4Path;
-        if (string.IsNullOrEmpty(latestPath))
-        {
-            AssiLog("step=upload_skip reason=latest_path_empty");
-            return;
-        }
-        var uploadFi = new FileInfo(latestPath);
-        if (!uploadFi.Exists || uploadFi.Length <= 0)
-        {
-            AssiLog("step=upload_skip reason=latest_not_ready exists=" + uploadFi.Exists + " bytes=" + (uploadFi.Exists ? uploadFi.Length : 0));
-            return;
-        }
-        var uploadPath = latestPath;
-        var uploadSize = uploadFi.Length;
-        var outDirMp4 = GetOutputDir();
-        var dailyPath = Path.Combine(outDirMp4 ?? "", "snow_test_" + DateTime.Now.ToString("yyyyMMdd") + ".mp4");
-        _dailyArchivePath = Path.GetFullPath(dailyPath);
-        _dailyArchiveCreated = false;
         try
         {
-            if (!File.Exists(dailyPath))
+            var latestPath = !string.IsNullOrEmpty(_latestMp4Path) ? _latestMp4Path : _mp4Path;
+            if (string.IsNullOrEmpty(latestPath))
             {
-                File.Copy(latestPath, dailyPath, overwrite: false);
-                _dailyArchiveCreated = true;
+                AssiLog("step=upload_skip reason=latest_path_empty");
+                _uploadFinished = true;
+                AssiLog("upload_finished=true");
+                return;
             }
+            var uploadFi = new FileInfo(latestPath);
+            if (!uploadFi.Exists || uploadFi.Length <= 0)
+            {
+                AssiLog("step=upload_skip reason=latest_not_ready exists=" + uploadFi.Exists + " bytes=" + (uploadFi.Exists ? uploadFi.Length : 0));
+                _uploadFinished = true;
+                AssiLog("upload_finished=true");
+                return;
+            }
+            var uploadPath = latestPath;
+            var uploadSize = uploadFi.Length;
+            _uploadStarted = true;
+            AssiLog("upload_started=true");
+            var outDirMp4 = GetOutputDir();
+            var dailyPath = Path.Combine(outDirMp4 ?? "", "snow_test_" + DateTime.Now.ToString("yyyyMMdd") + ".mp4");
+            _dailyArchivePath = Path.GetFullPath(dailyPath);
+            _dailyArchiveCreated = false;
+            try
+            {
+                if (!File.Exists(dailyPath))
+                {
+                    File.Copy(latestPath, dailyPath, overwrite: false);
+                    _dailyArchiveCreated = true;
+                }
+            }
+            catch (Exception ex) { AssiLog("step=archive daily_archive_copy_failed ex=" + (ex.Message ?? "")); }
+            GeneratePreview(latestPath);
+            if (!_previewDoneCalled)
+            {
+                _previewDoneCalled = true;
+                AssiLog("preview_done_called=true (fallback_set)");
+            }
+            long driveSize;
+            string shareLink;
+            if (!RunRcloneCopyAndVerify(uploadPath, uploadSize, Path.GetFileName(uploadPath), out driveSize, out shareLink))
+            {
+                _result = "ERROR";
+                _errorStep = _lastStep == "upload" ? "upload" : "drive_verify";
+                _driveFileStatus = "not_found";
+                _uploadFinished = true;
+                AssiLog("upload_finished=true (rclone_failed)");
+                return;
+            }
+            _drivePath = RcloneRemote + "/" + Path.GetFileName(uploadPath);
+            _driveSizeBytes = driveSize;
+            _driveShareLink = shareLink ?? "";
+            _previewGifDriveLink = "";
+            if (_previewCreated && !string.IsNullOrEmpty(_previewPath) && File.Exists(_previewPath))
+            {
+                var previewFi = new FileInfo(_previewPath);
+                var previewFileName = Path.GetFileName(_previewPath);
+                long previewDriveSize;
+                string previewShareLink;
+                if (RunRcloneCopyAndVerify(_previewPath, previewFi.Length, previewFileName, out previewDriveSize, out previewShareLink))
+                    _previewGifDriveLink = previewShareLink ?? "";
+            }
+            var slackMsg = BuildSlackMessage(result: "SUCCESS", errorStep: "", localPath: uploadPath, localFileSizeBytes: uploadSize, drivePath: _drivePath, driveFileSizeBytes: driveSize, driveShareLink: shareLink, previewGifPath: _previewPath, previewGifDriveLink: _previewGifDriveLink);
+            if (!RunSlackNotify(slackMsg, CurlTimeoutMs))
+            {
+                _slackMessageStatus = "not_posted";
+                _result = "DRIVE_READY";
+                _errorStep = "none";
+            }
+            else
+            {
+                _result = "SUCCESS";
+                _errorStep = "none";
+                _driveFileStatus = "found size_bytes=" + driveSize;
+                _slackMessageStatus = string.IsNullOrEmpty(shareLink) ? "posted" : "posted " + shareLink;
+            }
+            _uploadFinished = true;
+            AssiLog("upload_finished=true");
         }
-        catch (Exception ex) { AssiLog("step=archive daily_archive_copy_failed ex=" + (ex.Message ?? "")); }
-        GeneratePreview(latestPath);
-        long driveSize;
-        string shareLink;
-        if (!RunRcloneCopyAndVerify(uploadPath, uploadSize, Path.GetFileName(uploadPath), out driveSize, out shareLink))
+        catch (Exception ex)
         {
-            _result = "ERROR";
-            _errorStep = _lastStep == "upload" ? "upload" : "drive_verify";
-            _driveFileStatus = "not_found";
-            return;
+            AssiLog("step=RunUploadPhaseFromLatest_exception ex=" + (ex.Message ?? "").Replace("\r", " ").Replace("\n", " | "));
+            _previewDoneCalled = true;
+            _uploadFinished = true;
+            AssiLog("preview_done_called=true upload_finished=true (exception_recovery)");
         }
-        _drivePath = RcloneRemote + "/" + Path.GetFileName(uploadPath);
-        _driveSizeBytes = driveSize;
-        _driveShareLink = shareLink ?? "";
-        _previewGifDriveLink = "";
-        if (_previewCreated && !string.IsNullOrEmpty(_previewPath) && File.Exists(_previewPath))
-        {
-            var previewFi = new FileInfo(_previewPath);
-            var previewFileName = Path.GetFileName(_previewPath);
-            long previewDriveSize;
-            string previewShareLink;
-            if (RunRcloneCopyAndVerify(_previewPath, previewFi.Length, previewFileName, out previewDriveSize, out previewShareLink))
-                _previewGifDriveLink = previewShareLink ?? "";
-        }
-        var slackMsg = BuildSlackMessage(result: "SUCCESS", errorStep: "", localPath: uploadPath, localFileSizeBytes: uploadSize, drivePath: _drivePath, driveFileSizeBytes: driveSize, driveShareLink: shareLink, previewGifPath: _previewPath, previewGifDriveLink: _previewGifDriveLink);
-        if (!RunSlackNotify(slackMsg, CurlTimeoutMs))
-        {
-            _slackMessageStatus = "not_posted";
-            _result = "DRIVE_READY";
-            _errorStep = "none";
-            return;
-        }
-        _result = "SUCCESS";
-        _errorStep = "none";
-        _driveFileStatus = "found size_bytes=" + driveSize;
-        _slackMessageStatus = string.IsNullOrEmpty(shareLink) ? "posted" : "posted " + shareLink;
     }
 
     /// <summary>mp4から軽量プレビューを必ず生成。gif→png_sequence→contact_sheet→qlmanage→placeholder。</summary>
@@ -767,6 +905,7 @@ public static class SnowPanicVideoPipelineSelfTest
         _ffmpegAvailable = !string.IsNullOrEmpty(ffmpeg);
         var gifOutPath = Path.Combine(outDir, "snow_test_latest.gif");
         var stripPath = Path.Combine(outDir, "preview_strip.png");
+        _previewStartCalled = true;
         AssiLog("preview_start ffmpeg_path=" + (_ffmpegPathUsed ?? "(none)") + " ffmpeg_available=" + _ffmpegAvailable.ToString().ToLower());
 
         if (_ffmpegAvailable)
@@ -776,24 +915,27 @@ public static class SnowPanicVideoPipelineSelfTest
                 var gifCmd = "\"" + ffmpeg + "\" -i \"" + mp4Path + "\" -vf \"fps=10,scale=640:-1:flags=lanczos\" -t 5 -loop 0 -y \"" + gifOutPath + "\" 2>&1";
                 int exitCode;
                 RunZshWithExitCode(gifCmd, FfmpegTimeoutMs, out exitCode);
-                if (exitCode == 0 && File.Exists(gifOutPath))
+                var gifExistsAfter = File.Exists(gifOutPath);
+                var gifSizeAfter = gifExistsAfter ? new FileInfo(gifOutPath).Length : 0L;
+                AssiLog("preview_gif_result exitCode=" + exitCode + " gifExists=" + gifExistsAfter + " gifSize=" + gifSizeAfter + " path=" + gifOutPath);
+                if (exitCode == 0 && gifExistsAfter && gifSizeAfter > 0)
                 {
-                    var fi = new FileInfo(gifOutPath);
-                    if (fi.Length > 0)
-                    {
-                        SetPreviewResult(gifOutPath, "gif", fi.Length);
-                        _gifPath = Path.GetFullPath(gifOutPath);
-                        _previewGifSize = fi.Length;
-                        _previewStatus = "PREVIEW_READY";
-                        AssiLog("preview_done preview_type=gif gif_path=" + _gifPath + " gif_exists=true gif_size_bytes=" + _previewGifSize + " preview_fallback_used=false");
-                        return;
-                    }
+                    SetPreviewResult(gifOutPath, "gif", gifSizeAfter);
+                    _gifPath = Path.GetFullPath(gifOutPath);
+                    _previewGifSize = gifSizeAfter;
+                    _previewStatus = "PREVIEW_READY";
+                    _previewDoneCalled = true;
+                    AssiLog("preview_done preview_type=gif gif_path=" + _gifPath + " gif_exists=true gif_size_bytes=" + _previewGifSize + " preview_fallback_used=false");
+                    return;
                 }
+                _previewErrorReason = "ffmpeg_exit=" + exitCode + " fileExists=" + gifExistsAfter + " fileSize=" + gifSizeAfter;
+                AssiLog("preview_gif_skipped reason=" + _previewErrorReason);
             }
-            catch (Exception ex) { AssiLog("preview_gif_failed ex=" + (ex.Message ?? "")); }
+            catch (Exception ex) { _previewErrorReason = "gif_ex=" + (ex.Message ?? ""); AssiLog("preview_gif_failed ex=" + (ex.Message ?? "")); }
         }
         else
         {
+            _previewErrorReason = "ffmpeg_not_found";
             AssiLog("preview_gif_skipped ffmpeg_not_found");
         }
 
@@ -813,11 +955,12 @@ public static class SnowPanicVideoPipelineSelfTest
                     var fi = new FileInfo(stripPath);
                     SetPreviewResult(stripPath, "contact_sheet", fi.Length);
                     _previewStatus = "PREVIEW_FALLBACK_READY";
+                    _previewDoneCalled = true;
                     AssiLog("preview_done preview_type=contact_sheet gif_path= gif_exists=false gif_size_bytes=0 preview_fallback_used=true");
                     return;
                 }
             }
-            catch (Exception ex) { AssiLog("preview_contact_failed ex=" + (ex.Message ?? "")); }
+            catch (Exception ex) { _previewErrorReason = "contact_sheet_ex=" + (ex.Message ?? ""); AssiLog("preview_contact_failed ex=" + (ex.Message ?? "")); }
         }
 
         if (Application.platform == RuntimePlatform.OSXEditor)
@@ -837,12 +980,13 @@ public static class SnowPanicVideoPipelineSelfTest
                     SetPreviewResult(stripPath, "contact_sheet", fi.Length);
                     try { Directory.Delete(qlDir, true); } catch { }
                     _previewStatus = "PREVIEW_FALLBACK_READY";
+                    _previewDoneCalled = true;
                     AssiLog("preview_done preview_type=contact_sheet gif_path= gif_exists=false preview_fallback_used=true (qlmanage)");
                     return;
                 }
                 try { Directory.Delete(qlDir, true); } catch { }
             }
-            catch (Exception ex) { AssiLog("preview_qlmanage_failed ex=" + (ex.Message ?? "")); }
+            catch (Exception ex) { _previewErrorReason = "qlmanage_ex=" + (ex.Message ?? ""); AssiLog("preview_qlmanage_failed ex=" + (ex.Message ?? "")); }
         }
 
         try
@@ -852,14 +996,20 @@ public static class SnowPanicVideoPipelineSelfTest
                 var fi = new FileInfo(stripPath);
                 SetPreviewResult(stripPath, "placeholder", fi.Length);
                 _previewStatus = "PREVIEW_FALLBACK_READY";
+                _previewDoneCalled = true;
                 AssiLog("preview_done preview_type=placeholder preview_fallback_used=true");
             }
             else
             {
+                _previewErrorReason = "placeholder_failed";
                 AssiLog("preview_final preview_status=PREVIEW_ERROR");
             }
         }
-        catch (Exception ex) { AssiLog("preview_placeholder_failed ex=" + (ex.Message ?? "")); }
+        catch (Exception ex) { _previewErrorReason = "placeholder_ex=" + (ex.Message ?? ""); AssiLog("preview_placeholder_failed ex=" + (ex.Message ?? "")); }
+        if (string.IsNullOrEmpty(_previewErrorReason) && _previewStatus != "PREVIEW_READY" && _previewStatus != "PREVIEW_FALLBACK_READY")
+            _previewErrorReason = "all_fallbacks_failed";
+        _previewDoneCalled = true;
+        AssiLog("preview_done_called=true preview_error_reason=" + (_previewErrorReason ?? "none") + " preview_status=" + (_previewStatus ?? "?"));
     }
 
     static void SetPreviewResult(string path, string type, long sizeBytes)
@@ -1178,6 +1328,14 @@ public static class SnowPanicVideoPipelineSelfTest
         _previewErrorReason = "";
         _uploadStarted = false;
         _uploadFinished = false;
+        _earlyReportEmitted = false;
+        _reportCopyReadyTimeMs = 0;
+        _finalResultEmitted = false;
+        _previewStartedAsync = false;
+        _uploadStartedAsync = false;
+        _slackStartedAsync = false;
+        _backgroundWorkComplete = false;
+        _backgroundFallbackToMainThread = false;
         VideoPipelineSelfTestMode.ManualStopOnly = true;
         lock (_consoleRingBuffer) { _consoleRingBuffer.Clear(); }
         lock (_consoleRingBufferFull) { _consoleRingBufferFull.Clear(); }
@@ -1474,16 +1632,24 @@ public static class SnowPanicVideoPipelineSelfTest
         _previewErrorReason = "";
         _uploadStarted = false;
         _uploadFinished = false;
+        _earlyReportEmitted = false;
+        _reportCopyReadyTimeMs = 0;
+        _finalResultEmitted = false;
+        _previewStartedAsync = false;
+        _uploadStartedAsync = false;
+        _slackStartedAsync = false;
+        _backgroundWorkComplete = false;
+        _backgroundFallbackToMainThread = false;
         WriteSessionActive();
         VideoPipelineSelfTestMode.SetActive(true);
-        VideoPipelineSelfTestMode.ManualStopOnly = false;
+        VideoPipelineSelfTestMode.ManualStopOnly = true;
         SubscribeLogHandler();
         VideoPipelineSelfTestOverlay.ShouldShow = true;
         VideoPipelineSelfTestOverlay.Timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
         ScheduleWatchdogChain();
-        AssiLog("execution_mode=" + _executionMode);
+        AssiLog("execution_mode=" + _executionMode + " (official_route=play)");
         AssiLog("step=auto_record sessionId=" + _sessionId + " outputDir=" + outputDir + " expectedPath=" + _mp4Path);
-        UnityEngine.Debug.Log("[VideoPipeline] ★ Play自動録画開始 ★ 10秒で停止→mp4保存→レポート");
+        UnityEngine.Debug.Log("[VideoPipeline] ★ Play正式運用 ★ Stopでmp4→gif→upload→レポート");
         StartRecordingThisSession();
     }
 
@@ -1693,6 +1859,7 @@ public static class SnowPanicVideoPipelineSelfTest
                     if (_controller != null && _controller.IsRecording())
                     {
                         _controller.StopRecording();
+                        _stopHookCalled = true;
                         _lastStep = "recorder_stop";
                     }
                     EnterPostStopPolling("watchdog_min_record");
@@ -1707,6 +1874,7 @@ public static class SnowPanicVideoPipelineSelfTest
     {
         if (state == PlayModeStateChange.ExitingPlayMode)
         {
+            SnowPackSpawner.EditorExitingPlayMode = true;
             var controllerBefore = _controller != null;
             var outputDirRaw = ResolveOutputDir();
             string markerSid, markerTmp, markerOutDir;
@@ -1716,6 +1884,8 @@ public static class SnowPanicVideoPipelineSelfTest
 
             WriteStopTriggeredMarker("exiting_playmode");
             _recorderStopRequested = true;
+            if (hasMarker || !string.IsNullOrEmpty(_sessionId))
+                _stopHookCalled = true;
             if (hasMarker)
             {
                 if (string.IsNullOrEmpty(_sessionId)) _sessionId = markerSid;
@@ -1755,6 +1925,7 @@ public static class SnowPanicVideoPipelineSelfTest
         }
         if (state == PlayModeStateChange.EnteredPlayMode)
         {
+            SnowPackSpawner.EditorExitingPlayMode = false;
             string markerSid, markerTmp, markerOutDir;
             var hasMarker = TryReadSessionActive(out markerSid, out markerTmp, out markerOutDir);
             if (_state != State.Recording && hasMarker)
@@ -1777,7 +1948,7 @@ public static class SnowPanicVideoPipelineSelfTest
         }
         else if (state == PlayModeStateChange.EnteredEditMode)
         {
-            _flushWaiting = false;
+            SnowPackSpawner.EditorExitingPlayMode = false;
             CleanupController();
             string restSessionId, restTempPath;
             if (TryReadSessionActive(out restSessionId, out restTempPath))
@@ -1785,9 +1956,13 @@ public static class SnowPanicVideoPipelineSelfTest
                 if (string.IsNullOrEmpty(_sessionId)) _sessionId = restSessionId;
                 if (string.IsNullOrEmpty(_tempMp4Path)) _tempMp4Path = restTempPath;
                 if (string.IsNullOrEmpty(_mp4Path)) _mp4Path = Path.Combine(GetOutputDir(), "snow_test_latest.mp4");
-                if (_state != State.Recording && _state != State.WaitingEdit) _state = State.WaitingEdit;
+                if (_state != State.Recording && _state != State.WaitingEdit && _state != State.PostStopPolling) _state = State.WaitingEdit;
             }
-            if (_state == State.Recording || _state == State.WaitingEdit || _state == State.PostStopPolling)
+            if (_state == State.PostStopPolling)
+            {
+                AssiLog("step=entered_editmode keeping PostStopPolling for edit_mode poll");
+            }
+            else if (_state == State.Recording || _state == State.WaitingEdit)
             {
                 _state = State.WaitingEdit;
                 EditorApplication.delayCall += () =>
@@ -1822,6 +1997,32 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void OnUpdate()
     {
+        if (_backgroundFallbackToMainThread)
+        {
+            _backgroundFallbackToMainThread = false;
+            try
+            {
+                RunUploadPhaseFromLatest();
+            }
+            finally
+            {
+                _backgroundTasksPending = false;
+                _backgroundWorkComplete = true;
+            }
+        }
+        if (_backgroundWorkComplete)
+        {
+            _backgroundWorkComplete = false;
+            _finalResultEmitted = true;
+            WriteSessionData();
+            AssiLog("step=background_complete preview_status=" + (_previewStatus ?? "?") + " upload=" + (_driveFileStatus ?? "?"));
+            AssiLog("preview_done_called=" + _previewDoneCalled.ToString().ToLower());
+            AssiLog("upload_finished=" + _uploadFinished.ToString().ToLower());
+            AssiLog("final_result_emitted=true");
+            if (SnowLoopNoaReportAutoCopy.TryBuildReportOrSelfTestReport())
+                AssiReportWindow.RefreshIfOpen();
+        }
+
         var elapsed = (float)GetSessionElapsedSeconds();
         if (VideoPipelineSelfTestMode.ManualStopOnly)
         {
@@ -1841,6 +2042,7 @@ public static class SnowPanicVideoPipelineSelfTest
                     if (_controller != null && _controller.IsRecording())
                     {
                         _controller.StopRecording();
+                        _stopHookCalled = true;
                         _lastStep = "recorder_stop";
                     }
                     EnterPostStopPolling("onupdate_min_record");
@@ -1964,7 +2166,7 @@ public static class SnowPanicVideoPipelineSelfTest
                 {
                     var isRec = _controller != null && _controller.IsRecording();
                     AssiLog("step=recorder_stop controller=" + (_controller != null ? "exists" : "null") + " isRecording=" + isRec);
-                    if (_controller != null && _controller.IsRecording()) _controller.StopRecording();
+                    if (_controller != null && _controller.IsRecording()) { _controller.StopRecording(); _stopHookCalled = true; }
                     _lastStep = "recorder_stop";
                     EnterPostStopPolling("RequestStop");
                 }
@@ -2006,6 +2208,7 @@ public static class SnowPanicVideoPipelineSelfTest
                     _recorderStopRequested = true;
                     _recorderStopRequestedAt = DateTime.Now;
                     _controller.StopRecording();
+                    _stopHookCalled = true;
                     _lastStep = "recorder_stop";
                     AssiLog("step=recorder_stop reason=rec_done");
                     EnterPostStopPolling("rec_done");
@@ -2017,7 +2220,7 @@ public static class SnowPanicVideoPipelineSelfTest
                 {
                     _recorderStopRequested = true;
                     _recorderStopRequestedAt = DateTime.Now;
-                    if (_controller != null && _controller.IsRecording()) _controller.StopRecording();
+                    if (_controller != null && _controller.IsRecording()) { _controller.StopRecording(); _stopHookCalled = true; }
                     _lastStep = "recorder_stop";
                     AssiLog("step=recorder_stop reason=10s_timer");
                     EnterPostStopPolling("10s_timer");
@@ -2027,10 +2230,85 @@ public static class SnowPanicVideoPipelineSelfTest
             {
                 _recorderStopRequested = true;
                 _recorderStopRequestedAt = DateTime.Now;
-                if (_controller != null && _controller.IsRecording()) _controller.StopRecording();
+                if (_controller != null && _controller.IsRecording()) { _controller.StopRecording(); _stopHookCalled = true; }
                 _lastStep = "recorder_stop";
                 AssiLog("step=recorder_stop reason=fallback_13s");
                 EnterPostStopPolling("fallback_13s");
+            }
+            return;
+        }
+
+        if (!EditorApplication.isPlaying && (_state == State.PostStopPolling || _flushWaiting))
+        {
+            var tempPath = EnsureTempMp4Path();
+            var pollElapsed = (DateTime.Now - _postStopPollStart).TotalSeconds;
+            var maxWait = _state == State.PostStopPolling ? PostStopPollMaxSec : FlushWaitMaxSec;
+            long bytes = 0;
+            var exists = !string.IsNullOrEmpty(tempPath) && File.Exists(tempPath);
+            if (exists) try { bytes = new FileInfo(tempPath).Length; } catch { }
+            var pollInterval = _state == State.PostStopPolling ? PostStopPollIntervalSec : 0.5;
+            var pollCount = (int)(pollElapsed / pollInterval);
+            if (pollCount != _postStopPollCount && _state == State.PostStopPolling)
+            {
+                _postStopPollCount = pollCount;
+                AssiLog("step=post_stop_poll_edit_mode size=" + bytes + " exists=" + exists + " elapsed=" + pollElapsed.ToString("F1") + "s");
+            }
+            if (exists && bytes > 0)
+            {
+                AssiLog("step=post_stop_poll_ready_edit_mode size=" + bytes);
+                _finalizeEntered = true;
+                _finalizeReason = "bytes_gt_0_edit_mode";
+                AssiLog("step=finalize_start (edit mode)");
+                var outDir = GetOutputDir();
+                var latestPath = Path.Combine(outDir ?? "", "snow_test_latest.mp4");
+                try
+                {
+                    if (File.Exists(latestPath)) File.Delete(latestPath);
+                    File.Move(tempPath, latestPath);
+                    var fi = new FileInfo(latestPath);
+                    var verifyBytes = fi.Length;
+                    AssiLog("step=file_written path=" + latestPath + " bytes=" + verifyBytes);
+                    _mp4Path = Path.GetFullPath(latestPath);
+                    _localMp4Exists = true;
+                    _localPath = latestPath;
+                    _localSizeBytes = verifyBytes;
+                    _latestMp4Path = _mp4Path;
+                    AssiLog("[VideoPipeline] movie_created=True (edit mode finalize)");
+                    _flushWaiting = false;
+                    _state = State.PostRecord;
+                    _postPhase = PostPhase.WaitMp4;
+                    _postPhaseStart = DateTime.Now;
+                    _mp4CandidatePath = _mp4Path;
+                    _mp4CandidateSize = _localSizeBytes;
+                    _mp4CandidateFirstSeenUtc = DateTime.UtcNow.AddSeconds(-(Mp4SizeStableDelaySec + 1));
+                    AssiLog("step=edit_mode_finalize_done proceeding to background_tasks");
+                }
+                catch (Exception ex)
+                {
+                    AssiLog("step=file_rename_failed_edit_mode ex=" + (ex.Message ?? ""));
+                }
+                return;
+            }
+            if (pollElapsed >= maxWait)
+            {
+                AssiLog("step=post_stop_poll_timeout_edit_mode after=" + maxWait + "s tempPath=" + (tempPath ?? ""));
+                _flushWaiting = false;
+                _state = State.PostRecord;
+                _postPhase = PostPhase.WaitMp4;
+                _postPhaseStart = DateTime.Now;
+                if (!_localMp4Exists)
+                {
+                    var fi = FindExpectedOrNewestMp4(Mp4MinSizeBytes);
+                    if (fi != null)
+                    {
+                        _mp4Path = fi.FullName;
+                        _localMp4Exists = true;
+                        _localPath = fi.FullName;
+                        _localSizeBytes = fi.Length;
+                        _latestMp4Path = fi.FullName;
+                        AssiLog("step=edit_mode_late_mp4_found path=" + fi.FullName);
+                    }
+                }
             }
             return;
         }
@@ -2159,27 +2437,36 @@ public static class SnowPanicVideoPipelineSelfTest
                 }
                 _localPath = uploadPath;
                 _localSizeBytes = uploadSize;
+                _result = "LOCAL_READY";
                 _previewStatus = "PENDING";
                 _driveFileStatus = "pending";
                 _backgroundTasksPending = true;
                 _backgroundTasksRequested = true;
                 AssiLog("[VideoPipeline] background_tasks_started=true");
-                Task.Run(() =>
-                {
-                    try { RunUploadPhaseFromLatest(); }
-                    finally
-                    {
-                        _backgroundTasksPending = false;
-                        EditorApplication.delayCall += () =>
-                        {
-                            WriteSessionData();
-                            AssiLog("step=background_complete preview_status=" + (_previewStatus ?? "?") + " upload=" + (_driveFileStatus ?? "?"));
-                        };
-                    }
-                });
+                AssiLog("background_tasks_started=true");
+                _previewStartedAsync = true;
+                _uploadStartedAsync = true;
+                _slackStartedAsync = true;
+                WriteSessionData();
+                EmitEarlyReportAndCopy();
                 _postPhase = PostPhase.Complete;
                 _state = State.Done;
                 RunExitRoutine(timedOut: false);
+                Task.Run(() =>
+                {
+                    try
+                    {
+                        RunUploadPhaseFromLatest();
+                    }
+                    catch (Exception ex)
+                    {
+                        AssiLog("step=background_exception ex=" + (ex.Message ?? "").Replace("\r", " ").Replace("\n", " | ") + " -> fallback_to_main_thread");
+                        _backgroundFallbackToMainThread = true;
+                        return;
+                    }
+                    _backgroundTasksPending = false;
+                    _backgroundWorkComplete = true;
+                });
             }
             if (fi == null && waitElapsed >= Mp4WaitMaxSec)
             {
@@ -2440,7 +2727,7 @@ public static class SnowPanicVideoPipelineSelfTest
                     _recorderStopRequestedAt = DateTime.Now;
                     var isRec = _controller != null && _controller.IsRecording();
                     AssiLog("step=recorder_stop controller=" + (_controller != null ? "exists" : "null") + " isRecording=" + isRec);
-                    if (_controller != null && _controller.IsRecording()) _controller.StopRecording();
+                    if (_controller != null && _controller.IsRecording()) { _controller.StopRecording(); _stopHookCalled = true; }
                     _lastStep = "recorder_stop";
                     EnterPostStopPolling("ScheduleForceStopTimer");
                 }

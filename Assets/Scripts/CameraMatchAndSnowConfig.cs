@@ -267,9 +267,14 @@ class CameraMatchAndSnowRunner : MonoBehaviour
 
         Debug.Log($"[SNOW_CONFIG] initial_snow_depth={initialDepth:F3} primary_cluster_size={primarySize:F2} largest_fall_group={largestFall} active_snow_visual={activeSnow}");
 
+        Vector3 roofBoundsCenter = Vector3.zero;
+        Vector3 roofBoundsSize = Vector3.zero;
+        Vector3 snowCoverBoundsCenter = Vector3.zero;
+        Vector3 snowCoverBoundsSize = Vector3.zero;
         Vector2 roofSurfaceSize = Vector2.zero;
         Vector2 snowCoverSize = Vector2.zero;
         bool snowCoverMatches = false;
+        float snowCoverMarginX = 0f, snowCoverMarginZ = 0f;
         string activeRoofTarget = "none";
         string roofShape = "mono_slope";
         string roofSlopeDir = "front";
@@ -277,23 +282,37 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         if (roofColLog != null)
         {
             activeRoofTarget = roofColLog.name;
+            var rb = roofColLog.bounds;
+            roofBoundsCenter = rb.center;
+            roofBoundsSize = rb.size;
             if (roofColLog is BoxCollider box)
             {
                 roofSurfaceSize = new Vector2(Mathf.Max(0.1f, box.size.x), Mathf.Max(0.1f, box.size.z));
             }
             else
             {
-                var b = roofColLog.bounds;
-                roofSurfaceSize = new Vector2(Mathf.Max(0.1f, b.size.x), Mathf.Max(0.1f, b.size.z));
+                roofSurfaceSize = new Vector2(Mathf.Max(0.1f, rb.size.x), Mathf.Max(0.1f, rb.size.z));
             }
         }
         if (spawner != null)
         {
             snowCoverSize = new Vector2(spawner.RoofWidth, spawner.RoofLength);
-            float tol = 0.08f;
+            snowCoverBoundsCenter = spawner.RoofCenter;
+            Vector3 r = spawner.RoofR, f = spawner.RoofF;
+            float w = spawner.RoofWidth, l = spawner.RoofLength;
+            Vector3 p0 = snowCoverBoundsCenter - r * (w * 0.5f) - f * (l * 0.5f);
+            Bounds scb = new Bounds(p0, Vector3.zero);
+            scb.Encapsulate(snowCoverBoundsCenter + r * (w * 0.5f) - f * (l * 0.5f));
+            scb.Encapsulate(snowCoverBoundsCenter + r * (w * 0.5f) + f * (l * 0.5f));
+            scb.Encapsulate(snowCoverBoundsCenter - r * (w * 0.5f) + f * (l * 0.5f));
+            snowCoverBoundsCenter = scb.center;
+            snowCoverBoundsSize = scb.size;
+            float tol = 0.05f;
             bool matchDirect = Mathf.Abs(roofSurfaceSize.x - snowCoverSize.x) <= tol && Mathf.Abs(roofSurfaceSize.y - snowCoverSize.y) <= tol;
             bool matchSwap = Mathf.Abs(roofSurfaceSize.x - snowCoverSize.y) <= tol && Mathf.Abs(roofSurfaceSize.y - snowCoverSize.x) <= tol;
             snowCoverMatches = matchDirect || matchSwap;
+            snowCoverMarginX = 0.5f * (roofBoundsSize.x - snowCoverBoundsSize.x);
+            snowCoverMarginZ = 0.5f * (roofBoundsSize.z - snowCoverBoundsSize.z);
         }
         Vector3 downhill = spawner != null ? spawner.RoofDownhill : Vector3.zero;
         roofSlopeDir = GetFallDirectionLabel(downhill, cam != null ? cam.transform.forward : Vector3.forward);
@@ -303,10 +322,14 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         float groundLifetime = groundSys != null ? groundSys.groundPileLifetimeSec : 0f;
         int groundActiveCount = groundSys != null ? groundSys.GetActivePileCount() : 0;
 
+        string roofBoundsCenterStr = string.Format("({0:F2},{1:F2},{2:F2})", roofBoundsCenter.x, roofBoundsCenter.y, roofBoundsCenter.z);
+        string roofBoundsSizeStr = string.Format("({0:F2},{1:F2},{2:F2})", roofBoundsSize.x, roofBoundsSize.y, roofBoundsSize.z);
+        string snowCenterStr = string.Format("({0:F2},{1:F2},{2:F2})", snowCoverBoundsCenter.x, snowCoverBoundsCenter.y, snowCoverBoundsCenter.z);
+        string snowSizeStr = string.Format("({0:F2},{1:F2},{2:F2})", snowCoverBoundsSize.x, snowCoverBoundsSize.y, snowCoverBoundsSize.z);
         string roofSurfStr = string.Format("({0:F2},{1:F2})", roofSurfaceSize.x, roofSurfaceSize.y);
         string snowCoverStr = string.Format("({0:F2},{1:F2})", snowCoverSize.x, snowCoverSize.y);
 
-        Debug.Log($"[SNOW_COVER] roof_surface_size={roofSurfStr} snow_cover_size={snowCoverStr} snow_cover_matches_roof={snowCoverMatches.ToString().ToLower()} active_roof_target={activeRoofTarget} roof_shape={roofShape} roof_slope_direction={roofSlopeDir} ground_snow_spawned={groundSpawned.ToString().ToLower()} ground_snow_lifetime={groundLifetime:F1} ground_snow_active_count={groundActiveCount} largest_fall_group={SnowPackSpawner.LastRemovedCount}");
+        Debug.Log($"[SNOW_COVER] active_roof_target={activeRoofTarget} roof_surface_bounds_center={roofBoundsCenterStr} roof_surface_bounds_size={roofBoundsSizeStr} snow_cover_bounds_center={snowCenterStr} snow_cover_bounds_size={snowSizeStr} roof_surface_size={roofSurfStr} snow_cover_size={snowCoverStr} snow_cover_matches_roof={snowCoverMatches.ToString().ToLower()} snow_cover_margin_x={snowCoverMarginX:F3} snow_cover_margin_z={snowCoverMarginZ:F3} roof_shape={roofShape} roof_slope_direction={roofSlopeDir} ground_snow_spawned={groundSpawned.ToString().ToLower()} ground_snow_lifetime={groundLifetime:F1} ground_snow_active_count={groundActiveCount}");
         RoofSnowReportWriter.Write(roofSurfStr, snowCoverStr, snowCoverMatches);
 
         string visualFallDir = GetFallDirectionLabel(downhill, cam != null ? cam.transform.forward : Vector3.forward);

@@ -56,13 +56,54 @@ public static class SnowLoopNoaReportAutoCopy
         }
     }
 
-    /// <summary>SelfTest用レポート。VIDEO FOR NOA を最上段に、続けて VIDEO PIPELINE LOGS、CORNICE SCENE CHECK、TAP DEBUG。</summary>
+    /// <summary>SelfTest用レポート。早出し時はEARLY REPORT、後追い完了時はEARLY+FINALを明示。</summary>
     public static bool BuildSelfTestReport()
     {
         try
         {
             var lines = LoadConsoleLines();
             var sb = new StringBuilder();
+            var sessionPath = SnowPanicVideoPipelineSelfTest.GetSessionDataPath();
+
+            if (File.Exists(sessionPath))
+            {
+                var sessionDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var line in File.ReadAllLines(sessionPath))
+                {
+                    var eq = line.IndexOf('=');
+                    if (eq > 0) sessionDict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                }
+                string v;
+                var reportEarly = sessionDict.TryGetValue("report_emitted_early", out v) && v == "true";
+                var finalEmitted = sessionDict.TryGetValue("final_result_emitted", out v) && v == "true";
+                var copyReadyMs = sessionDict.TryGetValue("report_copy_ready_time_ms", out v) ? v : "0";
+
+                if (reportEarly)
+                {
+                    sb.AppendLine("=== EARLY REPORT (Stop直後・mp4確定・gif/upload処理中) ===");
+                    sb.AppendLine("report_emitted_early=true");
+                    sb.AppendLine("report_copy_ready_time_ms=" + copyReadyMs);
+                    sb.AppendLine("preview_status=PENDING");
+                    sb.AppendLine("upload_status=PENDING");
+                    sb.AppendLine("ffmpeg_status=PENDING");
+                    sb.AppendLine("final_pipeline_state=LOCAL_READY");
+                    sb.AppendLine("final_result_emitted=" + (finalEmitted ? "true" : "false"));
+                    sb.AppendLine("");
+                }
+                if (finalEmitted)
+                {
+                    sb.AppendLine("=== FINAL RESULT (gif/upload/slack完了) ===");
+                    sb.AppendLine("preview_status=" + (sessionDict.TryGetValue("preview_status", out v) ? v : "?"));
+                    sb.AppendLine("upload_status=" + (sessionDict.TryGetValue("upload_status", out v) ? v : "?"));
+                    sb.AppendLine("ffmpeg_status=" + (sessionDict.TryGetValue("ffmpeg_status", out v) ? v : "?"));
+                    sb.AppendLine("final_pipeline_state=" + (sessionDict.TryGetValue("final_pipeline_state", out v) ? v : "?"));
+                    sb.AppendLine("preview_done_called=" + (sessionDict.TryGetValue("preview_done_called", out v) ? v : "false"));
+                    sb.AppendLine("upload_finished=" + (sessionDict.TryGetValue("upload_finished", out v) ? v : "false"));
+                    sb.AppendLine("final_result_emitted=true");
+                    sb.AppendLine("");
+                }
+            }
+
             sb.AppendLine("=== SNOW ROLLBACK CHECK ===");
             sb.AppendLine(BuildSnowRollbackCheckSection(lines));
             sb.AppendLine("");
@@ -232,8 +273,9 @@ public static class SnowLoopNoaReportAutoCopy
             var localSize = sessionDict.TryGetValue("local_mp4_size_bytes", out v) ? v : "0";
             var driveUploaded = sessionDict.TryGetValue("drive_uploaded", out v) ? v : "false";
             var driveSizeBytes = sessionDict.TryGetValue("drive_size_bytes", out v) ? v : "0";
-            var uploadResult = sessionDict.TryGetValue("upload_result", out v) ? v : (driveUploaded == "true" ? "DRIVE_READY" : "NOT_RUN");
-            var finalResult = sessionDict.TryGetValue("final_result", out v) ? v : (driveUploaded == "true" ? "DRIVE_READY" : "ERROR");
+            var uploadResult = sessionDict.TryGetValue("upload_result", out v) ? v : (driveUploaded == "true" ? "DRIVE_READY" : "LOCAL_READY");
+            var uploadStatus = sessionDict.TryGetValue("upload_status", out v) ? v : "PENDING";
+            var finalResult = sessionDict.TryGetValue("final_result", out v) ? v : (driveUploaded == "true" ? "DRIVE_READY" : "LOCAL_READY");
             var sessionId = sessionDict.TryGetValue("sessionId", out v) ? v : "";
             var scene = sessionDict.TryGetValue("scene", out v) ? v : "";
             var unityVersion = sessionDict.TryGetValue("unityVersion", out v) ? v : Application.unityVersion;
@@ -249,6 +291,7 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("drive_uploaded=" + driveUploaded);
             sb.AppendLine("drive_size_bytes=" + driveSizeBytes);
             sb.AppendLine("upload_result=" + uploadResult);
+            sb.AppendLine("upload_status=" + uploadStatus);
             sb.AppendLine("final_result=" + finalResult);
             sb.AppendLine("session_id=" + sessionId);
             sb.AppendLine("scene=" + scene);
@@ -288,13 +331,22 @@ public static class SnowLoopNoaReportAutoCopy
             var previewPath = (previewType == "gif" && !string.IsNullOrEmpty(gifPath)) ? gifPath : (sessionDict.TryGetValue("preview_path", out v) ? v : "");
             if (string.IsNullOrEmpty(previewPath)) previewPath = gifPath;
             var gifExists = sessionDict.TryGetValue("gif_exists", out v) ? v : (previewType == "gif" ? "true" : "false");
+            if (gifExists != "true" && !string.IsNullOrEmpty(gifPath) && File.Exists(gifPath))
+            {
+                gifExists = "true";
+                if (previewType == "none") previewType = "gif";
+            }
             var gifSizeBytes = sessionDict.TryGetValue("gif_size_bytes", out v) ? v : (sessionDict.TryGetValue("preview_gif_size", out v) ? v : "0");
             var previewFallbackUsed = sessionDict.TryGetValue("preview_fallback_used", out v) ? v : "false";
             var ffmpegPath = sessionDict.TryGetValue("ffmpeg_path", out v) ? v : "";
             var ffmpegAvailable = sessionDict.TryGetValue("ffmpeg_available", out v) ? v : "false";
-            var previewStatus = sessionDict.TryGetValue("preview_status", out v) ? v : "PREVIEW_ERROR";
+            var ffmpegStatus = sessionDict.TryGetValue("ffmpeg_status", out v) ? v : "PENDING";
+            var previewStatus = sessionDict.TryGetValue("preview_status", out v) ? v : "PENDING";
             var previewExists = sessionDict.TryGetValue("preview_exists", out v) ? v : "false";
             var previewDriveLink = sessionDict.TryGetValue("preview_drive_link", out v) ? v : (sessionDict.TryGetValue("preview_gif_drive_link", out v) ? v : "");
+            var previewDoneCalled = sessionDict.TryGetValue("preview_done_called", out v) ? v : "false";
+            var previewErrorReason = sessionDict.TryGetValue("preview_error_reason", out v) ? v : "";
+            var finalPipelineState = sessionDict.TryGetValue("final_pipeline_state", out v) ? v : "";
             var sb = new StringBuilder();
             sb.AppendLine("preview_type=" + (previewType ?? "none"));
             sb.AppendLine("preview_path=" + (previewPath ?? ""));
@@ -303,9 +355,13 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("gif_size_bytes=" + (gifSizeBytes ?? "0"));
             sb.AppendLine("preview_fallback_used=" + previewFallbackUsed);
             sb.AppendLine("ffmpeg_path=" + (ffmpegPath ?? ""));
-            sb.AppendLine("ffmpeg_available=" + ffmpegAvailable);
-            sb.AppendLine("preview_status=" + (previewStatus ?? "PREVIEW_ERROR"));
+            sb.AppendLine("ffmpeg_available=" + (previewStatus == "PENDING" ? "(pending)" : ffmpegAvailable));
+            sb.AppendLine("ffmpeg_status=" + (ffmpegStatus ?? "PENDING"));
+            sb.AppendLine("preview_status=" + (previewStatus ?? "PENDING"));
             sb.AppendLine("preview_exists=" + previewExists);
+            sb.AppendLine("preview_done_called=" + previewDoneCalled);
+            sb.AppendLine("preview_error_reason=" + (previewErrorReason ?? ""));
+            sb.AppendLine("final_pipeline_state=" + (finalPipelineState ?? ""));
             sb.AppendLine("preview_size_bytes=" + (sessionDict.TryGetValue("preview_size_bytes", out v) ? v : "0"));
             sb.AppendLine("preview_drive_link=" + (previewDriveLink ?? ""));
             return sb.ToString();

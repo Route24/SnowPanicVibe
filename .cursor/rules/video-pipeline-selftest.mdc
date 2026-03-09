@@ -1,22 +1,29 @@
 ---
-description: VideoPipeline 関連の確認は Self Test（Play ではない）
+description: VideoPipeline 正式運用は Play→操作→Stop
 globs: Assets/Editor/SnowPanicVideoPipelineSelfTest.cs, Assets/Scripts/Editor/AssiReportWindow.cs
 alwaysApply: true
 ---
 
-# VideoPipeline 確認は Self Test
+# VideoPipeline 正式運用は Play→操作→Stop
 
-動画パイプライン（録画・mp4生成・レポート）の確認は **Play ではなく Self Test** を使う。
+動画パイプライン（録画・mp4・gif・upload・レポート）の**正式な確認運用**は **Play→操作→Stop** に固定。
 
 ## 伝え方（必須）
 
-VideoPipeline や SelfTest 関連の作業時は、**毎回はっきり**以下を用いる:
+VideoPipeline や動画/レポートの確認時は、**毎回はっきり**以下を用いる:
 
-- ✅ **Self Test して確認してください**
-- ✅ **SnowPanic → Self Test を実行して確認してください**
-- ❌ ~~Play して確認してください~~（動画パイプラインの文脈では誤り）
+- ✅ **Playして確認してください**
+- ✅ **Play → 操作 → Stop → レポートをノアに送ってください**
+- ❌ ~~Self Test を成功基準にする~~（確認基準にしない）
 
-## 理由
+## 正式フロー
 
-- **Play**: 通常のゲームプレイのみ。録画は行われない
-- **Self Test**: 録画開始→10秒→自動停止→mp4→履歴→プレビュー→レポート（動画パイプライン全フロー）
+- **Play**: 録画開始（Auto-record on Play 有効時）
+- **操作**: 実際にゲームを触る
+- **Stop**: mp4 finalize → gif生成 → upload → Slack → レポート更新
+- 停止後、ASSI Report が開き、コピーボタンでノアに送信
+
+## Self Test について
+
+- Self Test は確認基準にしない
+- 必要に応じてメニューから実行可能（手動停止のみ）

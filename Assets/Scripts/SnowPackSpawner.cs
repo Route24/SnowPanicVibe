@@ -139,6 +139,7 @@ public class SnowPackSpawner : MonoBehaviour
     int _poolInstantiated;
     float _cachedLayerStep;
     int _cachedNx, _cachedNz;
+    float _cachedSpacingR, _cachedSpacingF;
     Vector3 _cachedLocalCenter;
     float _cachedHalfX, _cachedHalfZ;
     Vector3 _roofN, _roofR, _roofF, _roofDownhill;
@@ -460,6 +461,36 @@ public class SnowPackSpawner : MonoBehaviour
         BuildRoofBasis();
     }
 
+    void GridCellToUV(int ix, int iz, out float u, out float v)
+    {
+        if (UseFullRoofCoverage && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
+        {
+            u = -0.5f + (_roofCellSize * 0.5f + ix * _cachedSpacingR) / _roofWidth;
+            v = -0.5f + (_roofCellSize * 0.5f + iz * _cachedSpacingF) / _roofLength;
+        }
+        else
+        {
+            u = (ix + 0.5f) / Mathf.Max(1, _cachedNx) - 0.5f;
+            v = (iz + 0.5f) / Mathf.Max(1, _cachedNz) - 0.5f;
+        }
+    }
+
+    void UVToGridCell(float u, float v, out int cx, out int cz)
+    {
+        if (UseFullRoofCoverage && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
+        {
+            cx = Mathf.RoundToInt(((u + 0.5f) * _roofWidth - _roofCellSize * 0.5f) / _cachedSpacingR);
+            cz = Mathf.RoundToInt(((v + 0.5f) * _roofLength - _roofCellSize * 0.5f) / _cachedSpacingF);
+        }
+        else
+        {
+            cx = Mathf.RoundToInt((u + 0.5f) * _cachedNx - 0.5f);
+            cz = Mathf.RoundToInt((v + 0.5f) * _cachedNz - 0.5f);
+        }
+        cx = Mathf.Clamp(cx, 0, _cachedNx - 1);
+        cz = Mathf.Clamp(cz, 0, _cachedNz - 1);
+    }
+
     Transform GetRoofAngleTransform()
     {
         if (roofAngleReferenceTransform != null) return roofAngleReferenceTransform;
@@ -576,13 +607,16 @@ public class SnowPackSpawner : MonoBehaviour
         float usableL = _roofLength - inset * 2f;
         if (UseFullRoofCoverage)
         {
-            _cachedNx = Mathf.Max(1, Mathf.CeilToInt(usableW / _roofCellSize));
-            _cachedNz = Mathf.Max(1, Mathf.CeilToInt(usableL / _roofCellSize));
+            _cachedNx = Mathf.Max(1, Mathf.FloorToInt((_roofWidth - _roofCellSize) / _roofCellSize) + 1);
+            _cachedNz = Mathf.Max(1, Mathf.FloorToInt((_roofLength - _roofCellSize) / _roofCellSize) + 1);
+            _cachedSpacingR = _cachedNx > 1 ? (_roofWidth - _roofCellSize) / (_cachedNx - 1) : 0f;
+            _cachedSpacingF = _cachedNz > 1 ? (_roofLength - _roofCellSize) / (_cachedNz - 1) : 0f;
         }
         else
         {
             _cachedNx = Mathf.Max(1, Mathf.FloorToInt(usableW / _roofCellSize));
             _cachedNz = Mathf.Max(1, Mathf.FloorToInt(usableL / _roofCellSize));
+            _cachedSpacingR = _cachedSpacingF = 0f;
         }
         _cachedLayerStep = Mathf.Max(0.02f, _roofCellSize * pieceHeightScale);
 
@@ -616,8 +650,17 @@ public class SnowPackSpawner : MonoBehaviour
             for (int ix = 0; ix < _cachedNx; ix++)
             {
                 if (existing + list.Count >= maxPieces) break;
-                float u = (ix + 0.5f) / _cachedNx - 0.5f;
-                float v = (iz + 0.5f) / _cachedNz - 0.5f;
+                float u, v;
+                if (UseFullRoofCoverage && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
+                {
+                    u = -0.5f + (_roofCellSize * 0.5f + ix * _cachedSpacingR) / _roofWidth;
+                    v = -0.5f + (_roofCellSize * 0.5f + iz * _cachedSpacingF) / _roofLength;
+                }
+                else
+                {
+                    u = (ix + 0.5f) / _cachedNx - 0.5f;
+                    v = (iz + 0.5f) / _cachedNz - 0.5f;
+                }
                 float jx = UnityEngine.Random.Range(-jitter, jitter);
                 float jz = UnityEngine.Random.Range(-jitter, jitter);
                 float layerOffset = RoofSurfaceOffset + layerIndex * _cachedLayerStep;
@@ -758,11 +801,10 @@ public class SnowPackSpawner : MonoBehaviour
         Vector3 d = worldCenter - _roofCenter;
         float u = Vector3.Dot(d, _roofR) / Mathf.Max(0.01f, _roofWidth);
         float v = Vector3.Dot(d, _roofF) / Mathf.Max(0.01f, _roofLength);
-        int cxRaw = Mathf.RoundToInt((u + 0.5f) * _cachedNx - 0.5f);
-        int czRaw = Mathf.RoundToInt((v + 0.5f) * _cachedNz - 0.5f);
-        int cx = Mathf.Clamp(cxRaw, 0, _cachedNx - 1);
-        int cz = Mathf.Clamp(czRaw, 0, _cachedNz - 1);
-        bool clamped = (cxRaw != cx || czRaw != cz);
+        int cxPrev = Mathf.RoundToInt((u + 0.5f) * _cachedNx - 0.5f);
+        int czPrev = Mathf.RoundToInt((v + 0.5f) * _cachedNz - 0.5f);
+        UVToGridCell(u, v, out int cx, out int cz);
+        bool clamped = (cxPrev != cx || czPrev != cz);
 
         int packedBefore = GetPackedCubeCountRealtime();
         int packedInRadiusBefore = 0;
@@ -901,8 +943,7 @@ public class SnowPackSpawner : MonoBehaviour
 
         int scx = Mathf.Clamp(cx, 0, _cachedNx - 1);
         int scz = Mathf.Clamp(cz, 0, _cachedNz - 1);
-        float su = (scx + 0.5f) / _cachedNx - 0.5f;
-        float sv = (scz + 0.5f) / _cachedNz - 0.5f;
+        GridCellToUV(scx, scz, out float su, out float sv);
         Vector3 cellCenter = _roofCenter + _roofR * (su * _roofWidth) + _roofF * (sv * _roofLength) + _roofN * RoofSurfaceOffset;
         float halfCell = _roofCellSize * 0.5f;
         Vector3 cellMin = cellCenter - _roofR * halfCell - _roofF * halfCell - _roofN * 0.05f;
@@ -911,7 +952,7 @@ public class SnowPackSpawner : MonoBehaviour
         bool tapInsideBounds = cellBounds.Contains(worldCenter);
         if (packedBefore <= FullClearSafetyThreshold || (removedCount == 0 && packedBefore > 0))
         {
-            UnityEngine.Debug.Log($"[TapDebug] packedSmall u={u:F4} v={v:F4} cx={cx} cz={cz} cxRaw={cxRaw} czRaw={czRaw} clamped={clamped} gridBounds=(0,0)-({_cachedNx - 1},{_cachedNz - 1}) packedInRadiusBefore={packedInRadiusBefore} packedBefore={packedBefore} tapInsideBounds={tapInsideBounds}");
+            UnityEngine.Debug.Log($"[TapDebug] packedSmall u={u:F4} v={v:F4} cx={cx} cz={cz} clamped={clamped} gridBounds=(0,0)-({_cachedNx - 1},{_cachedNz - 1}) packedInRadiusBefore={packedInRadiusBefore} packedBefore={packedBefore} tapInsideBounds={tapInsideBounds}");
         }
         UnityEngine.Debug.Log($"[TapDebug] tapU={u:F4} tapV={v:F4} cx={cx} cz={cz} tapWorld=({worldCenter.x:F3},{worldCenter.y:F3},{worldCenter.z:F3}) packedInRadiusBefore={packedInRadiusBefore}");
         UnityEngine.Debug.Log($"[CellDebug] sampleCell(cx={scx},cz={scz}) sampleCellWorld=({cellCenter.x:F3},{cellCenter.y:F3},{cellCenter.z:F3}) cellBounds=({cellBounds.min.x:F3},{cellBounds.min.y:F3},{cellBounds.min.z:F3})-({cellBounds.max.x:F3},{cellBounds.max.y:F3},{cellBounds.max.z:F3}) tapInsideBounds={tapInsideBounds}");
@@ -1049,7 +1090,8 @@ public class SnowPackSpawner : MonoBehaviour
             StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, localAvalancheSlideSpeed));
             if (roofSnowSystem != null && roofSnowSystem.isActiveAndEnabled)
             {
-                Vector3 worldCenter = _roofCenter + _roofR * ((key.Item1 + 0.5f) / Mathf.Max(1, _cachedNx) - 0.5f) * _roofWidth + _roofF * ((key.Item2 + 0.5f) / Mathf.Max(1, _cachedNz) - 0.5f) * _roofLength + _roofN * RoofSurfaceOffset;
+                GridCellToUV(key.Item1, key.Item2, out float ku, out float kv);
+                Vector3 worldCenter = _roofCenter + _roofR * (ku * _roofWidth) + _roofF * (kv * _roofLength) + _roofN * RoofSurfaceOffset;
                 roofSnowSystem.SpawnLocalBurstAt(worldCenter, 1, _roofDownhill.normalized);
             }
             detached++;
@@ -1094,7 +1136,8 @@ public class SnowPackSpawner : MonoBehaviour
             StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, localAvalancheSlideSpeed));
             if (roofSnowSystem != null && roofSnowSystem.isActiveAndEnabled)
             {
-                Vector3 worldCenter = _roofCenter + _roofR * ((key.Item1 + 0.5f) / Mathf.Max(1, _cachedNx) - 0.5f) * _roofWidth + _roofF * ((key.Item2 + 0.5f) / Mathf.Max(1, _cachedNz) - 0.5f) * _roofLength + _roofN * RoofSurfaceOffset;
+                GridCellToUV(key.Item1, key.Item2, out float ku, out float kv);
+                Vector3 worldCenter = _roofCenter + _roofR * (ku * _roofWidth) + _roofF * (kv * _roofLength) + _roofN * RoofSurfaceOffset;
                 roofSnowSystem.SpawnLocalBurstAt(worldCenter, 1, _roofDownhill.normalized);
             }
         }
@@ -1721,8 +1764,7 @@ public class SnowPackSpawner : MonoBehaviour
         }
         foreach (var item in toRefresh)
         {
-            float u = (item.ix + 0.5f) / _cachedNx - 0.5f;
-            float v = (item.iz + 0.5f) / _cachedNz - 0.5f;
+            GridCellToUV(item.ix, item.iz, out float u, out float v);
             float layerOffset = RoofSurfaceOffset + item.layer * _cachedLayerStep;
             Vector3 p = _roofCenter + _roofR * (u * _roofWidth) + _roofF * (v * _roofLength) + _roofN * layerOffset;
             var angleT = GetRoofAngleTransform();
