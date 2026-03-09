@@ -44,24 +44,33 @@ public class CabinRoofForceHide : MonoBehaviour
 
     static void ForceHide()
     {
-        var cabin = GameObject.Find("cabin-roof");
-        if (cabin == null) return;
-        var mr = cabin.GetComponent<MeshRenderer>();
-        if (mr != null && mr.enabled) mr.enabled = false;
+        foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t != null && t.gameObject.name == "cabin-roof")
+            {
+                var mr = t.GetComponent<MeshRenderer>();
+                if (mr != null && mr.enabled) mr.enabled = false;
+            }
+        }
     }
 
     static void ForceHideAndLog()
     {
         try
         {
-            var cabin = GameObject.Find("cabin-roof");
-            if (cabin == null) return;
-            var mr = cabin.GetComponent<MeshRenderer>();
-            bool wasEnabled = mr != null && mr.enabled;
-            if (mr != null) mr.enabled = false;
-            string path = GetTransformPath(cabin.transform);
-            SnowLoopLogCapture.AppendToAssiReport("=== CABIN_ROOF_FORCE_HIDE ===");
-            SnowLoopLogCapture.AppendToAssiReport($"time={Time.time:F3} enabled={wasEnabled} active={cabin.activeInHierarchy} path={path}");
+            int count = 0;
+            foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            {
+                if (t != null && t.gameObject.name == "cabin-roof")
+                {
+                    var mr = t.GetComponent<MeshRenderer>();
+                    bool wasEnabled = mr != null && mr.enabled;
+                    if (mr != null) mr.enabled = false;
+                    count++;
+                    SnowLoopLogCapture.AppendToAssiReport($"CABIN_ROOF_HIDE path={GetTransformPath(t)} wasEnabled={wasEnabled}");
+                }
+            }
+            SnowLoopLogCapture.AppendToAssiReport($"=== CABIN_ROOF_FORCE_HIDE count={count} ===");
         }
         catch (System.Exception) { }
     }

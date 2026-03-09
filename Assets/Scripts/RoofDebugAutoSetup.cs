@@ -49,6 +49,8 @@ public class RoofDebugAutoSetup : MonoBehaviour
             debugFlat.transform.localPosition = new Vector3(0, 0.07f, 0);
             debugFlat.transform.localRotation = Quaternion.Inverse(targetRoof.rotation) * Quaternion.Euler(debugTiltX, 0, 0);
             debugFlat.transform.localScale = new Vector3(debugWidth, 0.02f, debugDepth);
+            var mr = debugFlat.GetComponent<MeshRenderer>();
+            if (mr != null) mr.enabled = false;
             return;
         }
 
@@ -62,7 +64,8 @@ public class RoofDebugAutoSetup : MonoBehaviour
 
         var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
         MaterialColorHelper.SetColorSafe(mat, new Color(0.2f, 0.25f, 0.3f));
-        debugFlat.GetComponent<MeshRenderer>().sharedMaterial = mat;
+        var meshRend = debugFlat.GetComponent<MeshRenderer>();
+        if (meshRend != null) { meshRend.sharedMaterial = mat; meshRend.enabled = false; } // 補助メッシュ非表示
     }
 
     void DisableSnowFX()

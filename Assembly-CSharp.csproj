@@ -73,6 +73,7 @@
     <Compile Include="Assets/Scripts/RoofSnow.cs" />
     <Compile Include="Assets/Scripts/ToolCooldownManager.cs" />
     <Compile Include="Assets/Scripts/SnowMinReproBootstrap.cs" />
+    <Compile Include="Assets/Scripts/CameraMatchAndSnowConfig.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/TapToSlideOnRoof.cs" />
     <Compile Include="Assets/Scripts/SnowTestSlideAssist.cs" />

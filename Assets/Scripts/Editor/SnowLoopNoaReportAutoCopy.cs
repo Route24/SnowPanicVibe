@@ -930,8 +930,10 @@ public static class SnowLoopNoaReportAutoCopy
             var success = dict.TryGetValue("upload_success", out v) ? v : (dict.TryGetValue("drive_uploaded", out v) ? v : "false");
             var driveUploaded = dict.TryGetValue("drive_uploaded", out v) ? v : "false";
             var err = dict.TryGetValue("upload_error", out v) ? v : (dict.TryGetValue("slack_error", out v) ? v : "none");
-            var result = (success == "true" || driveUploaded == "true") ? "OK" : "WARNING";
+            var uploadStatus = dict.TryGetValue("upload_status", out v) ? v : "unknown";
+            var result = (success == "true" || driveUploaded == "true") ? "OK" : (uploadStatus == "PENDING" ? "PENDING" : "WARNING");
             var sb = new StringBuilder();
+            sb.AppendLine("upload_status=" + uploadStatus);
             sb.AppendLine("upload_attempted=" + (string.IsNullOrEmpty(attempted) ? "true" : attempted));
             sb.AppendLine("upload_success=" + (string.IsNullOrEmpty(success) ? driveUploaded : success));
             sb.AppendLine("error=" + (string.IsNullOrEmpty(err) ? "none" : err));

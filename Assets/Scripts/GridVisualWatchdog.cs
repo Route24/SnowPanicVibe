@@ -35,6 +35,7 @@ public class GridVisualWatchdog : MonoBehaviour
 
     static void RunWatchdog()
     {
+        if (!Application.isPlaying) return; // Stop時はスキップ（破棄中のオブジェクト参照防止）
         var spawner = FindFirstObjectByType<SnowPackSpawner>();
         if (spawner == null) return;
 
@@ -83,7 +84,8 @@ public class GridVisualWatchdog : MonoBehaviour
             if (roofR != null && !roofR.enabled)
             {
                 roofR.enabled = true;
-                Debug.LogError($"[GridWatchdog] RoofSnowLayer was DISABLED unexpectedly! Restored. frame={Time.frameCount} t={Time.time:F2}\n{System.Environment.StackTrace}");
+                if (Application.isPlaying) // Stop時のログ抑制
+                    Debug.LogError($"[GridWatchdog] RoofSnowLayer was DISABLED unexpectedly! Restored. frame={Time.frameCount} t={Time.time:F2}\n{System.Environment.StackTrace}");
             }
         }
     }

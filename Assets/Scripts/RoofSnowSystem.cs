@@ -48,6 +48,8 @@ public class RoofSnowSystem : MonoBehaviour
     public Color roofSnowColor = new Color(0.92f, 0.95f, 1f, 1f);
     [Tooltip("Constant snow surface thickness (no global pulsing).")]
     public float roofSnowConstantThickness = 0.08f;
+    [Tooltip("雪面を屋根に密着させるオフセット（負で下げる）。")]
+    public float roofSnowSurfaceOffsetY = -0.02f;
 
     [Header("Burst visual")]
     public int burstChunkCount = 36;
@@ -476,10 +478,11 @@ public class RoofSnowSystem : MonoBehaviour
         if (_roofLayer == null) return;
 
         float h = Mathf.Max(0.02f, roofSnowConstantThickness);
+        float offsetY = roofSnowSurfaceOffsetY;
         if (roofSlideCollider is BoxCollider box)
         {
             Vector3 size = new Vector3(Mathf.Max(0.1f, box.size.x), h, Mathf.Max(0.1f, box.size.z));
-            Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + h * 0.5f);
+            Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + h * 0.5f + offsetY);
             _roofLayer.localPosition = center;
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = size;
@@ -487,7 +490,7 @@ public class RoofSnowSystem : MonoBehaviour
         else
         {
             Bounds b = roofSlideCollider.bounds;
-            _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f);
+            _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f + offsetY);
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = new Vector3(Mathf.Max(0.1f, b.size.x), h, Mathf.Max(0.1f, b.size.z));
         }

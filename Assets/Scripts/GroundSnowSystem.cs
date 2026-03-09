@@ -26,6 +26,9 @@ public class GroundSnowSystem : MonoBehaviour
     Transform _groundLayer;
     readonly List<GroundSnowPile> _piles = new List<GroundSnowPile>();
 
+    /// <summary>現在アクティブな地面雪のピール数（ログ用）。</summary>
+    public int GetActivePileCount() => _piles.Count;
+
     /// <summary>DebugSnowVisibility用。GroundSnowLayerのRenderer。</summary>
     public Renderer GetGroundLayerRenderer()
     {

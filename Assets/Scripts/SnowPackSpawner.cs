@@ -124,7 +124,7 @@ public class SnowPackSpawner : MonoBehaviour
     float _nextSyncAllowedAt;
     float _nextMinFillTime = -10f;
     const bool UsingLocalPosition = true;
-    const float RoofSurfaceOffset = 0.01f;
+    const float RoofSurfaceOffset = 0.002f; // 屋根密着: 0.005→0.002 で浮き感を軽減
 
     /// <summary>Avalanche/Tap局所処理中、または AssiDebugUI.DebugFreezeSpawn 時は Spawn・MinFill・Sync 追加を停止</summary>
     public bool IsSpawnFrozen => _inAvalancheSlide || (AssiDebugUI.DebugFreezeSpawn);
@@ -544,7 +544,7 @@ public class SnowPackSpawner : MonoBehaviour
         _roofLength = Mathf.Max(0.5f, maxF - minF);
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
 
-        float inset = _roofCellSize * 0.5f;
+        float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
         _cachedNx = Mathf.Max(1, Mathf.FloorToInt((_roofWidth - inset * 2f) / _roofCellSize));
         _cachedNz = Mathf.Max(1, Mathf.FloorToInt((_roofLength - inset * 2f) / _roofCellSize));
         _cachedLayerStep = Mathf.Max(0.02f, _roofCellSize * pieceHeightScale);
@@ -552,7 +552,16 @@ public class SnowPackSpawner : MonoBehaviour
         float dotRN = Vector3.Dot(r, n);
         float dotFN = Vector3.Dot(f, n);
         float dotRF = Vector3.Dot(r, f);
-        UnityEngine.Debug.Log($"[RoofBasis] dot(r,n)={dotRN:F4} dot(f,n)={dotFN:F4} dot(r,f)={dotRF:F4} roofUp=({n.x:F3},{n.y:F3},{n.z:F3}) downhill=({downhill.x:F3},{downhill.y:F3},{downhill.z:F3})");
+        if (ForceDownhillTowardCamera && Camera.main != null)
+        {
+            Vector3 dirToCam = Vector3.ProjectOnPlane(Camera.main.transform.position - _roofCenter, n).normalized;
+            if (dirToCam.sqrMagnitude > 0.001f && Vector3.Dot(_roofDownhill, dirToCam) < 0f)
+            {
+                _roofDownhill = -_roofDownhill;
+                UnityEngine.Debug.Log($"[RoofBasis] flipped downhill toward camera (奥→手前) dirToCam=({dirToCam.x:F3},{dirToCam.y:F3},{dirToCam.z:F3})");
+            }
+        }
+        UnityEngine.Debug.Log($"[RoofBasis] dot(r,n)={dotRN:F4} dot(f,n)={dotFN:F4} dot(r,f)={dotRF:F4} roofUp=({n.x:F3},{n.y:F3},{n.z:F3}) downhill=({_roofDownhill.x:F3},{_roofDownhill.y:F3},{_roofDownhill.z:F3})");
         UnityEngine.Debug.Log($"[RoofBasis] center=({_roofCenter.x:F2},{_roofCenter.y:F2},{_roofCenter.z:F2}) width={_roofWidth:F2} length={_roofLength:F2} cell={_roofCellSize:F2} nx={_cachedNx} nz={_cachedNz}");
     }
 
@@ -577,7 +586,8 @@ public class SnowPackSpawner : MonoBehaviour
                 float layerOffset = RoofSurfaceOffset + layerIndex * _cachedLayerStep;
                 Vector3 p = _roofCenter + _roofR * (u * _roofWidth + jx) + _roofF * (v * _roofLength + jz) + _roofN * layerOffset;
                 Vector3 cp = roofCollider.ClosestPoint(p + _roofN * 0.1f);
-                if ((cp - p).sqrMagnitude > 0.35f) continue;
+                float sqDistLimit = UseFullRoofCoverage ? 1.5f : 0.35f;
+                if ((cp - p).sqrMagnitude > sqDistLimit) continue;
 
                 var angleT = GetRoofAngleTransform();
                 Quaternion rot = angleT != null ? angleT.rotation : roofCollider.transform.rotation;
@@ -635,6 +645,11 @@ public class SnowPackSpawner : MonoBehaviour
     }
 
     /// <summary>HUD用。直前タップのremovedCount, PackedInRadius。</summary>
+    /// <summary>OneHouse時: 雪の滑落を「奥→手前」(カメラ方向)に強制。プレイヤー視点で気持ち良い向きに。</summary>
+    public static bool ForceDownhillTowardCamera;
+    /// <summary>OneHouse時: 積雪範囲を屋根全面に一致。inset=0, ClosestPoint閾値緩和。</summary>
+    public static bool UseFullRoofCoverage;
+
     public static int LastRemovedCount;
     public static int LastPackedInRadiusBefore;
     public static int LastTapPowderMoved;
@@ -2086,7 +2101,8 @@ public class SnowPackSpawner : MonoBehaviour
             EnsureRoot();
             if (_poolRoot == null)
             {
-                UnityEngine.Debug.LogError("[SnowPackPoolError] OnPieceDeactivated: _poolRoot is null");
+                if (Application.isPlaying)
+                    UnityEngine.Debug.LogError("[SnowPackPoolError] OnPieceDeactivated: _poolRoot is null");
                 return;
             }
             SetPieceVisualState(t, PieceVisualState.Pooled, false);
@@ -2609,6 +2625,7 @@ public class SnowPackSpawner : MonoBehaviour
         }
 
         if (_visualRoot == null || _piecesRoot == null) return;
+        if (!Application.isPlaying) return; // Stop時はスキップ
         UpdateStateIndicatorColor();
         int rootChildren = _piecesRoot.childCount;
         if (rootChildren < _rootChildrenMin1s) _rootChildrenMin1s = rootChildren;
@@ -2684,14 +2701,15 @@ public class SnowPackSpawner : MonoBehaviour
         }
         _prevActivePiecesCount = activePiecesCount;
         bool invariantOk = true;
-        if (total == 0 && _poolInstantiated > 0)
+        bool likelyTeardown = rootChildren == 0 && activePiecesCount == 0;
+        if (total == 0 && _poolInstantiated > 0 && !likelyTeardown)
         {
             invariantOk = false;
             UnityEngine.Debug.LogError($"[SnowPackPoolError] reason=totalBecameZeroAfterGeneration total={total} active={activeCount} pooled={poolCount}");
             _nextSyncCheckTime = Time.time + 1f;
             return;
         }
-        if (rootChildren <= 1 && activePiecesCount > 50 && !_inAvalancheSlide)
+        if (rootChildren <= 1 && activePiecesCount > 50 && !_inAvalancheSlide && !likelyTeardown)
         {
 #if UNITY_EDITOR
             UnityEngine.Debug.LogError($"[SnowPackChildrenError] children={rootChildren} activePieces={activePiecesCount} total={total}\n{GetRealStackTrace()}");
@@ -2744,7 +2762,7 @@ public class SnowPackSpawner : MonoBehaviour
             bool activePiecesZero = (activePiecesCount == 0);
             if (activePiecesZero)
             {
-                if (!_snowPackPassErrorLogged && Application.isPlaying)
+                if (!_snowPackPassErrorLogged && Application.isPlaying && rootChildren > 0)
                 {
                     _snowPackPassErrorLogged = true;
                     UnityEngine.Debug.LogError($"[SnowPackPASS] activePieces=0 FAIL frame={Time.frameCount} t={Time.time:F2} rootChildren={rootChildren} pooled={poolCount} (1回のみ表示)");

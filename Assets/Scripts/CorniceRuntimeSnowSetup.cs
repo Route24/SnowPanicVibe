@@ -288,10 +288,79 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
         string activeSnowVisual = oneHouseForced ? "RoofSnowLayer+SnowPackPiece" : "RoofSnow_particle+RoofSnowLayer";
         string activeSnowBreakLogic = oneHouseForced ? "SnowPackSpawner.HandleTap+DetachInRadius" : "RoofSnow.Hit+SnowPackSpawner";
         string activeSnowSpawnLogic = oneHouseForced ? "SnowPackSpawner.RebuildSnowPack" : "RoofSnow+SnowPackSpawner";
+        if (isOneHouseScene)
+            HideHelperMeshesAndLog(housesRoot);
+
         Debug.Log($"[CORNICE_SCENE_CHECK] scene={sceneName} house_count={houseCount} one_house_forced={oneHouseForced.ToString().ToLower()} rollback_applied={rollbackApplied.ToString().ToLower()} camera_position={camPosStr} camera_rotation={camRotStr} active_roof_target={activeRoofTarget} test_roof_visible={testRoofVisible.ToString().ToLower()} roof_shape={roofShape} roof_slope_direction={roofSlopeDirection} enabled_snow_systems={enabledSnowSystems} disabled_legacy_snow_systems={disabledLegacySnowSystems} active_snow_visual={activeSnowVisual} active_snow_break_logic={activeSnowBreakLogic} active_snow_spawn_logic={activeSnowSpawnLogic} spawn_system=CorniceRuntime is_expected={isExpected}");
         if (cam != null)
             Debug.Log($"[CAMERA_LOCK_CHECK] camPos={camPosStr} camEuler={camRotStr} result={(rollbackApplied ? "ROLLBACK_APPLIED" : "UNCHANGED")} target=(0,5.2,-5.8)(36,0,0)_roof_playfield");
         Debug.Log("[SNOW_ROLLBACK_CHECK] rollback_target=pre_camera_change_good_state house_count=" + houseCount + " camera_rotation=" + camRotStr + " rollback_applied=" + rollbackApplied.ToString().ToLower() + " active_roof_target=" + activeRoofTarget + " test_roof_visible=" + testRoofVisible.ToString().ToLower() + " roof_shape=" + roofShape + " roof_slope_direction=" + roofSlopeDirection + " enabled_snow_systems=" + enabledSnowSystems + " disabled_legacy_snow_systems=" + disabledLegacySnowSystems + " ground_snow=disabled result=OK comment=" + (oneHouseForced ? "mono_slope_SnowPack_only" : "multi_house_RoofSnow+SnowPack"));
+    }
+
+    void HideHelperMeshesAndLog(Transform housesRoot)
+    {
+        var hidden = new List<string>();
+
+        // 1. 補助メッシュを非表示
+        string[] hideNames = { "RoofDebugFlat", "RoofSlideColliderDebug", "RoofSnowSurface", "cabin-roof", "RoofProxy" };
+        foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t == null) continue;
+            string name = t.gameObject.name;
+            bool shouldHide = false;
+            foreach (var n in hideNames)
+                if (name == n) { shouldHide = true; break; }
+
+            if (shouldHide && name == "RoofProxy")
+            {
+                Object.Destroy(t.gameObject);
+                hidden.Add(GetPath(t));
+                continue;
+            }
+
+            if (shouldHide)
+            {
+                var r = t.GetComponent<Renderer>();
+                if (r != null && r.enabled) { r.enabled = false; hidden.Add(GetPath(t)); }
+                else if (name == "RoofSlideColliderDebug" && t.gameObject.activeSelf)
+                { t.gameObject.SetActive(false); hidden.Add(GetPath(t)); }
+            }
+        }
+
+        var roofCol = GameObject.Find("RoofSlideCollider");
+        if (roofCol != null)
+        {
+            var debug = roofCol.transform.Find("RoofSlideColliderDebug");
+            if (debug != null && debug.gameObject.activeSelf)
+            { debug.gameObject.SetActive(false); hidden.Add(GetPath(debug)); }
+        }
+
+        // 2. 非表示後の可視メッシュ一覧
+        var visibleAfter = new List<string>();
+        foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (r == null || !r.enabled) continue;
+            visibleAfter.Add(GetPath(r.transform));
+        }
+
+        var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
+        float snowOffset = roofSys != null ? roofSys.roofSnowSurfaceOffsetY : 0f;
+        bool snowVisualAttached = roofSys != null && roofSys.roofSlideCollider != null;
+        string hitTarget = roofCol != null ? roofCol.name : (roofSys != null && roofSys.roofSlideCollider != null ? roofSys.roofSlideCollider.name : "none");
+
+        string visStr = visibleAfter.Count > 0 ? string.Join(",", visibleAfter) : "none";
+        string hidStr = hidden.Count > 0 ? string.Join(",", hidden) : "none";
+        Debug.Log($"[MESH_OVERRIDE] visible_mesh_objects=[{visStr}] hidden_mesh_objects=[{hidStr}] active_roof_target=asset_roof hit_target={hitTarget} roof_shape=mono_slope roof_slope_direction=front snow_surface_offset={snowOffset} snow_visual_attached={snowVisualAttached.ToString().ToLower()}");
+    }
+
+    static string GetPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new List<string>();
+        var cur = t;
+        while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
     }
 
     void EnsureEavesCatchZone(Transform roof)
@@ -344,8 +413,12 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
             debugCol.isTrigger = false;
             debugCol.enabled = true;
 
+            // 補助メッシュ非表示：当たり判定は維持、見た目だけ消す
+            var debugRend = debugFlat.GetComponent<Renderer>();
+            if (debugRend != null) debugRend.enabled = false;
+
             bool oldSurfaceColliderDisabled = DisableRoofSurfaceColliders(roof, debugFlat);
-            Debug.Log($"[RoofSurfaceSwap] House={houseName} surface=RoofDebugFlat (collider=BoxCollider) oldSurfaceColliderDisabled={oldSurfaceColliderDisabled}");
+            Debug.Log($"[RoofSurfaceSwap] House={houseName} surface=RoofDebugFlat (collider=BoxCollider renderer=OFF) oldSurfaceColliderDisabled={oldSurfaceColliderDisabled}");
             return debugCol;
         }
 
