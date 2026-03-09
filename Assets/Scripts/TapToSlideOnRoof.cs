@@ -10,6 +10,8 @@ public class TapToSlideOnRoof : MonoBehaviour
     public LayerMask hitMask = ~0;
     public float hitGizmoRadius = 0.15f;
     public float hitGizmoDuration = 1f;
+    [Tooltip("Raycastが当たらない時、このピクセル以内の屋根デブリを画面距離で拾う。止まり雪対策で拡大。")]
+    public float tapFallbackPixelRadius = 80f;
 
     void Update()
     {
@@ -62,7 +64,52 @@ public class TapToSlideOnRoof : MonoBehaviour
             }
         }
 
-        if (hitSomething && isRoof)
+        var chunk = hitSomething ? hit.collider.GetComponent<MvpSnowChunkMotion>() : null;
+        var fallingPiece = hitSomething ? hit.collider.GetComponentInParent<SnowPackFallingPiece>() : null;
+        string hitType = chunk != null ? "Detached(Chunk)" : (fallingPiece != null ? "Detached(Falling)" : (hitSomething && isRoof ? "Packed" : (hitSomething ? "Other" : "None")));
+        string hitObject = hitSomething && hit.collider != null ? GetTransformPath(hit.collider.transform) : "none";
+        DetachedSnowDiagnostics.LogTapRaycast(hitMask, hitObject, hitType);
+        if (chunk != null && chunk.gameObject.activeSelf && roofSys != null)
+        {
+            if (cooldown != null) cooldown.OnHit();
+            Vector3 roofN = roofSys.roofSlideCollider != null ? roofSys.roofSlideCollider.transform.up.normalized : Vector3.up;
+            chunk.ApplyTapImpulse(roofN);
+            tapPoint = hit.point;
+            StartCoroutine(ShowHitGizmo(tapPoint));
+            roofSys.RequestTapSlide(tapPoint);
+        }
+        else if (fallingPiece != null && roofSys != null)
+        {
+            if (cooldown != null) cooldown.OnHit();
+            Vector3 roofN = roofSys.roofSlideCollider != null ? roofSys.roofSlideCollider.transform.up.normalized : Vector3.up;
+            Vector3 downhill = Vector3.ProjectOnPlane(Vector3.down, roofN).normalized;
+            var rb = fallingPiece.GetComponent<Rigidbody>();
+            if (rb != null) rb.AddForce(downhill * 3f + roofN * 1f, ForceMode.Impulse);
+            tapPoint = hit.point;
+            StartCoroutine(ShowHitGizmo(tapPoint));
+            roofSys.RequestTapSlide(tapPoint);
+        }
+        else if (roofSys != null && roofSys.TryGetClosestDebrisToScreen(cam, screenPos, tapFallbackPixelRadius, out var fallbackChunk, out var fallbackFalling))
+        {
+            if (cooldown != null) cooldown.OnHit();
+            Vector3 roofN = roofSys.roofSlideCollider != null ? roofSys.roofSlideCollider.transform.up.normalized : Vector3.up;
+            tapPoint = fallbackChunk != null ? fallbackChunk.transform.position : fallbackFalling.transform.position;
+            if (fallbackChunk != null)
+            {
+                fallbackChunk.ApplyTapImpulse(roofN);
+                Debug.Log($"[TapHitType] fallbackUsed=Detached(Chunk) [TapFallback] pos=({tapPoint.x:F2},{tapPoint.y:F2},{tapPoint.z:F2})");
+            }
+            else
+            {
+                Vector3 downhill = Vector3.ProjectOnPlane(Vector3.down, roofN).normalized;
+                var rb = fallbackFalling.GetComponent<Rigidbody>();
+                if (rb != null) rb.AddForce(downhill * 3f + roofN * 1f, ForceMode.Impulse);
+                Debug.Log($"[TapHitType] fallbackUsed=Detached(Falling) [TapFallback] pos=({tapPoint.x:F2},{tapPoint.y:F2},{tapPoint.z:F2})");
+            }
+            StartCoroutine(ShowHitGizmo(tapPoint));
+            roofSys.RequestTapSlide(tapPoint);
+        }
+        else if (hitSomething && isRoof)
         {
             if (cooldown != null) cooldown.OnHit();
             Vector3 roofLocal = roofSys.roofSlideCollider.transform.InverseTransformPoint(tapPoint);
@@ -104,7 +151,7 @@ public class TapToSlideOnRoof : MonoBehaviour
         go.transform.position = worldPos;
         go.transform.localScale = Vector3.one * (hitGizmoRadius * 2f);
         var r = go.GetComponent<Renderer>();
-        if (r != null && r.sharedMaterial != null) r.sharedMaterial.color = Color.red;
+        if (r != null && r.sharedMaterial != null) MaterialColorHelper.SetColorSafe(r.sharedMaterial, Color.red);
         yield return new WaitForSeconds(hitGizmoDuration);
         Object.Destroy(go);
     }

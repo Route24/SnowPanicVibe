@@ -57,13 +57,14 @@ public class SnowPackSpawner : MonoBehaviour
 
     [Header("Look")]
     [Range(0.1f, 1.5f)] public float targetDepthMeters = 0.5f;
-    [Tooltip("積雪厚スケール。1=等倍, 0.1=5cm相当(50cm→5cm)")]
-    [Range(0.01f, 1f)] public float snowDepthScale = 0.1f;
+    [Tooltip("積雪厚スケール。0.2=厚め(3層自然感)。1=等倍, 0.1=薄め")]
+    [Range(0.01f, 1f)] public float snowDepthScale = 0.2f;
     [Tooltip("Piece見た目厚みスケール。1=等倍, 0.25≈1.25cm相当(5cm→2.5cm→1.25cm)")]
     [Range(0.01f, 1f)] public float snowPieceThicknessScale = 0.25f;
     [Tooltip("描画メッシュ厚みスケール。1=等倍, 0.5=半分(見た目Y)")]
     [Range(0.01f, 1f)] public float snowRenderThicknessScale = 0.5f;
-    [Range(0.05f, 0.5f)] public float pieceSize = 0.11f;
+    [Range(0.05f, 0.5f), Tooltip("巨大崩壊型: 0.17 = 重みのある塊感。")]
+    public float pieceSize = 0.17f;
     [Tooltip("見た目だけのスケール（ロジックはpieceSizeのまま）。1=等倍, 0.1=1/10")]
     [Range(0.01f, 1f)] public float visualScale = 0.1f;
     [Range(0.5f, 2f)] public float pieceHeightScale = 0.85f;
@@ -81,6 +82,8 @@ public class SnowPackSpawner : MonoBehaviour
     public bool debugAlignToRoofUp = false;
     [Tooltip("局所雪崩検証用。この数以上のPackedを必ず維持。0=無効")]
     public int debugMinPackedPieces = 200;
+    [Tooltip("false=屋根雪の自動補充OFF（クリア後も増やさない）。true=MinFill/AutoRebuild有効。")]
+    public bool debugAutoRefillRoofSnow = false;
     [Tooltip("ON時: SnowPackPiece の SetActive(false) を禁止。ACTIVE=0 原因切り分け用")]
     public bool blockDeactivate = false;
     [Tooltip("OFF=子Mesh使用。Gridは内部ロジックのみで通常非表示。ON時はpiece直下にRenderer（デバッグ用）。")]
@@ -95,16 +98,16 @@ public class SnowPackSpawner : MonoBehaviour
     public float unstableDurationSec = 1.4f;
     [Tooltip("Guaranteed secondary wave: delay after hit.")]
     public float secondaryDetachDelaySec = 0.35f;
-    [Tooltip("Secondary wave count = clamp(removed*this, 12, 45).")]
-    [Range(0.2f, 0.5f)] public float secondaryDetachFraction = 0.35f;
-    [Tooltip("Third wave delay (only when removedCount >= 60).")]
-    public float thirdWaveDelaySec = 0.85f;
-    [Tooltip("Third wave count = clamp(removed*this, 8, 30).")]
-    [Range(0.1f, 0.3f)] public float thirdWaveFraction = 0.20f;
-    [Range(0f, 1f), Tooltip("Chance unstable cells detach when expiry/passing.")]
-    public float chainDetachChance = 0.55f;
-    [Tooltip("Max total chain detachments per hit (avalanche growth cap).")]
-    public int maxSecondaryDetachPerHit = 60;
+    [Tooltip("Secondary wave count = clamp(removed*this, 10, 28). 巨大崩壊型: 巻き込み多め。")]
+    [Range(0.15f, 0.5f)] public float secondaryDetachFraction = 0.35f;
+    [Tooltip("Third wave delay (only when removedCount >= 50).")]
+    public float thirdWaveDelaySec = 0.65f;
+    [Tooltip("Third wave count = clamp(removed*this, 8, 24). 巨大崩壊型: 早め・多め。")]
+    [Range(0.1f, 0.35f)] public float thirdWaveFraction = 0.18f;
+    [Range(0f, 1f), Tooltip("Chance unstable cells detach. 巨大崩壊型: 0.78 = 連鎖しやすい。")]
+    public float chainDetachChance = 0.78f;
+    [Tooltip("Max total chain detachments per hit. 巨大崩壊型: 28 = 二次崩壊を厚く。")]
+    public int maxSecondaryDetachPerHit = 28;
 
     Transform _visualRoot;
     Transform _piecesRoot;
@@ -129,6 +132,7 @@ public class SnowPackSpawner : MonoBehaviour
     readonly List<List<Transform>> _layerPieces = new List<List<Transform>>();
     readonly Dictionary<(int, int), List<Transform>> _gridPieces = new Dictionary<(int, int), List<Transform>>();
     readonly Dictionary<Transform, (int ix, int iz, int layer)> _pieceToGridData = new Dictionary<Transform, (int, int, int)>();
+    readonly Dictionary<Transform, SnowLayerType> _pieceToLayerType = new Dictionary<Transform, SnowLayerType>();
     readonly List<Transform> _piecePool = new List<Transform>();
     Transform _poolRoot;
     int _poolReused;
@@ -166,6 +170,8 @@ public class SnowPackSpawner : MonoBehaviour
     float _firstActiveZeroTime = -1f;
     int _firstActiveZeroFrame = -1;
     bool _activeZeroReportLogged;
+    bool _snowPackPassErrorLogged; // activePieces=0 FAIL を1回のみ表示（停止時フラッド防止）
+    bool _burstStatsLoggedThisTap;
     int _lastActivePiecesCountForUI = -1;
     bool _entityCountDumpedForActiveZero;
     bool _autoRebuildFired;
@@ -191,6 +197,13 @@ public class SnowPackSpawner : MonoBehaviour
     static bool _assiBootLoggedStatic;
     bool _assiDiagnosticLogged;
     static bool _gridDrawSpaceLogged;
+
+    void Awake()
+    {
+        if (!Application.isPlaying) return;
+        if (roofCollider == null) roofCollider = ResolveRoofCollider();
+        EnsureRoot();
+    }
 
     void OnEnable()
     {
@@ -252,7 +265,7 @@ public class SnowPackSpawner : MonoBehaviour
         float effectiveDepth = targetDepthMeters * snowDepthScale;
         int layersRaw = Mathf.Max(1, Mathf.CeilToInt(targetDepthMeters / Mathf.Max(0.02f, _cachedLayerStep)));
         int layers = Mathf.Max(1, Mathf.CeilToInt(effectiveDepth / Mathf.Max(0.02f, _cachedLayerStep)));
-        if (debugMinPackedPieces > 0)
+        if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0)
         {
             int approxPerLayer = _cachedNx * _cachedNz;
             layers = Mathf.Max(layers, Mathf.Max(1, (debugMinPackedPieces + approxPerLayer - 1) / Mathf.Max(1, approxPerLayer)));
@@ -264,8 +277,11 @@ public class SnowPackSpawner : MonoBehaviour
             _layerPieces.Add(layerList);
             spawned += layerList.Count;
             if (spawned >= maxPieces) break;
-            if (debugMinPackedPieces > 0 && spawned >= debugMinPackedPieces) break;
+            if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0 && spawned >= debugMinPackedPieces) break;
         }
+
+        _pieceToLayerType.Clear();
+        AssignLayerTypesToPieces(layers);
 
         _rebuildCount++;
         AuditSnowPackPhysics();
@@ -295,9 +311,46 @@ public class SnowPackSpawner : MonoBehaviour
         SnowLoopLogCapture.AppendToAssiReport($"targetPath={piecePath}" + (debugForcePieceRendererDirect ? " (direct)" : "/Mesh"));
         SnowLoopLogCapture.AppendToAssiReport($"beforeScale=({beforeRenderScale.x:F3},{beforeRenderScale.y:F3},{beforeRenderScale.z:F3}) afterScale=({afterRenderScale.x:F3},{afterRenderScale.y:F3},{afterRenderScale.z:F3})");
         UnityEngine.Debug.Log($"[SnowPack] generated={spawned} depth={effectiveDepth:F2} pieceSize={pieceSize:F2} layers={layers}");
+        int hc = 0;
+        var houses = GameObject.Find("Houses");
+        if (houses != null) hc = houses.transform.childCount;
+        UnityEngine.Debug.Log($"[SNOW_ROLLBACK_CHECK] rollback_target=pre_camera_change_good_state current_house_count={hc} pieceSize={pieceSize:F2} maxSecondaryDetachPerHit={maxSecondaryDetachPerHit} chainDetachChance={chainDetachChance:F2} secondaryDetachFraction={secondaryDetachFraction:F2} result=OK comment=giant_collapse_type");
+        if (reason == "AvalancheActiveZero" || reason == "AutoRebuildOnActiveZero")
+            UnityEngine.Debug.Log($"[REFILL] reason={reason} packedBefore=0 packedAfter={spawned}");
 
         LogPiecePoseSampleFirst3();
         LogRotationOverrideSuspectedLocations();
+        LogSnowLayerMix();
+    }
+
+    /// <summary>layerIndex: 0=bottom(根雪側), layers-1=top(表面). 比率 Powder45% Slab40% Base15%</summary>
+    void AssignLayerTypesToPieces(int totalLayers)
+    {
+        if (totalLayers <= 0) return;
+        int baseCount = Mathf.Max(1, Mathf.FloorToInt(totalLayers * 0.15f));
+        int slabCount = Mathf.Max(1, Mathf.FloorToInt(totalLayers * 0.40f));
+        for (int li = 0; li < _layerPieces.Count; li++)
+        {
+            SnowLayerType t = li < baseCount ? SnowLayerType.Base : (li < baseCount + slabCount ? SnowLayerType.Slab : SnowLayerType.Powder);
+            foreach (var p in _layerPieces[li])
+            {
+                if (p != null) _pieceToLayerType[p] = t;
+            }
+        }
+    }
+
+    void LogSnowLayerMix()
+    {
+        int powder = 0, slab = 0, baze = 0;
+        foreach (var kv in _pieceToLayerType)
+        {
+            if (kv.Key == null) continue;
+            switch (kv.Value) { case SnowLayerType.Powder: powder++; break; case SnowLayerType.Slab: slab++; break; case SnowLayerType.Base: baze++; break; }
+        }
+        SnowLoopLogCapture.AppendToAssiReport("=== SNOW LAYER MIX ===");
+        SnowLoopLogCapture.AppendToAssiReport($"Powder count={powder}");
+        SnowLoopLogCapture.AppendToAssiReport($"Slab count={slab}");
+        SnowLoopLogCapture.AppendToAssiReport($"Base count={baze}");
     }
 
     static bool _rotationOverrideLoggedOnce;
@@ -584,6 +637,12 @@ public class SnowPackSpawner : MonoBehaviour
     /// <summary>HUD用。直前タップのremovedCount, PackedInRadius。</summary>
     public static int LastRemovedCount;
     public static int LastPackedInRadiusBefore;
+    public static int LastTapPowderMoved;
+    public static int LastTapSlabMoved;
+    public static int LastTapBaseMoved;
+    public static int LastTapSmallCluster;
+    public static int LastTapMidCluster;
+    public static int LastTapLargeCluster;
     public static Vector3 LastTapWorld;
     public static Vector2 LastTapRoofLocal;
     public static int LastPackedTotalBefore;
@@ -591,7 +650,10 @@ public class SnowPackSpawner : MonoBehaviour
     public static float LastTapTime = -10f;
     public static float LastTapRadius = 0.6f;
     public static int LastChainTriggerCount;
+    public static int LastSecondaryDetachCount;
+    public static bool LastSecondaryTriggered;
     public static float LastAvgRoofSlideDuration => _roofSlideSampleCount > 0 ? _avgRoofSlideDuration : 0f;
+    static int _consecutiveNoRemovalTaps;
     static float _avgRoofSlideDuration;
     static int _roofSlideSampleCount;
     public static void RecordRoofSlideDuration(float duration)
@@ -637,10 +699,11 @@ public class SnowPackSpawner : MonoBehaviour
         Vector3 d = worldCenter - _roofCenter;
         float u = Vector3.Dot(d, _roofR) / Mathf.Max(0.01f, _roofWidth);
         float v = Vector3.Dot(d, _roofF) / Mathf.Max(0.01f, _roofLength);
-        int cx = Mathf.RoundToInt((u + 0.5f) * _cachedNx - 0.5f);
-        int cz = Mathf.RoundToInt((v + 0.5f) * _cachedNz - 0.5f);
-        cx = Mathf.Clamp(cx, 0, _cachedNx - 1);
-        cz = Mathf.Clamp(cz, 0, _cachedNz - 1);
+        int cxRaw = Mathf.RoundToInt((u + 0.5f) * _cachedNx - 0.5f);
+        int czRaw = Mathf.RoundToInt((v + 0.5f) * _cachedNz - 0.5f);
+        int cx = Mathf.Clamp(cxRaw, 0, _cachedNx - 1);
+        int cz = Mathf.Clamp(czRaw, 0, _cachedNz - 1);
+        bool clamped = (cxRaw != cx || czRaw != cz);
 
         int packedBefore = GetPackedCubeCountRealtime();
         int packedInRadiusBefore = 0;
@@ -649,43 +712,78 @@ public class SnowPackSpawner : MonoBehaviour
         float r = radius;
         const float radiusMax = 1.5f;
 
-        for (int attempt = 0; attempt < 5; attempt++)
+        const int FullClearSafetyThreshold = 25; // 止まり雪対策: 残り少なめで全消去（再タップ不可を防ぐ）
+        bool useFullClearSafety = packedBefore > 0 && packedBefore <= FullClearSafetyThreshold;
+
+        if (useFullClearSafety)
         {
-            int radX = Mathf.CeilToInt(r / Mathf.Max(0.01f, _roofCellSize));
-            int radZ = radX;
-            packedInRadiusBefore = 0;
-            toRemove.Clear();
-            seen.Clear();
-
-            for (int dz = -radZ; dz <= radZ; dz++)
+            foreach (var kv in _gridPieces)
             {
-                for (int dx = -radX; dx <= radX; dx++)
+                foreach (var t in kv.Value)
                 {
-                    int x = cx + dx, z = cz + dz;
-                    if (x < 0 || x >= _cachedNx || z < 0 || z >= _cachedNz) continue;
-                    Vector3 dp = _roofR * (dx * _roofCellSize) + _roofF * (dz * _roofCellSize);
-                    if (dp.magnitude > r) continue;
-
-                    var key = (x, z);
-                    if (_gridPieces.TryGetValue(key, out var cellList))
+                    if (t != null && !seen.Contains(t))
                     {
-                        foreach (var t in cellList)
+                        seen.Add(t);
+                        toRemove.Add(t);
+                        packedInRadiusBefore++;
+                    }
+                }
+            }
+            // オーファン対策: _gridPiecesと同期ズレしたSnowPackPieceを_piecesRootから拾う
+            if (_piecesRoot != null)
+            {
+                var allPieces = _piecesRoot.GetComponentsInChildren<Transform>(true);
+                foreach (var tr in allPieces)
+                {
+                    if (tr == null || tr.gameObject.name != "SnowPackPiece") continue;
+                    if (seen.Contains(tr)) continue;
+                    seen.Add(tr);
+                    toRemove.Add(tr);
+                    packedInRadiusBefore++;
+                    UnityEngine.Debug.Log($"[SnowPackOrphan] recovered piece not in _gridPieces id={tr.GetInstanceID()} pos=({tr.position.x:F2},{tr.position.y:F2},{tr.position.z:F2})");
+                }
+            }
+        }
+        else
+        {
+            for (int attempt = 0; attempt < 5; attempt++)
+            {
+                int radX = Mathf.CeilToInt(r / Mathf.Max(0.01f, _roofCellSize));
+                int radZ = radX;
+                packedInRadiusBefore = 0;
+                toRemove.Clear();
+                seen.Clear();
+
+                for (int dz = -radZ; dz <= radZ; dz++)
+                {
+                    for (int dx = -radX; dx <= radX; dx++)
+                    {
+                        int x = cx + dx, z = cz + dz;
+                        if (x < 0 || x >= _cachedNx || z < 0 || z >= _cachedNz) continue;
+                        Vector3 dp = _roofR * (dx * _roofCellSize) + _roofF * (dz * _roofCellSize);
+                        if (dp.magnitude > r) continue;
+
+                        var key = (x, z);
+                        if (_gridPieces.TryGetValue(key, out var cellList))
                         {
-                            if (t != null && !seen.Contains(t))
+                            foreach (var t in cellList)
                             {
-                                seen.Add(t);
-                                toRemove.Add(t);
-                                packedInRadiusBefore++;
+                                if (t != null && !seen.Contains(t))
+                                {
+                                    seen.Add(t);
+                                    toRemove.Add(t);
+                                    packedInRadiusBefore++;
+                                }
                             }
                         }
                     }
                 }
+                if (toRemove.Count >= localAvalancheMinDetach || r >= radiusMax || packedBefore < localAvalancheMinDetach) break;
+                r = Mathf.Min(r * 1.4f, radiusMax);
             }
-            if (toRemove.Count >= localAvalancheMinDetach || r >= radiusMax || packedBefore < localAvalancheMinDetach) break;
-            r = Mathf.Min(r * 1.4f, radiusMax);
         }
 
-        int capped = Mathf.Min(toRemove.Count, localAvalancheMaxDetach);
+        int capped = useFullClearSafety ? toRemove.Count : Mathf.Min(toRemove.Count, localAvalancheMaxDetach);
         if (toRemove.Count > capped)
         {
             for (int i = toRemove.Count - 1; i >= capped; i--)
@@ -701,6 +799,7 @@ public class SnowPackSpawner : MonoBehaviour
                 if (list.Count == 0) _gridPieces.Remove(k.Value);
             }
             _pieceToGridData.Remove(t);
+            _pieceToLayerType.Remove(t);
             for (int li = _layerPieces.Count - 1; li >= 0; li--)
             {
                 if (_layerPieces[li].Remove(t)) break;
@@ -715,6 +814,7 @@ public class SnowPackSpawner : MonoBehaviour
                 var t = centerList[centerList.Count - 1];
                 toRemove.Add(t);
                 _pieceToGridData.Remove(t);
+                _pieceToLayerType.Remove(t);
                 centerList.Remove(t);
                 if (centerList.Count == 0) _gridPieces.Remove(centerKey);
                 for (int li = _layerPieces.Count - 1; li >= 0; li--)
@@ -740,7 +840,6 @@ public class SnowPackSpawner : MonoBehaviour
         LastPackedTotalBefore = packedBefore;
         LastPackedTotalAfter = packedBefore - removedCount;
 
-        UnityEngine.Debug.Log($"[TapDebug] tapU={u:F4} tapV={v:F4} cx={cx} cz={cz} tapWorld=({worldCenter.x:F3},{worldCenter.y:F3},{worldCenter.z:F3}) packedInRadiusBefore={packedInRadiusBefore}");
         int scx = Mathf.Clamp(cx, 0, _cachedNx - 1);
         int scz = Mathf.Clamp(cz, 0, _cachedNz - 1);
         float su = (scx + 0.5f) / _cachedNx - 0.5f;
@@ -750,13 +849,30 @@ public class SnowPackSpawner : MonoBehaviour
         Vector3 cellMin = cellCenter - _roofR * halfCell - _roofF * halfCell - _roofN * 0.05f;
         Vector3 cellMax = cellCenter + _roofR * halfCell + _roofF * halfCell + _roofN * 0.2f;
         Bounds cellBounds = new Bounds(cellCenter, (cellMax - cellMin));
-        UnityEngine.Debug.Log($"[CellDebug] sampleCell(cx={scx},cz={scz}) sampleCellWorld=({cellCenter.x:F3},{cellCenter.y:F3},{cellCenter.z:F3}) cellBounds=({cellBounds.min.x:F3},{cellBounds.min.y:F3},{cellBounds.min.z:F3})-({cellBounds.max.x:F3},{cellBounds.max.y:F3},{cellBounds.max.z:F3}) tapInsideBounds={cellBounds.Contains(worldCenter)}");
+        bool tapInsideBounds = cellBounds.Contains(worldCenter);
+        if (packedBefore <= FullClearSafetyThreshold || (removedCount == 0 && packedBefore > 0))
+        {
+            UnityEngine.Debug.Log($"[TapDebug] packedSmall u={u:F4} v={v:F4} cx={cx} cz={cz} cxRaw={cxRaw} czRaw={czRaw} clamped={clamped} gridBounds=(0,0)-({_cachedNx - 1},{_cachedNz - 1}) packedInRadiusBefore={packedInRadiusBefore} packedBefore={packedBefore} tapInsideBounds={tapInsideBounds}");
+        }
+        UnityEngine.Debug.Log($"[TapDebug] tapU={u:F4} tapV={v:F4} cx={cx} cz={cz} tapWorld=({worldCenter.x:F3},{worldCenter.y:F3},{worldCenter.z:F3}) packedInRadiusBefore={packedInRadiusBefore}");
+        UnityEngine.Debug.Log($"[CellDebug] sampleCell(cx={scx},cz={scz}) sampleCellWorld=({cellCenter.x:F3},{cellCenter.y:F3},{cellCenter.z:F3}) cellBounds=({cellBounds.min.x:F3},{cellBounds.min.y:F3},{cellBounds.min.z:F3})-({cellBounds.max.x:F3},{cellBounds.max.y:F3},{cellBounds.max.z:F3}) tapInsideBounds={tapInsideBounds}");
+
+        if (useFullClearSafety && removedCount > 0)
+            UnityEngine.Debug.Log($"[FullClearSafety] packedTotalBefore={packedBefore} removed={removedCount} packedTotalAfter={packedBefore - removedCount}");
+        if (removedCount == 0 && packedBefore > 0)
+            _consecutiveNoRemovalTaps++;
+        else
+            _consecutiveNoRemovalTaps = 0;
+        if (_consecutiveNoRemovalTaps >= 2 && packedBefore > 0)
+            UnityEngine.Debug.LogWarning($"[FullClearDiagnostic] packedTotalAfter>0 packedInRadiusBefore=0 for {_consecutiveNoRemovalTaps} consecutive taps packedBefore={packedBefore}");
 
         if (removedCount == 0)
         {
             LastRemovedCount = 0;
             LastPackedInRadiusBefore = packedInRadiusBefore;
-            UnityEngine.Debug.Log($"[LocalAvalanche] R={radius:F2} u={u:F3} v={v:F3} cx={cx} cz={cz} removedCount=0 packedInRadiusBefore={packedInRadiusBefore} packedTotal={packedBefore} gridCells={_gridPieces.Count}");
+            int gridPieceTotal = 0;
+            foreach (var kv in _gridPieces) gridPieceTotal += kv.Value.Count;
+            UnityEngine.Debug.Log($"[LocalAvalanche] R={radius:F2} u={u:F3} v={v:F3} cx={cx} cz={cz} removedCount=0 packedInRadiusBefore={packedInRadiusBefore} packedTotal={packedBefore} gridCells={_gridPieces.Count} gridPieceTotal={gridPieceTotal} TAP_NO_REMOVAL");
             return;
         }
 
@@ -764,6 +880,31 @@ public class SnowPackSpawner : MonoBehaviour
         _lastAvalanchePackedCountAfter = packedAfter;
         LastRemovedCount = removedCount;
         LastPackedInRadiusBefore = packedInRadiusBefore;
+        LastSecondaryTriggered = false;
+        LastSecondaryDetachCount = 0;
+        _burstStatsLoggedThisTap = false;
+
+        int powderMoved = 0, slabMoved = 0, baseMoved = 0;
+        foreach (var t in toRemove)
+        {
+            if (t == null) continue;
+            if (_pieceToLayerType.TryGetValue(t, out var lt))
+            {
+                switch (lt) { case SnowLayerType.Powder: powderMoved++; break; case SnowLayerType.Slab: slabMoved++; break; case SnowLayerType.Base: baseMoved++; break; }
+            }
+        }
+        LastTapPowderMoved = powderMoved;
+        LastTapSlabMoved = slabMoved;
+        LastTapBaseMoved = baseMoved;
+
+        int burstMax = (roofSnowSystem != null) ? roofSnowSystem.burstChunkCount : 48;
+        int burstTotal = Mathf.Min(removedCount, burstMax);
+        int totalTyped = powderMoved + slabMoved + baseMoved;
+        float powderFrac = totalTyped > 0 ? powderMoved / (float)totalTyped : 0.33f;
+        float baseFrac = totalTyped > 0 ? baseMoved / (float)totalTyped : 0.2f;
+        LastTapSmallCluster = Mathf.Max(0, Mathf.Min(burstTotal, Mathf.RoundToInt(burstTotal * (0.25f + powderFrac * 0.4f))));
+        LastTapLargeCluster = Mathf.Max(0, Mathf.Min(burstTotal - LastTapSmallCluster, Mathf.RoundToInt(burstTotal * (0.15f + baseFrac * 0.35f))));
+        LastTapMidCluster = Mathf.Max(0, burstTotal - LastTapSmallCluster - LastTapLargeCluster);
 
         if (_layerPieces.Count > 0 && _cachedLayerStep > 0f)
             packDepthMeters = Mathf.Max(minVisibleDepth, _layerPieces.Count * _cachedLayerStep);
@@ -809,13 +950,14 @@ public class SnowPackSpawner : MonoBehaviour
         if (!_scheduledSecondaryWaveFired && tSinceTap >= secondaryDetachDelaySec && lastRemoved > 0)
         {
             _scheduledSecondaryWaveFired = true;
-            int count = Mathf.Clamp(Mathf.RoundToInt(lastRemoved * secondaryDetachFraction), 12, 45);
+            LastSecondaryTriggered = true;
+            int count = Mathf.Clamp(Mathf.RoundToInt(lastRemoved * secondaryDetachFraction), 10, 28);
             FireScheduledWave(count);
         }
-        if (!_scheduledThirdWaveFired && lastRemoved >= 60 && tSinceTap >= thirdWaveDelaySec)
+        if (!_scheduledThirdWaveFired && lastRemoved >= 50 && tSinceTap >= thirdWaveDelaySec)
         {
             _scheduledThirdWaveFired = true;
-            int count = Mathf.Clamp(Mathf.RoundToInt(lastRemoved * thirdWaveFraction), 8, 30);
+            int count = Mathf.Clamp(Mathf.RoundToInt(lastRemoved * thirdWaveFraction), 8, 24);
             FireScheduledWave(count);
         }
     }
@@ -837,6 +979,7 @@ public class SnowPackSpawner : MonoBehaviour
             cellList.Remove(t);
             if (cellList.Count == 0) _gridPieces.Remove(key);
             _pieceToGridData.Remove(t);
+            _pieceToLayerType.Remove(t);
             for (int li = _layerPieces.Count - 1; li >= 0; li--)
             {
                 if (_layerPieces[li].Remove(t)) break;
@@ -853,7 +996,10 @@ public class SnowPackSpawner : MonoBehaviour
             detached++;
         }
         if (detached > 0)
-            UnityEngine.Debug.Log($"[ChainWave] scheduled wave detached={detached} chainTotal={_chainDetachCountSinceTap}");
+        {
+            LastSecondaryDetachCount = _chainDetachCountSinceTap;
+            UnityEngine.Debug.Log($"[ChainWave] scheduled wave detached={detached} chainTotal={_chainDetachCountSinceTap} secondary_triggered=true secondary_detach_count={LastSecondaryDetachCount}");
+        }
     }
 
     void ProcessChainReaction()
@@ -878,6 +1024,7 @@ public class SnowPackSpawner : MonoBehaviour
             cellList.Remove(t);
             if (cellList.Count == 0) _gridPieces.Remove(key);
             _pieceToGridData.Remove(t);
+            _pieceToLayerType.Remove(t);
             for (int li = _layerPieces.Count - 1; li >= 0; li--)
             {
                 if (_layerPieces[li].Remove(t)) break;
@@ -945,7 +1092,7 @@ public class SnowPackSpawner : MonoBehaviour
                 if (mr != null && mr.sharedMaterial != null)
                 {
                     var mat = new Material(mr.sharedMaterial);
-                    mat.color = Color.red;
+                    MaterialColorHelper.SetColorSafe(mat, Color.red);
                     mr.sharedMaterial = mat;
                 }
                 t.SetParent(slideRoot.transform, true);
@@ -1041,32 +1188,58 @@ public class SnowPackSpawner : MonoBehaviour
         if (_piecesRoot != null)
             LogRootMutation(beforeMove, _piecesRoot.childCount, "AvalancheSlideRoutine.SetParent(slideRoot)");
 
+        Bounds roofBounds = roofCollider != null ? roofCollider.bounds : new Bounds(startWorldPos, Vector3.one * 10f);
+        Vector3 roofCenter = roofBounds.center;
+        Vector3 downhill = _roofDownhill.sqrMagnitude > 0.001f ? _roofDownhill.normalized : slideOffset.normalized;
+        Vector3 absDownhill = new Vector3(Mathf.Abs(downhill.x), Mathf.Abs(downhill.y), Mathf.Abs(downhill.z));
+        float tEnd = Vector3.Dot(roofBounds.extents, absDownhill);
+        LayerMask groundMask = (roofSnowSystem != null && roofSnowSystem.groundMask.value != 0) ? roofSnowSystem.groundMask : ~0;
+        Vector3 slideVelocity = slideOffset.normalized * 2f;
+
         float elapsed = 0f;
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             float t01 = Mathf.Clamp01(elapsed / duration);
             slideRoot.transform.position = startWorldPos + slideOffset * t01;
+
+            for (int i = slideRoot.transform.childCount - 1; i >= 0; i--)
+            {
+                var t = slideRoot.transform.GetChild(i);
+                if (t == null) continue;
+                Vector3 piecePos = t.position;
+                float tVal = Vector3.Dot(piecePos - roofCenter, downhill);
+                if (tVal > tEnd + RoofEdgeMargin)
+                {
+                    t.SetParent(null, true);
+                    var falling = t.gameObject.GetComponent<SnowPackFallingPiece>();
+                    if (falling == null) falling = t.gameObject.AddComponent<SnowPackFallingPiece>();
+                    falling.spawner = this;
+                    falling.groundMask = groundMask;
+                    falling.ActivateFalling(slideVelocity);
+                }
+            }
             yield return null;
         }
 
         Vector3 endWorldPos = startWorldPos + slideOffset;
         float movedMeters = Vector3.Distance(startWorldPos, endWorldPos);
 
-        // AvalancheVisual.end の後に、1フレームあたり上限で分割返却（一括で rootChildren 激変を防ぐ）
+        var toReturn = new System.Collections.Generic.List<Transform>();
         for (int i = 0; i < layers.Count; i++)
         {
             for (int j = 0; j < layers[i].Count; j++)
             {
                 var piece = layers[i][j];
-                if (piece != null)
+                if (piece != null && piece.parent == slideRoot.transform)
                 {
-                    SetPieceVisualState(piece, PieceVisualState.Returning, i == 0 && j == 0);
-                    _poolReturnQueue.Add(piece);
+                    SetPieceVisualState(piece, PieceVisualState.Returning, toReturn.Count == 0);
+                    toReturn.Add(piece);
                 }
             }
         }
-        _pendingSlideRootToDestroy = slideRoot; // キュー処理完了後に破棄
+        foreach (var p in toReturn) _poolReturnQueue.Add(p);
+        _pendingSlideRootToDestroy = slideRoot;
 
         _pendingRemoveCountFromAvalanche = layers.Count; // クールダウン終了後に記録（Avalanche中にremoveCount増やさない）
         _inAvalancheSlide = false;
@@ -1193,7 +1366,8 @@ public class SnowPackSpawner : MonoBehaviour
             var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
             if (_snowMat != null) mr.sharedMaterial = _snowMat;
             mr.enabled = GridVisualWatchdog.showSnowGridDebug;
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            mr.receiveShadows = true;
         }
         else
         {
@@ -1207,7 +1381,8 @@ public class SnowPackSpawner : MonoBehaviour
             var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
             if (_snowMat != null) mr.sharedMaterial = _snowMat;
             mr.enabled = GridVisualWatchdog.showSnowGridDebug;
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            mr.receiveShadows = true;
         }
         int snowLayer = LayerMask.NameToLayer(SnowVisualLayerName);
         if (snowLayer < 0) snowLayer = LayerMask.NameToLayer("Ignore Raycast");
@@ -1261,7 +1436,8 @@ public class SnowPackSpawner : MonoBehaviour
         var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
         if (_snowMat != null) mr.sharedMaterial = _snowMat;
         mr.enabled = GridVisualWatchdog.showSnowGridDebug;
-        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        mr.receiveShadows = true;
         int snowLayer = LayerMask.NameToLayer(SnowVisualLayerName);
         if (snowLayer < 0) snowLayer = LayerMask.NameToLayer("Ignore Raycast");
         if (snowLayer < 0) snowLayer = 2;
@@ -1270,6 +1446,13 @@ public class SnowPackSpawner : MonoBehaviour
         SetPieceVisualState(go.transform, PieceVisualState.Accumulating);
         if (!_scaleLogOnce) { _scaleLogOnce = true; UnityEngine.Debug.Log($"[SnowPieceScale] kind=Packed scale=({scale.x:F3},{scale.y:F3},{scale.z:F3})"); }
         return go.transform;
+    }
+
+    /// <summary>SnowPackVisual/SnowPackPiecesRoot を RoofSlideCollider 直下に作成する。外部からフォールバック呼び出し可。</summary>
+    public void EnsureSnowPackVisualHierarchy()
+    {
+        if (roofCollider == null) roofCollider = ResolveRoofCollider();
+        EnsureRoot();
     }
 
     void EnsureRoot()
@@ -1340,7 +1523,7 @@ public class SnowPackSpawner : MonoBehaviour
             if (_stateIndicatorRenderer != null)
             {
                 var mat = new Material(Shader.Find("Sprites/Default") ?? Shader.Find("Unlit/Color"));
-                mat.color = new Color(1f, 1f, 1f, 0.15f);
+                MaterialColorHelper.SetColorSafe(mat, new Color(1f, 1f, 1f, 0.15f));
                 _stateIndicatorRenderer.sharedMaterial = mat;
                 _stateIndicatorRenderer.enabled = true;
             }
@@ -1363,7 +1546,7 @@ public class SnowPackSpawner : MonoBehaviour
         else if (inSlide) c = new Color(0.3f, 0.5f, 1f, 0.25f); // Avalanche中 = 青
         else if (inCooldown) c = new Color(1f, 1f, 0.3f, 0.25f); // Cooldown = 黄
         else c = new Color(1f, 1f, 1f, 0.12f);                  // Normal = 白
-        _stateIndicatorRenderer.material.color = c;
+        if (_stateIndicatorRenderer.material != null) MaterialColorHelper.SetColorSafe(_stateIndicatorRenderer.material, c);
         _stateIndicatorRenderer.enabled = true;
     }
 
@@ -1373,7 +1556,7 @@ public class SnowPackSpawner : MonoBehaviour
         Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         if (sh == null) return;
         _snowMat = new Material(sh);
-        _snowMat.color = snowColor;
+        MaterialColorHelper.SetColorSafe(_snowMat, snowColor);
     }
 
     void EnsurePieceMesh()
@@ -1692,6 +1875,7 @@ public class SnowPackSpawner : MonoBehaviour
         _layerPieces.Clear();
         _gridPieces.Clear();
         _pieceToGridData.Clear();
+        _pieceToLayerType.Clear();
         for (int i = _piecePool.Count - 1; i >= 0; i--)
         {
             if (_piecePool[i] != null)
@@ -1733,7 +1917,7 @@ public class SnowPackSpawner : MonoBehaviour
             UnityEngine.Debug.Log($"[SnowPackAvalancheGuard] RemoveLayers skipped n={n} reason=IsInAvalancheCooldown evidence=NoRemoveDuringAvalanche");
             return;
         }
-        if (debugMinPackedPieces > 0)
+        if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0)
         {
             int current = GetPackedCubeCountRealtime();
             int wouldKeep = current;
@@ -1827,7 +2011,7 @@ public class SnowPackSpawner : MonoBehaviour
         if (r != null)
         {
             if (r.material != null)
-                r.material.color = s == PieceVisualState.Accumulating ? _colorAccum : s == PieceVisualState.Sliding ? _colorSliding : s == PieceVisualState.Cooldown ? _colorCooldown : s == PieceVisualState.Returning ? _colorReturning : _colorPooled;
+                MaterialColorHelper.SetColorSafe(r.material, s == PieceVisualState.Accumulating ? _colorAccum : s == PieceVisualState.Sliding ? _colorSliding : s == PieceVisualState.Cooldown ? _colorCooldown : s == PieceVisualState.Returning ? _colorReturning : _colorPooled);
             r.enabled = GridVisualWatchdog.showSnowGridDebug;
         }
         if (logOneSample || _pieceStateLogThrottle++ % 50 == 0)
@@ -1880,6 +2064,7 @@ public class SnowPackSpawner : MonoBehaviour
     void OnPieceDeactivated(Transform t, string reason, string source, bool toPool, bool allowDuringSlide = false)
     {
         if (t == null || t.gameObject == null) return;
+        _pieceToLayerType.Remove(t);
         int pieceId = t.GetInstanceID();
         if (toPool && _returnedToPoolIds.Contains(pieceId)) return;
         if (toPool && _poolRoot != null && t.parent == _poolRoot && _piecePool != null && _piecePool.Contains(t)) return;
@@ -1895,6 +2080,7 @@ public class SnowPackSpawner : MonoBehaviour
         string fileLine = GetFileLineFromStack();
         string caller = GetCallerMethodName();
 
+        SnowDespawnLogger.RequestDespawn(reason, SnowDespawnLogger.SnowState.Unknown, t != null ? t.position : Vector3.zero, t != null ? t.gameObject : null);
         if (toPool)
         {
             EnsureRoot();
@@ -2057,7 +2243,7 @@ public class SnowPackSpawner : MonoBehaviour
             return false;
         }
         _exceptionCount++;
-        UnityEngine.Debug.LogException(new System.Exception(msg));
+        UnityEngine.Debug.Log(msg);
         return true;
     }
 
@@ -2250,6 +2436,16 @@ public class SnowPackSpawner : MonoBehaviour
         ProcessScheduledWaves();
         ProcessChainReaction();
 
+        float tSinceTap = Time.time - LastTapTime;
+        if (LastRemovedCount > 0 && tSinceTap >= 1.2f && tSinceTap <= 1.35f && !_burstStatsLoggedThisTap)
+        {
+            _burstStatsLoggedThisTap = true;
+            int sec = _chainDetachCountSinceTap;
+            LastSecondaryDetachCount = sec;
+            UnityEngine.Debug.Log($"[AVALANCHE_BURST_LOG] primary_detach_count={LastRemovedCount} primary_cluster_size={LastRemovedCount} secondary_detach_count={sec} secondary_triggered={LastSecondaryTriggered.ToString().ToLower()} largest_fall_group={LastRemovedCount} active_snow_visual=RoofSnowLayer+SnowPackPiece active_snow_break_logic=SnowPackSpawner.HandleTap+DetachInRadius");
+        }
+        if (tSinceTap > 2.5f) _burstStatsLoggedThisTap = false;
+
         if (Time.time - LastTapTime < 2f && roofCollider != null)
         {
             Vector3 roofUp = GetRoofAngleTransform() != null ? GetRoofAngleTransform().up.normalized : roofCollider.transform.up.normalized;
@@ -2300,11 +2496,13 @@ public class SnowPackSpawner : MonoBehaviour
             int queueCount = _poolReturnQueue.Count;
             int toReturn = Mathf.Min(MaxPoolReturnsPerFrame, Mathf.Max(1, (int)(queueCount * AvalancheReturnRate)));
             int returnedPieces = 0;
+            int packedNow = GetPackedCubeCountRealtime();
+            bool allowReturnWhenPackedZero = packedNow <= 0; // packed=0時はslideRoot残骸を必ず返却（止まり雪対策）
             for (int i = 0; i < toReturn; i++)
             {
                 if (_poolReturnQueue.Count == 0) break;
                 int apBefore = CountActivePieces();
-                if (apBefore <= 1) break; // 全削除禁止: 最後の1つは返却しない
+                if (!allowReturnWhenPackedZero && apBefore <= 1) break; // 全削除禁止: 最後の1つは返却しない
                 var t = _poolReturnQueue[0];
                 _poolReturnQueue.RemoveAt(0);
                 ReturnToPool(t, "Queue", "Avalanche");
@@ -2317,11 +2515,14 @@ public class SnowPackSpawner : MonoBehaviour
             {
                 _lastAvalanchePackedCountAfter = -1;
                 int ap = CountActivePieces();
-                if (ap == 0)
+                if (debugAutoRefillRoofSnow && ap == 0)
                 {
                     RebuildSnowPack("AvalancheActiveZero"); // ClearSnowPack で slideRoot 破棄
                 }
-                // Destroy(slideRoot) 禁止: 直接 Destroy は行わない。参照のみクリア。
+                else if (_pendingSlideRootToDestroy != null)
+                {
+                    UnityEngine.Object.Destroy(_pendingSlideRootToDestroy);
+                }
                 _pendingSlideRootToDestroy = null;
             }
         }
@@ -2333,7 +2534,7 @@ public class SnowPackSpawner : MonoBehaviour
             _pendingRemoveCountFromAvalanche = 0;
         }
 
-        if (debugMinPackedPieces > 0 && !IsSpawnFrozen && Time.time >= _nextMinFillTime)
+        if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0 && !IsSpawnFrozen && Time.time >= _nextMinFillTime)
         {
             int current = GetPackedCubeCountRealtime();
             if (current < debugMinPackedPieces)
@@ -2341,9 +2542,12 @@ public class SnowPackSpawner : MonoBehaviour
                 int need = debugMinPackedPieces - current;
                 int layersToAdd = Mathf.Max(1, (need + Mathf.Max(1, _cachedNx * _cachedNz) - 1) / Mathf.Max(1, _cachedNx * _cachedNz));
                 layersToAdd = Mathf.Min(layersToAdd, 10);
+                int pb = GetPackedCubeCountRealtime();
                 AddLayers(layersToAdd);
+                int pa = GetPackedCubeCountRealtime();
                 _nextMinFillTime = Time.time + 0.5f;
                 UnityEngine.Debug.Log($"[SnowPackMinFill] added {layersToAdd} layers current={current} target={debugMinPackedPieces}");
+                UnityEngine.Debug.Log($"[REFILL] reason=SnowPackMinFill packedBefore={pb} packedAfter={pa}");
             }
         }
 
@@ -2365,13 +2569,16 @@ public class SnowPackSpawner : MonoBehaviour
                     if (_cachedLayerStep <= 0f) CacheGridParams();
 
                     string action = "NoOp";
-                    if (delta >= addThreshold)
+                    if (delta >= addThreshold && debugAutoRefillRoofSnow)
                     {
                         int layerDelta = Mathf.RoundToInt(delta / _cachedLayerStep);
                         layerDelta = Mathf.Clamp(layerDelta, 1, maxLayersPerSync);
+                        int pb = GetPackedCubeCountRealtime();
                         AddLayers(layerDelta);
+                        int pa = GetPackedCubeCountRealtime();
                         _nextSyncAllowedAt = Time.time + minSyncInterval;
                         action = $"AddLayers({layerDelta})";
+                        UnityEngine.Debug.Log($"[REFILL] reason=DepthSync packedBefore={pb} packedAfter={pa}");
                     }
                     else if (delta <= removeThreshold)
                     {
@@ -2450,7 +2657,7 @@ public class SnowPackSpawner : MonoBehaviour
                     UnityEngine.Debug.Log($"[SnowPackTransition] t={s.t:F2} rootChildren={s.rootCh} pooled={s.pooled} active={s.active}");
             }
         }
-        if (activePiecesCount == 0 && !_autoRebuildFired && roofCollider != null)
+        if (debugAutoRefillRoofSnow && activePiecesCount == 0 && !_autoRebuildFired && roofCollider != null)
         {
             _autoRebuildFired = true;
             _autoRebuildFrame = Time.frameCount;
@@ -2537,7 +2744,11 @@ public class SnowPackSpawner : MonoBehaviour
             bool activePiecesZero = (activePiecesCount == 0);
             if (activePiecesZero)
             {
-                UnityEngine.Debug.LogError($"[SnowPackPASS] activePieces=0 FAIL frame={Time.frameCount} t={Time.time:F2} rootChildren={rootChildren} pooled={poolCount}");
+                if (!_snowPackPassErrorLogged && Application.isPlaying)
+                {
+                    _snowPackPassErrorLogged = true;
+                    UnityEngine.Debug.LogError($"[SnowPackPASS] activePieces=0 FAIL frame={Time.frameCount} t={Time.time:F2} rootChildren={rootChildren} pooled={poolCount} (1回のみ表示)");
+                }
                 if (!_activeZeroReportLogged && _firstActiveZeroTime >= 0f)
                 {
                     _activeZeroReportLogged = true;

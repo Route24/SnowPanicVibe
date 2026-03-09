@@ -1,0 +1,22 @@
+---
+description: VideoPipeline 関連の確認は Self Test（Play ではない）
+globs: Assets/Editor/SnowPanicVideoPipelineSelfTest.cs, Assets/Scripts/Editor/AssiReportWindow.cs
+alwaysApply: true
+---
+
+# VideoPipeline 確認は Self Test
+
+動画パイプライン（録画・mp4生成・レポート）の確認は **Play ではなく Self Test** を使う。
+
+## 伝え方（必須）
+
+VideoPipeline や SelfTest 関連の作業時は、**毎回はっきり**以下を用いる:
+
+- ✅ **Self Test して確認してください**
+- ✅ **SnowPanic → Self Test を実行して確認してください**
+- ❌ ~~Play して確認してください~~（動画パイプラインの文脈では誤り）
+
+## 理由
+
+- **Play**: 通常のゲームプレイのみ。録画は行われない
+- **Self Test**: 録画開始→10秒→自動停止→mp4→履歴→プレビュー→レポート（動画パイプライン全フロー）

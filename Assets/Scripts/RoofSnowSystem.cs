@@ -1,6 +1,33 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>Material の色を安全に Get/Set。URP は _BaseColor、Built-in は _Color。どちらも無い場合はデフォルト返却／何もしない。</summary>
+public static class MaterialColorHelper
+{
+    public static void SetColorSafe(Material mat, Color c)
+    {
+        if (mat == null) return;
+        try
+        {
+            if (mat.HasProperty("_BaseColor")) { mat.SetColor("_BaseColor", c); return; }
+            if (mat.HasProperty("_Color")) { mat.SetColor("_Color", c); return; }
+        }
+        catch { }
+    }
+
+    public static Color GetColorSafe(Material mat, Color fallback = default)
+    {
+        if (mat == null) return fallback;
+        try
+        {
+            if (mat.HasProperty("_BaseColor")) return mat.GetColor("_BaseColor");
+            if (mat.HasProperty("_Color")) return mat.GetColor("_Color");
+        }
+        catch { }
+        return fallback;
+    }
+}
+
 /// <summary>
 /// Source-of-truth roof accumulation + auto avalanche trigger.
 /// Roof snow uses LOCAL cleared patches (mask) - no global thickness pulsing.
@@ -23,11 +50,11 @@ public class RoofSnowSystem : MonoBehaviour
     public float roofSnowConstantThickness = 0.08f;
 
     [Header("Burst visual")]
-    public int burstChunkCount = 48;
+    public int burstChunkCount = 36;
     public float burstChunkLife = 1.8f;
     public float burstChunkSpeed = 2.2f;
-    [Tooltip("Hit radius for initial detach. Slightly larger = more pieces.")]
-    [Range(0.6f, 1.2f)] public float hitRadiusR = 0.80f;
+    [Tooltip("Hit radius for initial detach. 巨大崩壊型: 大きめで主塊を強調。")]
+    [Range(0.6f, 1.2f)] public float hitRadiusR = 1.05f;
     [Tooltip("Slower = think & watch tempo.")]
     public float localAvalancheSlideSpeed = 0.9f;
     public float burstSpread = 0.8f;
@@ -66,6 +93,8 @@ public class RoofSnowSystem : MonoBehaviour
 
     /// <summary>屋根の法線（上方向）</summary>
     public Vector3 RoofUp => roofSlideCollider != null ? roofSlideCollider.transform.up.normalized : Vector3.up;
+    /// <summary>packedTotalに連動する視覚量（0=非表示, 1=フル）。デバッグHUD用。</summary>
+    public float RoofSnowVisualAmount => _roofSnowVisualAmount;
     /// <summary>屋根法線（RoofUpと同じ）</summary>
     public Vector3 RoofNormal => RoofUp;
 
@@ -87,6 +116,12 @@ public class RoofSnowSystem : MonoBehaviour
         SnowPackSpawner.LastTapTime = -10f;
         SnowPackSpawner.LastRemovedCount = 0;
         SnowPackSpawner.LastPackedInRadiusBefore = 0;
+        SnowPackSpawner.LastTapPowderMoved = 0;
+        SnowPackSpawner.LastTapSlabMoved = 0;
+        SnowPackSpawner.LastTapBaseMoved = 0;
+        SnowPackSpawner.LastTapSmallCluster = 0;
+        SnowPackSpawner.LastTapMidCluster = 0;
+        SnowPackSpawner.LastTapLargeCluster = 0;
         var g = GameObject.Find("TapHitGizmo");
         if (g != null) Object.Destroy(g);
         g = GameObject.Find("BurstMarker");
@@ -94,9 +129,58 @@ public class RoofSnowSystem : MonoBehaviour
         Debug.Log($"[TapMarkerState] atStart visible=No lastTapValid=No");
     }
 
+    bool _packedZeroMaskCleared;
+    int _packedTotalAtStart = -1;
+    float _roofSnowVisualAmount = 1f;
+    const float VisualFadeSpeed = 4f;
+    float _packedZeroSweepDone;
+    [Header("Detached roof-stuck")]
+    [Tooltip("rb.velocity < この値が継続で強制消去。")]
+    public float detachedStuckVelThreshold = 0.05f;
+    [Tooltip("velocity低速がこの秒数続いたら強制消去。止まり雪対策で3秒（再タップ猶予）。")]
+    public float detachedStuckVelSeconds = 3f;
+    [Tooltip("rb.IsSleeping()がこの秒数続いたら強制消去。止まり雪対策で3秒。")]
+    public float detachedStuckSleepSeconds = 3f;
+    readonly Dictionary<SnowPackFallingPiece, float> _fallingStuckTimer = new Dictionary<SnowPackFallingPiece, float>();
+
     void Update()
     {
         if (roofSlideCollider == null) return;
+
+        int packed = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+        if (packed > 0 && _packedTotalAtStart < 0)
+            _packedTotalAtStart = packed;
+        if (packed > 0 && packed > _packedTotalAtStart)
+            _packedTotalAtStart = packed;
+
+        float targetAmount = (packed <= 0 || _packedTotalAtStart <= 0) ? 0f
+            : Mathf.Clamp01(packed / (float)_packedTotalAtStart);
+        _roofSnowVisualAmount = Mathf.MoveTowards(_roofSnowVisualAmount, targetAmount, VisualFadeSpeed * Time.deltaTime);
+
+        if (packed == 0)
+        {
+            if (_packedZeroSweepDone <= 0f)
+            {
+                SweepRoofDebris();
+                _packedZeroSweepDone = 1f;
+            }
+            if (!_packedZeroMaskCleared && _maskController != null)
+            {
+                _packedZeroMaskCleared = true;
+                _maskController.ClearEntireMask();
+            }
+        }
+        else if (packed > 0)
+        {
+            _packedZeroSweepDone = 0f;
+            if (_packedZeroMaskCleared)
+            {
+                _packedZeroMaskCleared = false;
+                if (_maskController != null) _maskController.ResetMaskToFull();
+            }
+        }
+
+        CheckDetachedRoofStuck(Time.deltaTime);
 
         UpdateRoofVisual();
         UpdateMaskShaderParams();
@@ -191,7 +275,7 @@ public class RoofSnowSystem : MonoBehaviour
             SpawnLocalBurstAt(tapWorldPoint, removed, slopeDir);
         }
         int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
-        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter}");
+        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} primary_detach_count={removed} primary_cluster_size={removed} largest_fall_group={removed} active_snow_visual=RoofSnowLayer+SnowPackPiece active_snow_break_logic=SnowPackSpawner.HandleTap+DetachInRadius");
         PaintClearedPatchAt(tapWorldPoint, hitRadiusR);
         if (removed >= 60) AvalancheFeedback.TriggerSmallShakeIfLarge(removed);
 
@@ -203,6 +287,20 @@ public class RoofSnowSystem : MonoBehaviour
         SnowLoopLogCapture.AppendToAssiReport($"tapPos=({tapWorldPoint.x:F3},{tapWorldPoint.y:F3},{tapWorldPoint.z:F3}) radius=0.6 removedCount={removed}");
         SnowLoopLogCapture.AppendToAssiReport($"size={sizeStr}");
         SnowLoopLogCapture.AppendToAssiReport($"movedCount={movedCount} reachedGround={reachedGround}");
+        SnowLoopLogCapture.AppendToAssiReport("=== TAP AVALANCHE MIX ===");
+        SnowLoopLogCapture.AppendToAssiReport($"Powder moved={SnowPackSpawner.LastTapPowderMoved}");
+        SnowLoopLogCapture.AppendToAssiReport($"Slab moved={SnowPackSpawner.LastTapSlabMoved}");
+        SnowLoopLogCapture.AppendToAssiReport($"Base moved={SnowPackSpawner.LastTapBaseMoved}");
+        SnowLoopLogCapture.AppendToAssiReport($"smallCluster={SnowPackSpawner.LastTapSmallCluster}");
+        SnowLoopLogCapture.AppendToAssiReport($"midCluster={SnowPackSpawner.LastTapMidCluster}");
+        SnowLoopLogCapture.AppendToAssiReport($"largeCluster={SnowPackSpawner.LastTapLargeCluster}");
+        SnowLoopLogCapture.AppendToAssiReport("=== VISUAL RESULT CHECK ===");
+        bool hasSmall = SnowPackSpawner.LastTapSmallCluster > 0;
+        bool hasMid = SnowPackSpawner.LastTapMidCluster > 0;
+        bool hasLarge = SnowPackSpawner.LastTapLargeCluster > 0;
+        bool threeVarieties = hasSmall && hasMid && hasLarge;
+        SnowLoopLogCapture.AppendToAssiReport($"小粒/中塊/大塊の3種類が出たか: {(threeVarieties ? "Yes" : "No")}");
+        SnowLoopLogCapture.AppendToAssiReport($"根拠: smallCluster={SnowPackSpawner.LastTapSmallCluster} midCluster={SnowPackSpawner.LastTapMidCluster} largeCluster={SnowPackSpawner.LastTapLargeCluster}");
     }
 
     static int _spawnErrorCount;
@@ -214,12 +312,18 @@ public class RoofSnowSystem : MonoBehaviour
         if (removedCount == 1)
             PaintClearedPatchAt(origin, 0.2f);
         int count = Mathf.Clamp(removedCount, 1, burstChunkCount);
+        int smallC = SnowPackSpawner.LastTapSmallCluster;
+        int midC = SnowPackSpawner.LastTapMidCluster;
+        int largeC = SnowPackSpawner.LastTapLargeCluster;
+        if (smallC + midC + largeC <= 0) { smallC = count / 3; midC = count / 3; largeC = count - smallC - midC; }
         Vector3 roofN = roofSlideCollider.transform.up.normalized;
         float smallLift = 0.2f;
         float roofSlideTime = 0.4f;
         int spawnedOk = 0, spawnFailed = 0;
+        float baseScale = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
         for (int i = 0; i < count; i++)
         {
+            float scaleMul = i < smallC ? 0.65f : (i < smallC + midC ? 1f : 1.35f);
             try
             {
                 var chunk = AcquireChunk();
@@ -234,8 +338,7 @@ public class RoofSnowSystem : MonoBehaviour
                 float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
                 SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
                 chunk.Activate(p, vel, Mathf.Max(burstChunkLife * 0.8f, 0.8f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
-                float s = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
-                chunk.transform.localScale = Vector3.one * s * 0.8f;
+                chunk.transform.localScale = Vector3.one * baseScale * 1.2f * scaleMul;
                 spawnedOk++;
             }
             catch (System.Exception ex)
@@ -298,6 +401,8 @@ public class RoofSnowSystem : MonoBehaviour
             if (t != null) roofSlideCollider = t.GetComponent<Collider>();
         }
         if (snowPackSpawner == null) snowPackSpawner = FindFirstObjectByType<SnowPackSpawner>();
+        if (snowPackSpawner != null)
+            snowPackSpawner.EnsureSnowPackVisualHierarchy();
     }
 
     void EnsureRoofVisual()
@@ -341,7 +446,9 @@ public class RoofSnowSystem : MonoBehaviour
             _roofLayerMat = sh != null ? new Material(sh) : null;
             if (_roofLayerMat != null)
             {
-                _roofLayerMat.SetColor("_BaseColor", roofSnowColor);
+                MaterialColorHelper.SetColorSafe(_roofLayerMat, roofSnowColor);
+                if (_roofLayerMat.HasProperty("_SnowIntensity"))
+                    _roofLayerMat.SetFloat("_SnowIntensity", _roofSnowVisualAmount);
                 if (rend != null) rend.sharedMaterial = _roofLayerMat;
             }
         }
@@ -405,6 +512,8 @@ public class RoofSnowSystem : MonoBehaviour
         _roofLayerMat.SetVector("_RoofF", s.RoofF);
         _roofLayerMat.SetFloat("_RoofWidth", s.RoofWidth);
         _roofLayerMat.SetFloat("_RoofLength", s.RoofLength);
+        if (_roofLayerMat.HasProperty("_SnowIntensity"))
+            _roofLayerMat.SetFloat("_SnowIntensity", _roofSnowVisualAmount);
     }
 
     static string GetTransformPath(Transform t)
@@ -431,7 +540,7 @@ public class RoofSnowSystem : MonoBehaviour
         marker.transform.localScale = Vector3.one * 0.5f;
         if (marker.GetComponent<Collider>() != null) marker.GetComponent<Collider>().enabled = false;
         var r = marker.GetComponent<Renderer>();
-        if (r != null) r.material.color = Color.red;
+        if (r != null && r.material != null) MaterialColorHelper.SetColorSafe(r.material, Color.red);
         UnityEngine.Object.Destroy(marker, 1f);
         int count = Mathf.Max(6, burstChunkCount);
         float roofSlideTime = 0.35f;
@@ -451,6 +560,120 @@ public class RoofSnowSystem : MonoBehaviour
         }
     }
 
+    /// <summary>タップフォールバック用。画面位置から最も近い屋根上デブリを返す（maxPixelDist以内）。</summary>
+    public bool TryGetClosestDebrisToScreen(Camera cam, Vector2 screenPos, float maxPixelDist,
+        out MvpSnowChunkMotion chunk, out SnowPackFallingPiece falling)
+    {
+        chunk = null;
+        falling = null;
+        if (cam == null || roofSlideCollider == null) return false;
+        float bestSq = maxPixelDist * maxPixelDist;
+        var roofBounds = roofSlideCollider.bounds;
+        roofBounds.Expand(0.8f);
+
+        for (int i = 0; i < _chunkPool.Count; i++)
+        {
+            var c = _chunkPool[i];
+            if (c == null || !c.gameObject.activeSelf) continue;
+            if (!roofBounds.Contains(c.transform.position)) continue;
+            Vector3 vp = cam.WorldToScreenPoint(c.transform.position);
+            if (vp.z <= 0f) continue;
+            float dx = vp.x - screenPos.x, dy = vp.y - screenPos.y;
+            float sq = dx * dx + dy * dy;
+            if (sq < bestSq) { bestSq = sq; chunk = c; falling = null; }
+        }
+
+        var hits = Physics.OverlapBox(roofSlideCollider.bounds.center,
+            roofSlideCollider.bounds.extents + Vector3.one * 0.5f,
+            roofSlideCollider.transform.rotation, ~0, QueryTriggerInteraction.Ignore);
+        foreach (var col in hits)
+        {
+            if (col == null) continue;
+            var f = col.GetComponentInParent<SnowPackFallingPiece>();
+            if (f == null) continue;
+            Vector3 vp = cam.WorldToScreenPoint(f.transform.position);
+            if (vp.z <= 0f) continue;
+            float dx = vp.x - screenPos.x, dy = vp.y - screenPos.y;
+            float sq = dx * dx + dy * dy;
+            if (sq < bestSq) { bestSq = sq; chunk = null; falling = f; }
+        }
+        return chunk != null || falling != null;
+    }
+
+    void CheckDetachedRoofStuck(float dt)
+    {
+        if (roofSlideCollider == null || dt <= 0f) return;
+        int packed = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+        bool packedSmall = packed >= 0 && packed <= 5; // 止まり雪対策: 残り少ない時は速めに消去
+        float velSec = packedSmall ? 1f : detachedStuckVelSeconds;
+        float sleepSec = packedSmall ? 1f : detachedStuckSleepSeconds;
+
+        Bounds roofBounds = roofSlideCollider.bounds;
+        roofBounds.Expand(0.5f);
+        var toRemove = new List<SnowPackFallingPiece>();
+        foreach (var f in DetachedSnowRegistry.Falling)
+        {
+            if (f == null || !f.gameObject.activeInHierarchy) { toRemove.Add(f); continue; }
+            var rb = f.GetComponent<Rigidbody>();
+            if (rb == null || rb.isKinematic) continue;
+            if (!roofBounds.Contains(f.transform.position)) { _fallingStuckTimer.Remove(f); continue; }
+            float speed = rb.linearVelocity.magnitude;
+            bool sleeping = rb.IsSleeping();
+            bool stuck = speed < detachedStuckVelThreshold || sleeping;
+            if (!stuck) { _fallingStuckTimer.Remove(f); continue; }
+            float t = _fallingStuckTimer.TryGetValue(f, out var v) ? v + dt : dt;
+            _fallingStuckTimer[f] = t;
+            float threshold = sleeping ? sleepSec : velSec;
+            if (t >= threshold)
+            {
+                f.ForceDespawnFromCentralRoofStuck();
+                toRemove.Add(f);
+            }
+        }
+        foreach (var f in toRemove)
+            _fallingStuckTimer.Remove(f);
+    }
+
+    /// <summary>packed=0時: 屋根上デブリを一括Despawn。ChunkPool + OverlapBoxで漏れなく。</summary>
+    void SweepRoofDebris()
+    {
+        int removedCount = 0;
+        for (int i = 0; i < _chunkPool.Count; i++)
+        {
+            var c = _chunkPool[i];
+            if (c != null && c.gameObject.activeSelf)
+            {
+                c.ForceDespawn();
+                removedCount++;
+            }
+        }
+        if (roofSlideCollider != null)
+        {
+            Bounds b = roofSlideCollider.bounds;
+            Vector3 halfExtents = b.extents + Vector3.one * 0.5f;
+            Collider[] hits = Physics.OverlapBox(b.center, halfExtents, roofSlideCollider.transform.rotation, ~0, QueryTriggerInteraction.Ignore);
+            foreach (var col in hits)
+            {
+                if (col == null) continue;
+                var chunk = col.GetComponent<MvpSnowChunkMotion>();
+                if (chunk != null && chunk.gameObject.activeSelf)
+                {
+                    chunk.ForceDespawn();
+                    removedCount++;
+                    continue;
+                }
+                var falling = col.GetComponentInParent<SnowPackFallingPiece>();
+                if (falling != null)
+                {
+                    falling.ForceDespawnFromSweep();
+                    removedCount++;
+                }
+            }
+        }
+        if (removedCount > 0)
+            Debug.Log($"[RoofCleanup] removedCount={removedCount}");
+    }
+
     MvpSnowChunkMotion AcquireChunk()
     {
         for (int i = 0; i < _chunkPool.Count; i++)
@@ -466,7 +689,7 @@ public class RoofSnowSystem : MonoBehaviour
         go.transform.localScale = Vector3.one * unifiedScale;
         if (!_burstScaleLogOnce) { _burstScaleLogOnce = true; Debug.Log($"[SnowPieceScale] kind=Burst scale=({unifiedScale:F3},{unifiedScale:F3},{unifiedScale:F3})"); }
         var col = go.GetComponent<Collider>();
-        if (col != null) col.enabled = false;
+        if (col != null) { col.isTrigger = false; col.enabled = true; }
         var r = go.GetComponent<Renderer>();
         if (r != null)
         {
@@ -474,7 +697,7 @@ public class RoofSnowSystem : MonoBehaviour
             var mat = sh != null ? new Material(sh) : null;
             if (mat != null)
             {
-                mat.color = new Color(0.3f, 0.7f, 1f); // 雪崩中=シアンで視認性
+                MaterialColorHelper.SetColorSafe(mat, new Color(0.3f, 0.7f, 1f)); // 雪崩中=シアンで視認性
                 r.sharedMaterial = mat;
             }
         }

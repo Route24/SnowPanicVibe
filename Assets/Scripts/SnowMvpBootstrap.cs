@@ -8,12 +8,29 @@ public class SnowMvpBootstrap : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
+        var snowTest = GameObject.Find("SnowTest");
+        if (snowTest != null && snowTest.GetComponent<SnowPackSpawner>() != null)
+        {
+            snowTest.SetActive(true);
+            EnsureTapToSlideStatic();
+            Debug.Log("[SnowMVP] SnowTest に SnowPackSpawner あり。既存セットアップを使用。");
+            return;
+        }
+
         var existing = FindFirstObjectByType<SnowMvpBootstrap>();
         if (existing != null) return;
 
         var root = new GameObject("SnowMVP");
         var boot = root.AddComponent<SnowMvpBootstrap>();
         boot.Setup();
+    }
+
+    static void EnsureTapToSlideStatic()
+    {
+        var cam = Camera.main;
+        if (cam == null) return;
+        if (cam.GetComponent<TapToSlideOnRoof>() != null) return;
+        cam.gameObject.AddComponent<TapToSlideOnRoof>();
     }
 
     void Setup()
@@ -36,6 +53,7 @@ public class SnowMvpBootstrap : MonoBehaviour
         pack.targetDepthMeters = 0.5f;
         pack.packDepthMeters = 0.5f;
         pack.rebuildOnPlay = true;
+        pack.EnsureSnowPackVisualHierarchy();
 
         var fall = GetOrCreate<SnowFallSystem>(gameObject);
         fall.roofSnowSystem = roof;
@@ -112,6 +130,10 @@ public class SnowMvpBootstrap : MonoBehaviour
 
     void DisableLegacyPrototype()
     {
+        var snowTest = GameObject.Find("SnowTest");
+        if (snowTest != null && snowTest.GetComponent<SnowPackSpawner>() != null)
+            return;
+
         var setup = FindFirstObjectByType<RoofSlideTestAutoSetup>();
         if (setup != null)
         {
@@ -121,7 +143,12 @@ public class SnowMvpBootstrap : MonoBehaviour
             Debug.Log("[SnowMVP] disabled legacy RoofSlideTestAutoSetup");
         }
 
-        var snowTest = GameObject.Find("SnowTest");
-        if (snowTest != null) snowTest.SetActive(false);
+        if (snowTest != null)
+        {
+            snowTest.SetActive(false);
+            var assist = snowTest.GetComponent<SnowTestSlideAssist>();
+            if (assist != null) assist.enableDebugVisuals = false;
+            Debug.Log("[SnowMVP] SnowTest disabled (no grid/lattice in GameView)");
+        }
     }
 }

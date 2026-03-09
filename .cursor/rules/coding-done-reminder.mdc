@@ -13,6 +13,7 @@ alwaysApply: true
 ---
 ```
 
-- Play を実行する
+- **VideoPipeline / SelfTest 関連の変更時のみ**: 「Self Test」→ 停止 → レポート（Play ではない）
+- **その他の変更時**: Play → 停止 → レポート
 - 停止する（ASSI Report が自動で開く）
 - 「コピー」ボタンでレポートをコピーし、ノアにペーストして送信する

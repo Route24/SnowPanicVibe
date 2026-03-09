@@ -41,6 +41,30 @@ public class RoofSnowMaskController : MonoBehaviour
         _initialized = true;
     }
 
+    /// <summary>Clear entire mask (R=0 everywhere). Use when packedTotal==0 so roof looks fully cleared.</summary>
+    public void ClearEntireMask()
+    {
+        if (!_initialized || _mask == null) return;
+        var pixels = new Color32[maskResolution * maskResolution];
+        for (int i = 0; i < pixels.Length; i++)
+            pixels[i] = new Color32(0, 0, 0, 255);
+        _mask.SetPixels32(pixels);
+        _mask.Apply();
+        Debug.Log("[RoofSnowMask] ClearEntireMask packedTotal=0");
+    }
+
+    /// <summary>Reset mask to full snow (R=1 everywhere). Use when refilling packed snow.</summary>
+    public void ResetMaskToFull()
+    {
+        if (!_initialized || _mask == null) return;
+        var pixels = new Color32[maskResolution * maskResolution];
+        for (int i = 0; i < pixels.Length; i++)
+            pixels[i] = new Color32(255, 255, 255, 255);
+        _mask.SetPixels32(pixels);
+        _mask.Apply();
+        Debug.Log("[RoofSnowMask] ResetMaskToFull");
+    }
+
     /// <summary>Paint a cleared circle at world position. Call from LocalAvalanche.</summary>
     public void PaintEraseAt(Vector3 worldPoint, float radiusWorldMeters = -1f)
     {

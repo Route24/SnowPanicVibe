@@ -5,6 +5,7 @@ Shader "SnowPanic/RoofSnowMask"
         _BaseColor ("Snow Color", Color) = (0.92, 0.95, 1, 1)
         _SnowMask ("Snow Mask (R=1 snow, R=0 hole)", 2D) = "white" {}
         _ClipThreshold ("Clip threshold (mask < this = hole)", Range(0,1)) = 0.5
+        _SnowIntensity ("Snow intensity (0=hidden, 1=full). Driven by packedTotal.", Range(0,1)) = 1
         [Header(Roof UV mapping)]
         _RoofCenter ("Roof Center", Vector) = (0,0,0,0)
         _RoofR ("Roof R (right)", Vector) = (1,0,0,0)
@@ -37,6 +38,7 @@ Shader "SnowPanic/RoofSnowMask"
             float _RoofWidth;
             float _RoofLength;
             float _ClipThreshold;
+            float _SnowIntensity;
             CBUFFER_END
             TEXTURE2D(_SnowMask);
             SAMPLER(sampler_SnowMask);
@@ -67,7 +69,7 @@ Shader "SnowPanic/RoofSnowMask"
                 float u = dot(d, _RoofR.xyz) / max(0.01, _RoofWidth) + 0.5;
                 float v = dot(d, _RoofF.xyz) / max(0.01, _RoofLength) + 0.5;
                 float2 maskUV = float2(u, v);
-                float mask = SAMPLE_TEXTURE2D(_SnowMask, sampler_SnowMask, maskUV).r;
+                float mask = SAMPLE_TEXTURE2D(_SnowMask, sampler_SnowMask, maskUV).r * _SnowIntensity;
                 clip(mask - _ClipThreshold);
                 return half4(_BaseColor.rgb, 1);
             }

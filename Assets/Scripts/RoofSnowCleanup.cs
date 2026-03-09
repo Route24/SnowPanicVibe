@@ -7,6 +7,7 @@ public class RoofSnowCleanup : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Init()
     {
+        if (VideoPipelineSelfTestMode.IsActive) return;
         var go = new GameObject("RoofSnowCleanup");
         go.AddComponent<RoofSnowCleanup>();
     }

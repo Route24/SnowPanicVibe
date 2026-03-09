@@ -183,6 +183,14 @@ public class AssiDebugUI : MonoBehaviour
         float depth = roof != null ? roof.roofSnowDepthMeters : 0f;
         int packedTotal = spawner != null ? spawner.GetPackedCubeCountRealtime() : 0;
 
+        // Snow physics prototype score (ASSI)
+        var scoreMgr = Object.FindFirstObjectByType<SnowPhysicsScoreManager>();
+        if (scoreMgr != null)
+        {
+            var style = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold };
+            GUI.Label(new Rect(HudX, 8f, 350, 20), $"Score: {scoreMgr.Score}", style);
+        }
+
         // Core gameplay debug: Money, Roof weight
         if (core != null)
         {
@@ -191,7 +199,7 @@ public class AssiDebugUI : MonoBehaviour
             float threshold = core.CollapseThreshold;
             bool gameOver = core.IsGameOver;
             var style = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold };
-            float yy = 8f;
+            float yy = scoreMgr != null ? 26f : 8f;
             GUI.Label(new Rect(HudX, yy, 350, 20), $"Money: {money}", style); yy += 18;
             GUI.Label(new Rect(HudX, yy, 350, 20), $"Roof weight: {roofWeight:F3} / {threshold:F3}", style); yy += 18;
             if (gameOver) GUI.Label(new Rect(HudX, yy, 350, 20), "GAME OVER", new GUIStyle(style) { normal = { textColor = Color.red } }); yy += 18;
@@ -205,7 +213,9 @@ public class AssiDebugUI : MonoBehaviour
         var downhill = spawner != null ? spawner.RoofDownhill : Vector3.zero;
         var hudStyle = new GUIStyle(GUI.skin.label) { fontSize = 10 };
         float hudY = HudY;
-        GUI.Label(new Rect(HudX, hudY, 450, 18), $"PackedTotal={packedTotal} PackedInRadius={packedInRadius} RemovedLastTap={removedLast}", hudStyle); hudY += 14;
+        float roofSnowVisualAmount = roof != null ? roof.RoofSnowVisualAmount : -1f;
+        string roofMaskState = packedTotal == 0 ? "cleared" : "active";
+        GUI.Label(new Rect(HudX, hudY, 450, 18), $"PackedTotal={packedTotal} RoofSnowVisualAmount={(roofSnowVisualAmount >= 0 ? roofSnowVisualAmount.ToString("F2") : "?")} PackedInRadius={packedInRadius} RemovedLastTap={removedLast}", hudStyle); hudY += 14;
         GUI.Label(new Rect(HudX, hudY, 450, 18), $"RoofSlopeDeg={slopeDeg:F1} downhill=({downhill.x:F2},{downhill.y:F2},{downhill.z:F2}) tap(u,v)=({uv.x:F2},{uv.y:F2})", hudStyle); hudY += 14;
         GUI.Label(new Rect(HudX, hudY, 450, 18), $"Depth={depth:F3} AutoAvalanche={(_autoAvalancheOff ? "OFF" : "ON")} SnowFallRate={rate:F3} Freeze={(spawner != null && spawner.IsSpawnFrozen)} DebugFreeze={DebugFreezeSpawn}", hudStyle); hudY += 14;
         var cooldownMgr2 = Object.FindFirstObjectByType<ToolCooldownManager>();

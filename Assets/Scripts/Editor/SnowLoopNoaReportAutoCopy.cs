@@ -56,15 +56,91 @@ public static class SnowLoopNoaReportAutoCopy
         }
     }
 
+    /// <summary>SelfTest用レポート。VIDEO FOR NOA を最上段に、続けて VIDEO PIPELINE LOGS、CORNICE SCENE CHECK、TAP DEBUG。</summary>
+    public static bool BuildSelfTestReport()
+    {
+        try
+        {
+            var lines = LoadConsoleLines();
+            var sb = new StringBuilder();
+            sb.AppendLine("=== SNOW ROLLBACK CHECK ===");
+            sb.AppendLine(BuildSnowRollbackCheckSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== CAMERA LOCK CHECK ===");
+            sb.AppendLine(BuildCameraLockCheckSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== VIDEO FOR NOA ===");
+            sb.AppendLine(BuildVideoForNoaSection());
+            sb.AppendLine("");
+            sb.AppendLine("=== VIDEO PREVIEW FOR NOA ===");
+            sb.AppendLine(BuildVideoPreviewForNoaSection());
+            sb.AppendLine("");
+            sb.AppendLine("=== DRIVE STATUS ===");
+            sb.AppendLine(BuildDriveStatusSection());
+            sb.AppendLine("");
+            sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
+            sb.AppendLine(BuildVideoPipelineLogsSection());
+            sb.AppendLine("");
+            sb.AppendLine("=== CORNICE SCENE CHECK ===");
+            sb.AppendLine(BuildCorniceSceneCheckSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== TAP DEBUG ===");
+            sb.AppendLine(BuildTapDebugSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine(BuildImplementationSummary());
+            sb.AppendLine("");
+            var dir = Path.GetDirectoryName(ReportPath);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+            File.WriteAllText(ReportPath, sb.ToString());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"[ASSI SelfTest Report Error] {ex.GetType().Name}: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>SelfTest時は SelfTest レポート、通常Play時は既存レポート。</summary>
+    public static bool TryBuildReportOrSelfTestReport()
+    {
+        if (SnowPanicVideoPipelineSelfTest.IsSelfTestSession)
+            return BuildSelfTestReport();
+        return BuildReport();
+    }
+
     /// <summary>前回との差分のみ。変更点・新規エラー・ACTIVE=0変化だけ。</summary>
     static string BuildDeltaReport(string[] lines, string fullReport)
     {
         string prevFull = File.Exists(PreviousFullPath) ? File.ReadAllText(PreviousFullPath) : null;
         var sb = new StringBuilder();
+        sb.AppendLine("=== SNOW ROLLBACK CHECK ===");
+        sb.AppendLine(BuildSnowRollbackCheckSection(lines));
+        sb.AppendLine();
+        sb.AppendLine("=== CAMERA LOCK CHECK ===");
+        sb.AppendLine(BuildCameraLockCheckSection(lines));
+        sb.AppendLine();
+        sb.AppendLine("=== VIDEO FOR NOA ===");
+        sb.AppendLine(BuildVideoForNoaSection());
+        sb.AppendLine();
+        sb.AppendLine("=== VIDEO PREVIEW FOR NOA ===");
+        sb.AppendLine(BuildVideoPreviewForNoaSection());
+        sb.AppendLine();
+        sb.AppendLine("=== DRIVE STATUS ===");
+        sb.AppendLine(BuildDriveStatusSection());
+        sb.AppendLine();
         sb.AppendLine($"生成日時: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         sb.AppendLine("【ASSI REPORT - 差分のみ】");
         sb.AppendLine();
-
+        sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
+        sb.AppendLine(BuildVideoPipelineLogsSection());
+        sb.AppendLine();
+        sb.AppendLine("=== CORNICE SCENE CHECK ===");
+        sb.AppendLine(BuildCorniceSceneCheckSection(lines));
+        sb.AppendLine();
+        sb.AppendLine("=== TAP DEBUG ===");
+        sb.AppendLine(BuildTapDebugSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== 次回レポート必須（4項目） ===");
         sb.AppendLine(BuildRequiredChecklist(lines));
         sb.AppendLine();
@@ -86,6 +162,9 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine("=== 直前20イベント ===");
         sb.AppendLine(BuildLast20Events(lines));
         sb.AppendLine();
+        sb.AppendLine("=== 動画（Recorder） ===");
+        sb.AppendLine(GetLatestRecordingSection());
+        sb.AppendLine();
         sb.AppendLine("=== 雪崩 before/after（必須） ===");
         sb.AppendLine(BuildAvalancheBeforeAfter(lines));
         sb.AppendLine();
@@ -95,8 +174,321 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine(errs[i]).AppendLine();
         if (errs.Count > 3) sb.AppendLine($"=== 他 {errs.Count - 3} 件 ===");
         sb.AppendLine();
+        sb.AppendLine("=== CONSOLE LOGS (filtered) ===");
+        sb.AppendLine(BuildConsoleLogsFilteredSection());
+        sb.AppendLine();
         sb.AppendLine(BuildImplementationSummary());
         return TruncateReport(sb.ToString());
+    }
+
+    const int VideoPipelineLogsMaxLines = 50;
+    const int ConsoleExcerptMaxLines = 200;
+
+    /// <summary>ノア確認用。最上段固定フォーマット。drive_share_link/direct_view_url を先頭に。</summary>
+    static string BuildVideoForNoaSection()
+    {
+        try
+        {
+            var sessionPath = SnowPanicVideoPipelineSelfTest.GetSessionDataPath();
+            var sb = new StringBuilder();
+            if (!File.Exists(sessionPath))
+            {
+                sb.AppendLine("drive_share_link=none");
+                sb.AppendLine("direct_view_url=");
+                sb.AppendLine("direct_download_url=");
+                sb.AppendLine("drive_permission=restricted");
+                sb.AppendLine("local_path=(session not found)");
+                sb.AppendLine("local_exists=false");
+                sb.AppendLine("local_size_bytes=0");
+                sb.AppendLine("drive_uploaded=false");
+                sb.AppendLine("drive_size_bytes=0");
+                sb.AppendLine("upload_result=NOT_RUN");
+                sb.AppendLine("final_result=ERROR");
+                sb.AppendLine("session_id=");
+                sb.AppendLine("scene=");
+                sb.AppendLine("unity_version=" + Application.unityVersion);
+                sb.AppendLine("");
+                sb.AppendLine("=== SLACK STATUS ===");
+                sb.AppendLine("posted=false");
+                sb.AppendLine("error=session_not_found");
+                return sb.ToString();
+            }
+            var sessionLines = File.ReadAllLines(sessionPath);
+            var sessionDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var line in sessionLines)
+            {
+                var eq = line.IndexOf('=');
+                if (eq > 0)
+                    sessionDict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+            }
+            string v;
+            var driveShareLink = sessionDict.TryGetValue("drive_share_link", out v) ? v : "";
+            if (string.IsNullOrEmpty(driveShareLink)) driveShareLink = "none";
+            var directViewUrl = sessionDict.TryGetValue("direct_view_url", out v) ? v : "";
+            var directDownloadUrl = sessionDict.TryGetValue("direct_download_url", out v) ? v : "";
+            var drivePermission = sessionDict.TryGetValue("drive_permission", out v) ? v : "restricted";
+            var localPath = sessionDict.TryGetValue("local_mp4_path", out v) ? v : "";
+            var localExists = sessionDict.TryGetValue("local_mp4_exists", out v) ? v : "false";
+            var localSize = sessionDict.TryGetValue("local_mp4_size_bytes", out v) ? v : "0";
+            var driveUploaded = sessionDict.TryGetValue("drive_uploaded", out v) ? v : "false";
+            var driveSizeBytes = sessionDict.TryGetValue("drive_size_bytes", out v) ? v : "0";
+            var uploadResult = sessionDict.TryGetValue("upload_result", out v) ? v : (driveUploaded == "true" ? "DRIVE_READY" : "NOT_RUN");
+            var finalResult = sessionDict.TryGetValue("final_result", out v) ? v : (driveUploaded == "true" ? "DRIVE_READY" : "ERROR");
+            var sessionId = sessionDict.TryGetValue("sessionId", out v) ? v : "";
+            var scene = sessionDict.TryGetValue("scene", out v) ? v : "";
+            var unityVersion = sessionDict.TryGetValue("unityVersion", out v) ? v : Application.unityVersion;
+            var slackPosted = sessionDict.TryGetValue("slack_posted", out v) ? v : "false";
+            var slackError = sessionDict.TryGetValue("slack_error", out v) ? v : "";
+            sb.AppendLine("drive_share_link=" + driveShareLink);
+            sb.AppendLine("direct_view_url=" + (directViewUrl ?? ""));
+            sb.AppendLine("direct_download_url=" + (directDownloadUrl ?? ""));
+            sb.AppendLine("drive_permission=" + drivePermission);
+            sb.AppendLine("local_path=" + (localPath ?? ""));
+            sb.AppendLine("local_exists=" + localExists);
+            sb.AppendLine("local_size_bytes=" + localSize);
+            sb.AppendLine("drive_uploaded=" + driveUploaded);
+            sb.AppendLine("drive_size_bytes=" + driveSizeBytes);
+            sb.AppendLine("upload_result=" + uploadResult);
+            sb.AppendLine("final_result=" + finalResult);
+            sb.AppendLine("session_id=" + sessionId);
+            sb.AppendLine("scene=" + scene);
+            sb.AppendLine("unity_version=" + unityVersion);
+            sb.AppendLine("");
+            sb.AppendLine("=== SLACK STATUS ===");
+            sb.AppendLine("posted=" + slackPosted);
+            sb.AppendLine("error=" + (string.IsNullOrEmpty(slackError) ? "none" : slackError));
+            sb.AppendLine("slack_result=" + (slackPosted == "true" ? "OK" : "ERROR"));
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            return "drive_share_link=none\n(読取失敗: " + ex.Message + ")";
+        }
+    }
+
+    /// <summary>ノア確認用プレビュー。gif優先、fallback時はcontact_sheet。</summary>
+    static string BuildVideoPreviewForNoaSection()
+    {
+        try
+        {
+            var sessionPath = SnowPanicVideoPipelineSelfTest.GetSessionDataPath();
+            if (!File.Exists(sessionPath))
+                return "preview_type=none\npreview_path=\ngif_path=\ngif_exists=false\ngif_size_bytes=0\npreview_fallback_used=false\nffmpeg_path=\nffmpeg_available=false\npreview_status=PREVIEW_ERROR\npreview_drive_link=";
+            var sessionLines = File.ReadAllLines(sessionPath);
+            var sessionDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var line in sessionLines)
+            {
+                var eq = line.IndexOf('=');
+                if (eq > 0)
+                    sessionDict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+            }
+            string v;
+            var previewType = sessionDict.TryGetValue("preview_type", out v) ? v : "none";
+            var gifPath = sessionDict.TryGetValue("gif_path", out v) ? v : (sessionDict.TryGetValue("preview_gif_path", out v) ? v : "");
+            var previewPath = (previewType == "gif" && !string.IsNullOrEmpty(gifPath)) ? gifPath : (sessionDict.TryGetValue("preview_path", out v) ? v : "");
+            if (string.IsNullOrEmpty(previewPath)) previewPath = gifPath;
+            var gifExists = sessionDict.TryGetValue("gif_exists", out v) ? v : (previewType == "gif" ? "true" : "false");
+            var gifSizeBytes = sessionDict.TryGetValue("gif_size_bytes", out v) ? v : (sessionDict.TryGetValue("preview_gif_size", out v) ? v : "0");
+            var previewFallbackUsed = sessionDict.TryGetValue("preview_fallback_used", out v) ? v : "false";
+            var ffmpegPath = sessionDict.TryGetValue("ffmpeg_path", out v) ? v : "";
+            var ffmpegAvailable = sessionDict.TryGetValue("ffmpeg_available", out v) ? v : "false";
+            var previewStatus = sessionDict.TryGetValue("preview_status", out v) ? v : "PREVIEW_ERROR";
+            var previewExists = sessionDict.TryGetValue("preview_exists", out v) ? v : "false";
+            var previewDriveLink = sessionDict.TryGetValue("preview_drive_link", out v) ? v : (sessionDict.TryGetValue("preview_gif_drive_link", out v) ? v : "");
+            var sb = new StringBuilder();
+            sb.AppendLine("preview_type=" + (previewType ?? "none"));
+            sb.AppendLine("preview_path=" + (previewPath ?? ""));
+            sb.AppendLine("gif_path=" + (gifPath ?? ""));
+            sb.AppendLine("gif_exists=" + gifExists);
+            sb.AppendLine("gif_size_bytes=" + (gifSizeBytes ?? "0"));
+            sb.AppendLine("preview_fallback_used=" + previewFallbackUsed);
+            sb.AppendLine("ffmpeg_path=" + (ffmpegPath ?? ""));
+            sb.AppendLine("ffmpeg_available=" + ffmpegAvailable);
+            sb.AppendLine("preview_status=" + (previewStatus ?? "PREVIEW_ERROR"));
+            sb.AppendLine("preview_exists=" + previewExists);
+            sb.AppendLine("preview_size_bytes=" + (sessionDict.TryGetValue("preview_size_bytes", out v) ? v : "0"));
+            sb.AppendLine("preview_drive_link=" + (previewDriveLink ?? ""));
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            return "preview_type=none\npreview_path=\ngif_path=\ngif_exists=false\npreview_fallback_used=false\nffmpeg_path=\nffmpeg_available=false\npreview_status=PREVIEW_ERROR\n(読取失敗: " + ex.Message + ")";
+        }
+    }
+
+    static string BuildVideoPipelineLogsSection()
+    {
+        try
+        {
+            var sb = new StringBuilder();
+            var sessionPath = SnowPanicVideoPipelineSelfTest.GetSessionDataPath();
+            var lastRunPath = SnowPanicVideoPipelineSelfTest.GetLastRunPath();
+
+            if (File.Exists(sessionPath))
+            {
+                var sessionLines = File.ReadAllLines(sessionPath);
+                var sessionDict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var line in sessionLines)
+                {
+                    var eq = line.IndexOf('=');
+                    if (eq > 0)
+                        sessionDict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                }
+                string v;
+                var result = sessionDict.TryGetValue("result", out v) ? v : "";
+                var errorStep = sessionDict.TryGetValue("errorStep", out v) ? v : "none";
+                var localPath = sessionDict.TryGetValue("local_mp4_path", out v) ? v : "";
+                var localExists = sessionDict.TryGetValue("local_mp4_exists", out v) ? v : "false";
+                if (!string.IsNullOrEmpty(localPath) && localExists == "true")
+                {
+                    sb.AppendLine("★ 動画保存先（ノアに添付） ★");
+                    sb.AppendLine("path=" + localPath);
+                    sb.AppendLine("");
+                }
+                if (errorStep != "none" && result != "SUCCESS" && result != "OK")
+                {
+                    sb.AppendLine("★ 失敗ステップ ★ " + errorStep);
+                    sb.AppendLine("");
+                }
+                sb.AppendLine("sessionId=" + (sessionDict.TryGetValue("sessionId", out v) ? v : ""));
+                sb.AppendLine("result=" + result);
+                sb.AppendLine("errorStep=" + errorStep);
+                sb.AppendLine("elapsedSec=" + (sessionDict.TryGetValue("elapsedSec", out v) ? v : ""));
+                sb.AppendLine("local_mp4_path=" + (sessionDict.TryGetValue("local_mp4_path", out v) ? v : ""));
+                sb.AppendLine("local_mp4_exists=" + (sessionDict.TryGetValue("local_mp4_exists", out v) ? v : "false"));
+                sb.AppendLine("local_mp4_size_bytes=" + (sessionDict.TryGetValue("local_mp4_size_bytes", out v) ? v : "0"));
+                sb.AppendLine("daily_archive_path=" + (sessionDict.TryGetValue("daily_archive_path", out v) ? v : ""));
+                sb.AppendLine("daily_archive_created=" + (sessionDict.TryGetValue("daily_archive_created", out v) ? v : "false"));
+                sb.AppendLine("preview_path=" + (sessionDict.TryGetValue("preview_path", out v) ? v : ""));
+                sb.AppendLine("preview_created=" + (sessionDict.TryGetValue("preview_created", out v) ? v : "false"));
+                if (sessionDict.TryGetValue("mp4_poll_expectedPath", out v) && !string.IsNullOrEmpty(v))
+                {
+                    sb.AppendLine("mp4_poll_expectedPath=" + v);
+                    sb.AppendLine("mp4_poll_FileExists=" + (sessionDict.TryGetValue("mp4_poll_FileExists", out v) ? v : ""));
+                    sb.AppendLine("mp4_poll_size_bytes=" + (sessionDict.TryGetValue("mp4_poll_size_bytes", out v) ? v : ""));
+                    sb.AppendLine("mp4_poll_count=" + (sessionDict.TryGetValue("mp4_poll_count", out v) ? v : ""));
+                    sb.AppendLine("mp4_poll_interval_sec=" + (sessionDict.TryGetValue("mp4_poll_interval_sec", out v) ? v : ""));
+                }
+                sb.AppendLine("drive_file=" + (sessionDict.TryGetValue("drive_file", out v) ? v : ""));
+                sb.AppendLine("slack_message=" + (sessionDict.TryGetValue("slack_message", out v) ? v : ""));
+                if (sessionDict.TryGetValue("unityVersion", out v)) sb.AppendLine("unityVersion=" + v);
+                if (sessionDict.TryGetValue("platform", out v)) sb.AppendLine("platform=" + v);
+                if (sessionDict.TryGetValue("recorderImplementation", out v)) sb.AppendLine("recorderImplementation=" + v);
+                if (sessionDict.TryGetValue("outputDir", out v)) sb.AppendLine("outputDir=" + v);
+                if (sessionDict.TryGetValue("exception", out v) && !string.IsNullOrEmpty(v)) sb.AppendLine("exception=" + v);
+                if (sessionDict.TryGetValue("stacktrace", out v) && !string.IsNullOrEmpty(v)) sb.AppendLine("stacktrace=" + v);
+                if (sessionDict.TryGetValue("outputDirExists", out v)) sb.AppendLine("outputDirExists=" + v);
+                if (sessionDict.TryGetValue("outputDirWritable", out v)) sb.AppendLine("outputDirWritable=" + v);
+            }
+            else
+            {
+                string lastRunAt = "none";
+                if (File.Exists(lastRunPath))
+                {
+                    try { lastRunAt = File.ReadAllText(lastRunPath).Trim(); } catch { }
+                }
+                var assiPathCheck = SnowPanicVideoPipelineSelfTest.GetAssiLogPath();
+                var hasRun = File.Exists(lastRunPath);
+                var assiContent = "";
+                if (File.Exists(assiPathCheck))
+                {
+                    try { assiContent = File.ReadAllText(assiPathCheck); hasRun = hasRun || assiContent.Contains("step=start") || assiContent.Contains("step=recorder_start"); } catch { }
+                }
+                var inferredErrorStep = "recorder_start_failed";
+                if (assiContent.Contains("step=recorder_start_exception")) inferredErrorStep = "recorder_start_failed";
+                else if (assiContent.Contains("step=recorder_start_failed")) inferredErrorStep = "recorder_start_failed";
+                else if (assiContent.Contains("step=play_never_entered")) inferredErrorStep = "recorder_start_failed";
+                else if (assiContent.Contains("step=mp4_not_created") || assiContent.Contains("step=mp4_wait")) inferredErrorStep = "mp4_not_created";
+                if (hasRun)
+                {
+                    sb.AppendLine("result=ERROR");
+                    sb.AppendLine("errorStep=" + inferredErrorStep + " (no session file; inferred from assi_log)");
+                    sb.AppendLine("elapsedSec=");
+                    sb.AppendLine("local_mp4_path=");
+                    sb.AppendLine("local_mp4_exists=false");
+                    sb.AppendLine("local_mp4_size_bytes=0");
+                    sb.AppendLine("daily_archive_path=");
+                    sb.AppendLine("daily_archive_created=false");
+                    sb.AppendLine("preview_path=");
+                    sb.AppendLine("preview_created=false");
+                    sb.AppendLine("drive_file=not_found");
+                    sb.AppendLine("slack_message=not_posted");
+                    sb.AppendLine("lastSelfTestRunAt=" + lastRunAt);
+                }
+                else
+                {
+                    sb.AppendLine("result=NOT_RUN");
+                    sb.AppendLine("lastSelfTestRunAt=" + lastRunAt);
+                }
+            }
+
+            sb.AppendLine("--- assi_log (last " + VideoPipelineLogsMaxLines + " lines, run session only) ---");
+            string sessionIdForLog = null;
+            if (File.Exists(sessionPath))
+            {
+                try
+                {
+                    var sl = File.ReadAllLines(sessionPath);
+                    foreach (var x in sl)
+                    {
+                        var eq = x.IndexOf('=');
+                        if (eq > 0 && x.Substring(0, eq).Trim().Equals("sessionId", StringComparison.OrdinalIgnoreCase))
+                        {
+                            sessionIdForLog = x.Substring(eq + 1).Trim();
+                            break;
+                        }
+                    }
+                }
+                catch { }
+            }
+            var runLogContent = !string.IsNullOrEmpty(sessionIdForLog) ? SnowPanicVideoPipelineSelfTest.GetSessionRunLast50Lines(sessionIdForLog) : null;
+            if (!string.IsNullOrEmpty(runLogContent))
+            {
+                foreach (var l in runLogContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                    sb.AppendLine(l);
+            }
+            else
+            {
+                var assiPath = SnowPanicVideoPipelineSelfTest.GetAssiLogPath();
+                if (File.Exists(assiPath))
+                {
+                    var assiLines = File.ReadAllLines(assiPath);
+                    int take = Math.Min(VideoPipelineLogsMaxLines, assiLines.Length);
+                    int start = Math.Max(0, assiLines.Length - take);
+                    foreach (var l in assiLines.Skip(start).Take(take))
+                        sb.AppendLine(l);
+                }
+                else sb.AppendLine("(no assi_log)");
+            }
+            sb.AppendLine("==========================");
+            return sb.ToString();
+        }
+        catch (Exception ex)
+        {
+            return "(読取失敗: " + ex.Message + ")";
+        }
+    }
+
+    const int ConsoleFilteredMaxLines = 200;
+
+    static string BuildConsoleLogsFilteredSection()
+    {
+        try
+        {
+            var path = SnowPanicVideoPipelineSelfTest.GetConsoleFilteredLogPath();
+            if (!File.Exists(path))
+                return "(no log) reason=video_pipeline_console_filtered.txt not found. SelfTest may not have run.";
+            var lines = File.ReadAllLines(path);
+            if (lines.Length == 0)
+                return "(no log) reason=filtered console buffer empty.";
+            int take = Math.Min(ConsoleFilteredMaxLines, lines.Length);
+            int start = Math.Max(0, lines.Length - take);
+            return string.Join(Environment.NewLine, lines.Skip(start).Take(take));
+        }
+        catch (Exception ex)
+        {
+            return "(読取失敗: " + ex.Message + ")";
+        }
     }
 
     /// <summary>実装サマリ（ノア→ケン理解用）</summary>
@@ -104,21 +496,14 @@ public static class SnowLoopNoaReportAutoCopy
     {
         var sb = new StringBuilder();
         sb.AppendLine("=== 実装サマリ ===");
-        sb.AppendLine("・今回変更したスクリプト:");
-        sb.AppendLine("  - SnowLoopLogCapture.cs (ASSI_BOOT/2秒診断を必ず出力)");
-        sb.AppendLine("  - SnowPackSpawner.cs (RunAssiDiagnostic2s公開、屋根面アラインメント)");
-        sb.AppendLine("  - RoofSnowSystem.cs (RequestTapSlide, Burst色=シアン)");
-        sb.AppendLine("  - CorniceHitter.cs, TapToSlideOnRoof.cs (タップ→滑り)");
-        sb.AppendLine("  - SnowLoopNoaReportAutoCopy.cs (実装サマリ追加、未出力時理由)");
-        sb.AppendLine("・変更内容:");
-        sb.AppendLine("  - 雪崩時: visualDepth/packDepthを即時減算、layersToRemove最小1で必ずPacked削減");
-        sb.AppendLine("  - [AvalanchePackedReduced][AvalancheBeforeAfter]でbefore/after/packedCubeCount/burstAmountを毎回出力");
-        sb.AppendLine("  - burstAmountと屋根減算量を一致、RoofSnowLayer即時更新");
-        sb.AppendLine("  - タップ時もroofSnowDepthMeters減算＋UpdateRoofVisual");
-        sb.AppendLine("・SnowPackへの影響:");
-        sb.AppendLine("  - 雪崩トリガーで即座に_visualDepth/packDepthMeters減少、Packedキューブ層削除が確実に実行");
-        sb.AppendLine("・見た目の変化:");
-        sb.AppendLine("  - 雪崩発生日に屋根Packedが明確に減る / burstAmount分Burstが増える / 量対応");
+        sb.AppendLine("・雪挙動ロールバック（塊で落ちる復旧）:");
+        sb.AppendLine("  - RoofSnow.debugMode=false（Cornice）: cluster 3-7粒、1-2粒→塊感");
+        sb.AppendLine("  - SnowPackSpawner: pieceSize 0.11→0.13, maxSecondaryDetachPerHit 60→12");
+        sb.AppendLine("  - secondary wave 12-45→6-18, third wave 8-30→4-12, third閾値 60→80");
+        sb.AppendLine("・カメラ: 維持（-6,4,-6）(25,45,0)");
+        sb.AppendLine("・NOAプレビュー: ffmpeg→gif, なければ contact_sheet, 必ず1つ生成");
+        sb.AppendLine("・final_result: local mp4+preview あれば LOCAL_READY（Drive失敗でもERRORにしない）");
+        sb.AppendLine("・次にやるべきこと: 6軒→1軒への戻し（今回は後回し）");
         return sb.ToString();
     }
 
@@ -242,6 +627,51 @@ public static class SnowLoopNoaReportAutoCopy
         return buf ?? Array.Empty<string>();
     }
 
+    static readonly string[] RecordingSearchDirs = new[]
+    {
+        "Recordings",
+        Path.Combine("Assets", "Recordings"),
+        Path.Combine("Assets", "Logs", "Recordings"),
+    };
+    static readonly string[] VideoExtensions = new[] { ".mp4", ".webm", ".mov", ".avi" };
+
+    /// <summary>最新のRecorder動画を探す。見つかればフルパス、なければ空文字。</summary>
+    public static string GetLatestRecordingPath()
+    {
+        var projectRoot = Path.GetDirectoryName(Application.dataPath) ?? "";
+        FileInfo latest = null;
+        foreach (var rel in RecordingSearchDirs)
+        {
+            var dir = Path.Combine(projectRoot, rel);
+            if (!Directory.Exists(dir)) continue;
+            try
+            {
+                foreach (var ext in VideoExtensions)
+                {
+                    var files = Directory.GetFiles(dir, "*" + ext, SearchOption.AllDirectories);
+                    foreach (var f in files)
+                    {
+                        var fi = new FileInfo(f);
+                        if (latest == null || fi.LastWriteTime > latest.LastWriteTime)
+                            latest = fi;
+                    }
+                }
+            }
+            catch { }
+        }
+        return latest != null ? latest.FullName : "";
+    }
+
+    static string GetLatestRecordingSection()
+    {
+        var path = GetLatestRecordingPath();
+        if (string.IsNullOrEmpty(path))
+            return "動画: (見つかりません。Recorderで録画後、Recordings フォルダに保存されているか確認)";
+        var fileName = Path.GetFileName(path);
+        var dir = Path.GetDirectoryName(path);
+        return $"動画: {fileName}\n動画パス: {path}\n※ノアに送る時、このファイルを添付してください";
+    }
+
     /// <summary>保存済みレポートを読み取る。なければ空文字。</summary>
     public static string GetReportContent()
     {
@@ -260,8 +690,20 @@ public static class SnowLoopNoaReportAutoCopy
 
         if (state != PlayModeStateChange.EnteredEditMode || !_sawPlayMode) return;
         _sawPlayMode = false;
-        if (BuildReport())
-            EditorApplication.delayCall += () => AssiReportWindow.OpenAndShowReport();
+        if (TryBuildReportOrSelfTestReport())
+        {
+            EditorApplication.delayCall += () =>
+            {
+                AssiReportWindow.OpenAndShowReport();
+                if (SnowPanicVideoPipelineSelfTest.IsSelfTestSession)
+                {
+                    var report = GetReportContent();
+                    if (!string.IsNullOrEmpty(report))
+                        EditorGUIUtility.systemCopyBuffer = report;
+                    SnowPanicVideoPipelineSelfTest.IsSelfTestSession = false;
+                }
+            };
+        }
     }
 
     static bool TryBuildAndCopyReport()
@@ -347,7 +789,7 @@ public static class SnowLoopNoaReportAutoCopy
                 }
             }
 
-            if (line.Contains("[ASSI]") || line.Contains("[RendererWatch]") || line.Contains("[RendererBlink]") || line.Contains("[TopBlueCandidates]") || line.Contains("[TopTransparentCandidates]") || line.Contains("=== ROOF PROXY ===") || line.Contains("=== SNOW DEPTH ===") || line.Contains("=== SNOWFALL STOP ===") || line.Contains("=== TAP AVALANCHE ===") || line.Contains("DEACTIVATE BLOCKED") || line.Contains("[SnowPackEntityDump]") || line.Contains("[SnowPackEntity1s]") || line.Contains("[AUTO-REBUILD]") || line.Contains("[SnowPackLast20]") || line.Contains("[SnowPackTransition]") || line.Contains("[PoolReturnFirst]") || line.Contains("[ASSI_BOOT]") || line.Contains("[RUN_SNAPSHOT_FORCE]") || line.Contains("[LAST20_FORCE]") || line.Contains("[LAST20_EMPTY]") || line.Contains("[SNAPSHOT_INVALID]") || line.Contains("[SNAPSHOT_ROOT]") || line.Contains("[STACKTRACE_SELFTEST]") || line.Contains("[AvalancheReturn]") || line.Contains("[RoofVectors]") || line.Contains("[RoofBasis]") || line.Contains("[TapSlide]") || line.Contains("[TapHit]") || line.Contains("[TapMiss]") || line.Contains("[LocalAvalanche]") || line.Contains("[AvalancheBeforeAfter]") || line.Contains("[AvalanchePackedReduced]") || line.Contains("[PiecePoseSample]") || line.Contains("[RotationOverrideFound]") || line.Contains("[TapMarkerState]") || line.Contains("[AutoAvalancheState]") || line.Contains("[SceneCodePath]")) { result.Add(line); continue; }
+            if (line.Contains("[ASSI]") || line.Contains("[RendererWatch]") || line.Contains("[RendererBlink]") || line.Contains("[TopBlueCandidates]") || line.Contains("[TopTransparentCandidates]") || line.Contains("=== ROOF PROXY ===") || line.Contains("=== SNOW DEPTH ===") || line.Contains("=== SNOWFALL STOP ===") || line.Contains("=== TAP AVALANCHE ===") || line.Contains("[AVALANCHE_BURST_LOG]") || line.Contains("DEACTIVATE BLOCKED") || line.Contains("[SnowPackEntityDump]") || line.Contains("[SnowPackEntity1s]") || line.Contains("[AUTO-REBUILD]") || line.Contains("[SnowPackLast20]") || line.Contains("[SnowPackTransition]") || line.Contains("[PoolReturnFirst]") || line.Contains("[ASSI_BOOT]") || line.Contains("[RUN_SNAPSHOT_FORCE]") || line.Contains("[LAST20_FORCE]") || line.Contains("[LAST20_EMPTY]") || line.Contains("[SNAPSHOT_INVALID]") || line.Contains("[SNAPSHOT_ROOT]") || line.Contains("[STACKTRACE_SELFTEST]") || line.Contains("[AvalancheReturn]") || line.Contains("[RoofVectors]") || line.Contains("[RoofBasis]") || line.Contains("[TapSlide]") || line.Contains("[TapHit]") || line.Contains("[TapMiss]") || line.Contains("[LocalAvalanche]") || line.Contains("[AvalancheBeforeAfter]") || line.Contains("[AvalanchePackedReduced]") || line.Contains("[PiecePoseSample]") || line.Contains("[RotationOverrideFound]") || line.Contains("[TapMarkerState]") || line.Contains("[AutoAvalancheState]") || line.Contains("[SceneCodePath]") || line.Contains("[CORNICE_SCENE_CHECK]") || line.Contains("[TAP_DEBUG]") || line.Contains("[TAP RAY]") || line.Contains("[SNOW_ROLLBACK_CHECK]") || line.Contains("[CAMERA_LOCK_CHECK]")) { result.Add(line); continue; }
 
             // MVP + legacy tags (incl. [SnowPackSync] [SnowPackPoolReturn] [SnowPackDestroy] [SnowPackLast10] [SnowPackActiveZero])
             if (line.Contains("[SnowPack")
@@ -403,6 +845,12 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine(BuildAssiAnalysis(lines.ToList()));
         sb.AppendLine("=== ANALYSIS END ===");
         sb.AppendLine();
+        sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
+        sb.AppendLine(BuildVideoPipelineLogsSection());
+        sb.AppendLine();
+        sb.AppendLine("=== CONSOLE LOGS (filtered) ===");
+        sb.AppendLine(BuildConsoleLogsFilteredSection());
+        sb.AppendLine();
         sb.AppendLine(BuildImplementationSummary());
         return sb.ToString();
     }
@@ -413,6 +861,100 @@ public static class SnowLoopNoaReportAutoCopy
     {
         if (string.IsNullOrEmpty(s) || s.Length <= MaxReportChars) return s;
         return s.Substring(0, MaxReportChars) + "\n...(6000文字で打ち切り)";
+    }
+
+    /// <summary>CORNICE SCENE CHECK: scene, house_count, spawn_system, is_expected。</summary>
+    static string BuildCorniceSceneCheckSection(string[] lines)
+    {
+        var last = lines.LastOrDefault(l => l.Contains("[CORNICE_SCENE_CHECK]"));
+        if (string.IsNullOrEmpty(last))
+            return "scene=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A";
+        var sb = new StringBuilder();
+        foreach (var m in Regex.Matches(last, @"(\w+)=([^\s]+)"))
+        {
+            var match = m as Match;
+            if (match == null) continue;
+            var key = match.Groups[1].Value;
+            if (key == "scene" || key == "house_count" || key == "one_house_forced" || key == "rollback_applied" || key == "camera_position" || key == "camera_rotation" || key == "active_roof_target" || key == "test_roof_visible" || key == "roof_shape" || key == "roof_slope_direction" || key == "enabled_snow_systems" || key == "disabled_legacy_snow_systems" || key == "active_snow_visual" || key == "active_snow_break_logic" || key == "active_snow_spawn_logic" || key == "spawn_system" || key == "spawn_reason" || key == "is_expected")
+                sb.AppendLine($"{key}={match.Groups[2].Value}");
+        }
+        return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
+    }
+
+    /// <summary>SNOW ROLLBACK CHECK: 塊感復旧の確認。</summary>
+    static string BuildSnowRollbackCheckSection(string[] lines)
+    {
+        var last = lines.LastOrDefault(l => l.Contains("[SNOW_ROLLBACK_CHECK]"));
+        if (string.IsNullOrEmpty(last)) return "rollback_target=pre_camera_change_good_state current_house_count=N/A result=NG comment=(no log)";
+        var sb = new StringBuilder();
+        foreach (var m in Regex.Matches(last, @"(\w+)=([^\s]+)"))
+        {
+            var match = m as Match;
+            if (match == null) continue;
+            sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
+        }
+        return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
+    }
+
+    /// <summary>CAMERA LOCK CHECK: カメラ位置が維持されているか。</summary>
+    static string BuildCameraLockCheckSection(string[] lines)
+    {
+        var last = lines.LastOrDefault(l => l.Contains("[CAMERA_LOCK_CHECK]"));
+        if (string.IsNullOrEmpty(last)) return "camPos=(N/A) camEuler=(N/A) result=CHANGED";
+        var sb = new StringBuilder();
+        foreach (var m in Regex.Matches(last, @"(camPos|camEuler|result)=([^\s]+)"))
+        {
+            var match = m as Match;
+            if (match == null) continue;
+            sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
+        }
+        return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
+    }
+
+    /// <summary>DRIVE STATUS: upload_attempted, upload_success, error。</summary>
+    static string BuildDriveStatusSection()
+    {
+        try
+        {
+            var sessionPath = SnowPanicVideoPipelineSelfTest.GetSessionDataPath();
+            if (!File.Exists(sessionPath)) return "upload_attempted=false\nupload_success=false\nerror=session_not_found\nresult=WARNING";
+            var sessionLines = File.ReadAllLines(sessionPath);
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var line in sessionLines)
+            {
+                var eq = line.IndexOf('=');
+                if (eq > 0) dict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+            }
+            string v;
+            var attempted = dict.TryGetValue("upload_attempted", out v) ? v : (dict.TryGetValue("drive_uploaded", out v) ? "true" : "unknown");
+            var success = dict.TryGetValue("upload_success", out v) ? v : (dict.TryGetValue("drive_uploaded", out v) ? v : "false");
+            var driveUploaded = dict.TryGetValue("drive_uploaded", out v) ? v : "false";
+            var err = dict.TryGetValue("upload_error", out v) ? v : (dict.TryGetValue("slack_error", out v) ? v : "none");
+            var result = (success == "true" || driveUploaded == "true") ? "OK" : "WARNING";
+            var sb = new StringBuilder();
+            sb.AppendLine("upload_attempted=" + (string.IsNullOrEmpty(attempted) ? "true" : attempted));
+            sb.AppendLine("upload_success=" + (string.IsNullOrEmpty(success) ? driveUploaded : success));
+            sb.AppendLine("error=" + (string.IsNullOrEmpty(err) ? "none" : err));
+            sb.AppendLine("result=" + result);
+            return sb.ToString().TrimEnd();
+        }
+        catch { return "upload_attempted=unknown\nupload_success=false\nerror=(read_failed)\nresult=WARNING"; }
+    }
+
+    /// <summary>TAP DEBUG: TapHit, TapMiss, lastHitObject, lastHitLayer。</summary>
+    static string BuildTapDebugSection(string[] lines)
+    {
+        var last = lines.LastOrDefault(l => l.Contains("[TAP_DEBUG]"));
+        if (string.IsNullOrEmpty(last))
+            return "TapHit=0 TapMiss=0 lastHitObject= lastHitLayer=(no tap data)";
+        var sb = new StringBuilder();
+        foreach (var m in Regex.Matches(last, @"(TapHit|TapMiss|lastHitObject|hit_target|lastHitLayer)=([^\s]*)"))
+        {
+            var match = m as Match;
+            if (match == null) continue;
+            sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
+        }
+        return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
     }
 
     /// <summary>タップ・局所雪崩の必須レポート項目。</summary>

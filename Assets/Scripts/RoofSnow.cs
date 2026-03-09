@@ -249,12 +249,31 @@ public class RoofSnow : MonoBehaviour
         }
 
         CleanupActiveClumps();
+        SnowClump.EvictOldestGroundPiecesIfNeeded(SnowClump.MaxActiveSnowPieces);
+        if (SnowClump.GetDynamicCount() >= SnowClump.MaxActiveDynamicPieces)
+        {
+            if (Time.time - _lastCapLogTime > 1f)
+            {
+                _lastCapLogTime = Time.time;
+                Debug.Log($"[RoofSnow] dynamic cap reached ({SnowClump.GetDynamicCount()}/{SnowClump.MaxActiveDynamicPieces}) on {name}");
+            }
+            return false;
+        }
+        if (SnowClump.GetActiveCount() >= SnowClump.MaxActiveSnowPieces)
+        {
+            if (Time.time - _lastCapLogTime > 1f)
+            {
+                _lastCapLogTime = Time.time;
+                Debug.Log($"[RoofSnow] global clump cap reached ({SnowClump.GetActiveCount()}/{SnowClump.MaxActiveSnowPieces}) on {name}");
+            }
+            return false;
+        }
         if (_activeClumps.Count >= Mathf.Max(1, maxActiveClumps))
         {
             if (Time.time - _lastCapLogTime > 1f)
             {
                 _lastCapLogTime = Time.time;
-                Debug.Log($"[RoofSnow] clump cap reached ({_activeClumps.Count}/{maxActiveClumps}) on {name}");
+                Debug.Log($"[RoofSnow] per-roof clump cap reached ({_activeClumps.Count}/{maxActiveClumps}) on {name}");
             }
             return false;
         }
@@ -282,17 +301,20 @@ public class RoofSnow : MonoBehaviour
             p.transform.localScale = new Vector3(sz, sz * 1.1f, sz); // 雪らしく少し縦長
             var pr = p.GetComponent<Renderer>();
             var snowMat = new Material(pr.sharedMaterial);
-            snowMat.color = new Color(1f, 1f, 1f, Random.Range(0.9f, 1f));
+            MaterialColorHelper.SetColorSafe(snowMat, new Color(1f, 1f, 1f, Random.Range(0.9f, 1f)));
             pr.sharedMaterial = snowMat;
+            pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            pr.receiveShadows = true;
             Object.Destroy(p.GetComponent<Collider>());
         }
 
         var rb = go.AddComponent<Rigidbody>();
         rb.useGravity = true;
-        rb.mass = Mathf.Lerp(2f, 5f, (count - 28f) / 67f); // 量に応じて質量（重くして下の雪を押し出す）
+        rb.mass = Mathf.Lerp(2f, 5f, (count - 28f) / 67f);
         rb.linearDamping = 0.2f;
         rb.angularDamping = 2f;
-        rb.interpolation = RigidbodyInterpolation.Interpolate;
+        rb.interpolation = RigidbodyInterpolation.None;
+        rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
         rb.constraints = RigidbodyConstraints.FreezeRotation;
 
         var col = go.AddComponent<BoxCollider>();
@@ -498,7 +520,9 @@ public class RoofSnow : MonoBehaviour
         var velocity = ps.velocityOverLifetime;
         velocity.enabled = true;
         velocity.space = ParticleSystemSimulationSpace.World;
-        velocity.y = new ParticleSystem.MinMaxCurve(0.08f, 0.16f);
+        velocity.x = new ParticleSystem.MinMaxCurve(0f);
+        velocity.y = new ParticleSystem.MinMaxCurve(0.12f);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f);
 
         var color = ps.colorOverLifetime;
         color.enabled = true;

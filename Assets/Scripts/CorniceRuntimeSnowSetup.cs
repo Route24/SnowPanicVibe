@@ -7,9 +7,31 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
 {
     void Awake()
     {
-        CreateGroundSnow();
-        CreateSnowParticle();
-        CreateRoofSnowSystems();
+        EnsureShadowsEnabled();
+        string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
+        bool isOneHouseScene = !string.IsNullOrEmpty(scene) && scene.Contains("OneHouse");
+        if (isOneHouseScene)
+        {
+            var testRoot = GameObject.Find("SnowTestRoot");
+            if (testRoot != null) testRoot.SetActive(false);
+        }
+        if (!VideoPipelineSelfTestMode.IsActive && !isOneHouseScene)
+        {
+            CreateGroundSnow();
+            CreateSnowParticle();
+        }
+        CreateRoofSnowSystems(); // Self Test 中も屋根雪を作成（クリック可能にする）
+    }
+
+    void EnsureShadowsEnabled()
+    {
+        var light = FindFirstObjectByType<Light>();
+        if (light != null && light.type == LightType.Directional && light.shadows == LightShadows.None)
+        {
+            light.shadows = LightShadows.Soft;
+            light.shadowStrength = 0.8f;
+            Debug.Log("[CorniceRuntimeSnowSetup] Enabled shadows on Directional Light");
+        }
     }
 
     void CreateGroundSnow()
@@ -104,6 +126,53 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
         var housesRoot = transform.Find("Houses");
         if (housesRoot == null) return;
 
+        string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
+        bool isOneHouseScene = !string.IsNullOrEmpty(scene) && scene.Contains("OneHouse");
+        bool rollbackApplied = false;
+
+        if (isOneHouseScene && housesRoot.childCount > 1)
+        {
+            for (int i = housesRoot.childCount - 1; i >= 1; i--)
+            {
+                var child = housesRoot.GetChild(i);
+                if (child.name.StartsWith("House_") && child.name != "House_0")
+                {
+                    Object.DestroyImmediate(child.gameObject);
+                    rollbackApplied = true;
+                }
+            }
+        }
+
+        if (isOneHouseScene)
+        {
+            var mainCam = Camera.main;
+            if (mainCam != null)
+            {
+                // 屋根がプレイフィールド・主役。地面ほぼ見えない低い俯瞰。少し奥行き。試作カメラ基準。
+                var targetPos = new Vector3(0f, 5.2f, -5.8f);
+                var targetRot = Quaternion.Euler(36f, 0f, 0f);
+                float posTol = 0.5f;
+                bool posMatch = Vector3.Distance(mainCam.transform.position, targetPos) < posTol;
+                bool rotMatch = Quaternion.Angle(mainCam.transform.rotation, targetRot) < 5f;
+                if (!posMatch || !rotMatch)
+                {
+                    mainCam.transform.position = targetPos;
+                    mainCam.transform.rotation = targetRot;
+                    mainCam.fieldOfView = 45f;
+                    var orbit = mainCam.GetComponent<CameraOrbit>();
+                    if (orbit != null)
+                    {
+                        orbit._yaw = 180f;
+                        orbit._pitch = 36f;
+                        orbit.distance = 6.6f;
+                        orbit.yMin = 4f;
+                        orbit.yMax = 8f;
+                    }
+                    rollbackApplied = true;
+                }
+            }
+        }
+
         var panels = new List<Transform>();
         for (int i = 0; i < housesRoot.childCount; i++)
         {
@@ -132,66 +201,114 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
                 }
             }
             var placeholder = panel.Find("RoofSnowPlaceholder");
-            if (placeholder == null) continue;
-            if (placeholder.GetComponent<ParticleSystem>() != null) continue;
-
-            var slideDir = placeholder.GetComponent<RoofSnowPlaceholder>()?.slideDownDirection ?? Vector3.down;
-            var go = placeholder.gameObject;
-            go.name = "RoofSnow";
-
-            float panelH = 0.05f;
-            float snowThick = 1.7f;
-            float thickScale = snowThick / panelH;
-
-            var ps = go.AddComponent<ParticleSystem>();
-            var main = ps.main;
-            main.loop = false;
-            main.startLifetime = 9999f;
-            main.startSpeed = 0f;
-            main.startSize = new ParticleSystem.MinMaxCurve(0.028f, 0.05f);
-            main.startColor = new ParticleSystem.MinMaxGradient(
-                new Color(0.72f, 0.76f, 0.82f, 0.97f),
-                new Color(0.82f, 0.86f, 0.9f, 0.98f));
-            main.maxParticles = 28000;
-            main.simulationSpace = ParticleSystemSimulationSpace.Local;
-            main.scalingMode = ParticleSystemScalingMode.Hierarchy;
-            main.playOnAwake = true;
-            var em = ps.emission;
-            em.enabled = true;
-            em.rateOverTime = 0f;
-            em.SetBursts(new[] { new ParticleSystem.Burst(0f, 26000) });
-            var shape = ps.shape;
-            shape.shapeType = ParticleSystemShapeType.Box;
-            shape.scale = new Vector3(1.25f, thickScale * 0.6f, 1f);
-
-            var rend = ps.GetComponent<ParticleSystemRenderer>();
-            if (rend != null)
+            if (placeholder != null)
             {
-                var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Particles/Standard Unlit");
-                if (shader != null)
-                    rend.sharedMaterial = new Material(shader) { color = new Color(0.88f, 0.9f, 0.92f) };
-                rend.renderMode = ParticleSystemRenderMode.Billboard;
+                if (isOneHouseScene)
+                {
+                    // OneHouse: 粒雪(RoofSnow/SnowClump)を無効化。SnowPack塊崩れのみ有効。
+                    Object.DestroyImmediate(placeholder.gameObject);
+                }
+                else if (placeholder.GetComponent<ParticleSystem>() == null)
+                {
+                    var slideDir = placeholder.GetComponent<RoofSnowPlaceholder>()?.slideDownDirection ?? Vector3.down;
+                    var go = placeholder.gameObject;
+                    go.name = "RoofSnow";
+
+                    float panelH = 0.05f;
+                    float snowThick = 1.7f;
+                    float thickScale = snowThick / panelH;
+
+                    var ps = go.AddComponent<ParticleSystem>();
+                    var main = ps.main;
+                    main.loop = false;
+                    main.startLifetime = 9999f;
+                    main.startSpeed = 0f;
+                    main.startSize = new ParticleSystem.MinMaxCurve(0.028f, 0.05f);
+                    main.startColor = new ParticleSystem.MinMaxGradient(
+                        new Color(0.72f, 0.76f, 0.82f, 0.97f),
+                        new Color(0.82f, 0.86f, 0.9f, 0.98f));
+                    main.maxParticles = 28000;
+                    main.simulationSpace = ParticleSystemSimulationSpace.Local;
+                    main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                    main.playOnAwake = true;
+                    var em = ps.emission;
+                    em.enabled = true;
+                    em.rateOverTime = 0f;
+                    em.SetBursts(new[] { new ParticleSystem.Burst(0f, 26000) });
+                    var shape = ps.shape;
+                    shape.shapeType = ParticleSystemShapeType.Box;
+                    shape.scale = new Vector3(1.25f, thickScale * 0.6f, 1f);
+
+                    var rend = ps.GetComponent<ParticleSystemRenderer>();
+                    if (rend != null)
+                    {
+                        var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Particles/Standard Unlit");
+                        if (shader != null)
+                            rend.sharedMaterial = new Material(shader) { color = new Color(0.88f, 0.9f, 0.92f) };
+                        rend.renderMode = ParticleSystemRenderMode.Billboard;
+                        rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                        rend.receiveShadows = true;
+                    }
+                    ps.Simulate(0.1f, true, true);
+
+                    var col = go.AddComponent<BoxCollider>();
+                    col.size = new Vector3(1.25f, thickScale * 0.5f, 1f); // 薄くして水平板のように見えないように
+                    col.center = Vector3.zero;
+                    col.isTrigger = false;
+
+                    var comp = go.AddComponent<RoofSnow>();
+                    comp.snowParticles = ps;
+                    comp.slideDownDirection = slideDir;
+                    comp.canReachRidge = true;
+                    comp.roofSurfaceCollider = roofSurfaceCol;
+                    comp.debugMode = false; // ROLLBACK: 塊で落ちる（3-7粒）。true=1-2粒で個体均一
+
+                    AddRidgeIndicator(go.transform, slideDir);
+
+                    Object.Destroy(placeholder.GetComponent<RoofSnowPlaceholder>());
+                }
             }
-            ps.Simulate(0.1f, true, true);
-
-            var col = go.AddComponent<BoxCollider>();
-            col.size = new Vector3(1.25f, thickScale * 0.5f, 1f); // 薄くして水平板のように見えないように
-            col.center = Vector3.zero;
-            col.isTrigger = false;
-
-            var comp = go.AddComponent<RoofSnow>();
-            comp.snowParticles = ps;
-            comp.slideDownDirection = slideDir;
-            comp.canReachRidge = true;
-            comp.roofSurfaceCollider = roofSurfaceCol;
-
-            AddRidgeIndicator(go.transform, slideDir);
-
-            Object.Destroy(placeholder.GetComponent<RoofSnowPlaceholder>());
-
-            // 軒先トリガー（既存シーン用：Setup で作られていない場合）
             CreateEavesDropTrigger(panel.transform, roofSurfaceCol != null ? roofSurfaceCol : panel.GetComponent<Collider>());
+            if (roof != null) EnsureEavesCatchZone(roof);
         }
+
+        int houseCount = panels.Count;
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name ?? "";
+        bool oneHouseForced = transform.Find("OneHouseMarker") != null;
+        bool isExpected = houseCount >= 1 && houseCount <= 8;
+        var cam = Camera.main;
+        string camPosStr = cam != null ? string.Format("({0:F2},{1:F2},{2:F2})", cam.transform.position.x, cam.transform.position.y, cam.transform.position.z) : "N/A";
+        string camRotStr = cam != null ? string.Format("({0:F1},{1:F1},{2:F1})", cam.transform.eulerAngles.x, cam.transform.eulerAngles.y, cam.transform.eulerAngles.z) : "N/A";
+        bool testRoofVisible = GameObject.Find("SnowTestRoot") != null && GameObject.Find("SnowTestRoot").activeSelf;
+        string activeRoofTarget = oneHouseForced ? "asset_roof" : (testRoofVisible ? "test_roof" : "asset_roof");
+        string roofShape = "mono_slope";
+        string roofSlopeDirection = "front";
+        string enabledSnowSystems = oneHouseForced ? "[SnowPackSpawner,RoofSnowSystem,RoofSnowLayer,SnowPackFallingPiece]" : "[RoofSnow,SnowClump,SnowPackSpawner,RoofSnowSystem]";
+        string disabledLegacySnowSystems = oneHouseForced ? "[RoofSnow_particle,SnowClump,RoofSnowPlaceholder]" : "[]";
+        string activeSnowVisual = oneHouseForced ? "RoofSnowLayer+SnowPackPiece" : "RoofSnow_particle+RoofSnowLayer";
+        string activeSnowBreakLogic = oneHouseForced ? "SnowPackSpawner.HandleTap+DetachInRadius" : "RoofSnow.Hit+SnowPackSpawner";
+        string activeSnowSpawnLogic = oneHouseForced ? "SnowPackSpawner.RebuildSnowPack" : "RoofSnow+SnowPackSpawner";
+        Debug.Log($"[CORNICE_SCENE_CHECK] scene={sceneName} house_count={houseCount} one_house_forced={oneHouseForced.ToString().ToLower()} rollback_applied={rollbackApplied.ToString().ToLower()} camera_position={camPosStr} camera_rotation={camRotStr} active_roof_target={activeRoofTarget} test_roof_visible={testRoofVisible.ToString().ToLower()} roof_shape={roofShape} roof_slope_direction={roofSlopeDirection} enabled_snow_systems={enabledSnowSystems} disabled_legacy_snow_systems={disabledLegacySnowSystems} active_snow_visual={activeSnowVisual} active_snow_break_logic={activeSnowBreakLogic} active_snow_spawn_logic={activeSnowSpawnLogic} spawn_system=CorniceRuntime is_expected={isExpected}");
+        if (cam != null)
+            Debug.Log($"[CAMERA_LOCK_CHECK] camPos={camPosStr} camEuler={camRotStr} result={(rollbackApplied ? "ROLLBACK_APPLIED" : "UNCHANGED")} target=(0,5.2,-5.8)(36,0,0)_roof_playfield");
+        Debug.Log("[SNOW_ROLLBACK_CHECK] rollback_target=pre_camera_change_good_state house_count=" + houseCount + " camera_rotation=" + camRotStr + " rollback_applied=" + rollbackApplied.ToString().ToLower() + " active_roof_target=" + activeRoofTarget + " test_roof_visible=" + testRoofVisible.ToString().ToLower() + " roof_shape=" + roofShape + " roof_slope_direction=" + roofSlopeDirection + " enabled_snow_systems=" + enabledSnowSystems + " disabled_legacy_snow_systems=" + disabledLegacySnowSystems + " ground_snow=disabled result=OK comment=" + (oneHouseForced ? "mono_slope_SnowPack_only" : "multi_house_RoofSnow+SnowPack"));
+    }
+
+    void EnsureEavesCatchZone(Transform roof)
+    {
+        if (roof == null || roof.Find("EavesCatchZone") != null) return;
+        var catchZone = new GameObject("EavesCatchZone");
+        catchZone.transform.SetParent(roof, false);
+        catchZone.transform.localPosition = new Vector3(0f, -0.4f, -0.9f);
+        catchZone.transform.localRotation = Quaternion.identity;
+        catchZone.transform.localScale = Vector3.one;
+        var catchBox = catchZone.AddComponent<BoxCollider>();
+        catchBox.isTrigger = true;
+        catchBox.size = new Vector3(3f, 0.8f, 2f);
+        catchBox.center = Vector3.zero;
+        var catchScript = catchZone.AddComponent<EavesCatchZone>();
+        catchScript.dragMultiplier = 0.92f;
+        catchScript.applyDuration = 0.3f;
     }
 
     Collider ResolveRoofPhysicsSurface(Transform panel)

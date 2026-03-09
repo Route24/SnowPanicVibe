@@ -410,7 +410,7 @@ public class SnowTestSlideAssist : MonoBehaviour
         }
         else
         {
-            Destroy(gameObject);
+            _inBurst = false;
         }
     }
 
@@ -595,6 +595,24 @@ public class SnowTestSlideAssist : MonoBehaviour
         }
         var c = GetComponent<Collider>();
         if (c != null) c.enabled = false;
+        StartCoroutine(WaitThenBlinkThenDespawn());
+    }
+
+    IEnumerator WaitThenBlinkThenDespawn()
+    {
+        yield return new WaitForSeconds(4f);
+        Debug.Log("[DESPAWN] state=Grounded wait=4 blink=1");
+        var r = GetComponent<Renderer>();
+        bool vis = true;
+        for (float t = 0f; t < 1f; t += 0.1f)
+        {
+            if (r != null) r.enabled = vis;
+            vis = !vis;
+            yield return new WaitForSeconds(0.1f);
+        }
+        if (r != null) r.enabled = false;
+        SnowPhysicsScoreManager.Instance?.AddScoreOnDespawn();
+        DespawnTrace.Log("GroundDeposit", "SnowTestSlideAssist", "Grounded", transform.position);
         Destroy(gameObject, 0.02f);
     }
 }

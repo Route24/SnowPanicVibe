@@ -230,7 +230,7 @@ public class SnowFallSystem : MonoBehaviour
                 var mat = sh != null ? new Material(sh) : null;
                 if (mat != null)
                 {
-                    mat.color = new Color(0.95f, 0.97f, 1f, 1f);
+                    MaterialColorHelper.SetColorSafe(mat, new Color(0.95f, 0.97f, 1f));
                     r.sharedMaterial = mat;
                 }
             }

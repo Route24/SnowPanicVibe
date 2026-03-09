@@ -1,428 +1,402 @@
-# Snow Panic! – Game Design Document
+# Snow Panic – Game Design Document
 
-Version: 1.2  
+Version: 2.0  
 Author: Ken & Noah  
 Date: 2026-03
 
 ---
 
-# 1. Game Overview
+## 運用ルール（Update Rule）
 
-Snow Panic! is a physics-based snow-clearing game.
+**GDD を更新する際は、日本語版・英語版の両方を同時に更新すること。**
 
-The player must prevent village houses from collapsing under heavy snow.
-
-Snow accumulates on rooftops, and the player clears it using various tools.
-
-The core gameplay focuses on satisfying snow physics and avalanche mechanics.
-
-Primary Platform:
-Steam (PC)
-
-Future Platform:
-Mobile (tap / flick controls)
-
-Development Priority:
-Playable gameplay first.
-Visual polish, sound, and effects will be implemented later.
+どちらか片方だけ更新することは禁止。
 
 ---
 
-# 2. Core Gameplay Loop
+# 1. Game Overview
 
-1. Snow accumulates on roofs
-2. Player clears snow
-3. Snow falls off roofs
-4. Player earns money
-5. Player buys tools
-6. Snowstorms increase difficulty
-7. Player prevents houses from collapsing
+### 日本語
 
-Game continues until a house collapses.
+Snow Panic は、屋根に積もる雪を落として家を守る物理ベースのカジュアルゲーム。
+
+プレイヤーは神視点で村を見守りながら屋根の雪を叩いて落とす。
+
+ゲームの主な爽快感は「屋根の端から雪がドサッと落ちる瞬間」。
+
+### English
+
+Snow Panic is a physics-based casual game about clearing snow from rooftops to protect houses.
+
+Players observe the village from a god-like perspective and knock snow off the roofs.
+
+The core satisfaction is the moment when snow slides off the roof edge.
+
+---
+
+# 2. Core Gameplay
+
+### 日本語
+
+**操作**
+・プレイヤー操作はクリックのみ
+・クリック連打ゲームにはしない
+・クリック後はクールタイムを設ける
+
+**理由**
+・連打だと戦略性が消える
+・落雪の爽快感を見る時間を確保する
+・プレイヤーが次の一手を考えるゲームにする
+
+**ゲームの方向性**
+Snow Panic は
+「リアルシミュレーション」ではなく
+「爽快パズル」
+
+雪挙動はリアルより気持ちよさを優先する。
+
+**落雪タイプ**
+・小粒
+・中塊
+・大塊
+のバリエーションを持たせる。
+
+**雪表現の方針**
+・**見た目は粒っぽく、内部ロジックは軽量**
+・フル粒子シミュレーションは不要
+・屋根上の雪管理は軽い塊/セルベースを優先
+・**崩壊時と落下時だけ**粒っぽい演出を足す
+
+---
+
+**フロー**
+
+屋根クリック
+↓
+道具表示
+↓
+屋根を叩く
+↓
+雪が崩れる
+↓
+雪が斜面を滑る
+↓
+屋根の端から落下
+
+### English
+
+**Operation**
+・Player input is click only
+・Not a click-spam game
+・Cooldown after each click
+
+**Reason**
+・Rapid clicks remove strategy
+・Time to enjoy falling snow
+・Player plans each move
+
+**Game Direction**
+Snow Panic is
+"Refreshing Puzzle"
+not "Real Simulation"
+
+Snow behavior prioritizes feel over realism.
+
+**Fall Types**
+・Small particles
+・Medium chunks
+・Large blocks
+Provide variety.
+
+**Snow Representation Guidelines**
+・**Grainy look, lightweight logic inside**
+・No full particle simulation
+・Roof snow management: lightweight blocks/cell-based first
+・**Add particle-like effects only when collapsing and falling**
+
+---
+
+**Flow**
+
+Click roof
+↓
+Tool appears
+↓
+Hit the roof
+↓
+Snow breaks
+↓
+Snow slides
+↓
+Snow falls from the edge
 
 ---
 
 # 3. Player Interaction
 
-Mouse click:
+### 日本語
 
-Click snow to strike it with the equipped tool.
+プレイヤーは神視点。
 
-The tool animation appears where the player clicks.
+男の子を直接操作しない。
 
-Snow detaches and slides down the roof.
+屋根クリックで選択している道具を使用。
 
-Mobile version:
+例
+・スコップ
+・棒
 
-Tap or flick.
+### English
 
----
+The player controls the game from a god-like perspective.
 
-# 4. Gameplay Tempo Philosophy
+The boy character is not directly controlled.
 
-Snow Panic! is not a rapid tapping game.
+Clicking a roof uses the selected tool.
 
-The intended gameplay tempo is thoughtful and observational.
-
-Players should take a few seconds to think about:
-
-- Which part of the roof to strike
-- Which tool to use
-
-Tools have a short cooldown, so players cannot continuously tap.
-
-During this cooldown period, snow slowly slides down the roof.
-
-Snow pieces may interact with each other and trigger chain reactions.
-
-Small collapses can gradually grow into larger avalanches.
-
-A key pleasure of the game is watching these slow chain reactions develop.
-
-The player strikes the snow, then watches the situation evolve.
-
-This creates a rhythm:
-
-Think → Strike → Watch → Avalanche
-
-The avalanche buildup is an essential part of the game's emotional payoff.
+Examples
+• shovel
+• stick
 
 ---
 
-Implementation Notes (developer reference):
+# 4. World & Perspective
 
-- Tools have cooldown timers.
-- Snow sliding speed should be moderate (not too fast).
-- Snow pieces can enter an unstable state after a hit.
-- Unstable snow may detach later due to interaction with other pieces.
-- Avalanche growth can happen during player cooldown.
+### 日本語
 
----
+視点は「どうぶつの森型の斜め上視点」。
 
-# 5. Player Character
+村全体を見渡せる。
 
-The player character is a boy around 10 years old.
+### English
 
-The boy does not appear inside the gameplay world.
+The game uses an Animal Crossing–style isometric perspective.
 
-Instead he appears in a UI reaction window (wipe).
-
-The boy reacts emotionally to gameplay events.
-
-Examples:
-
-- Surprise
-- Happiness
-- Panic
-- Excitement
+Players can view the whole village.
 
 ---
 
-# 6. Village Setting
+# 5. Main Character
 
-A peaceful snowy village.
+### 日本語
 
-Houses are arranged in a horizontal row.
+主人公は留守番している男の子。
 
-Initial prototype:
-Single house.
+男の子は家の前をうろうろ歩く。
 
-Final structure:
-6 houses in a horizontal layout.
+プレイヤーは男の子を助ける立場。
 
-Background elements:
+### English
 
-- Dog running around
-- Villagers talking
-- Children playing
+The protagonist is a boy who is staying home alone.
 
----
+The boy walks around in front of the house.
 
-# 7. Failure Condition
-
-If the snow weight on any roof exceeds the threshold:
-
-House collapses → Game Over.
+The player protects the boy.
 
 ---
 
-# 8. Game Modes
+# 6. Snow System
 
-Time Attack
+### 日本語
 
-Duration:
-90 seconds
+降雪イベントにより屋根に雪が積もる。
 
-Goal:
-Earn as much money as possible.
+雪は斜面方向に滑る。
 
----
+### English
 
-Endless Mode
+Snow accumulates on roofs during snowfall events.
 
-Snowfall gradually increases.
-
-Difficulty escalates over time.
-
-Game continues until a house collapses.
+Snow slides along roof slopes.
 
 ---
 
-# 9. Economy
+# 7. House Damage System
 
-Removing snow earns money.
+### 日本語
 
-Large avalanches give bonus rewards.
+積雪が増えると屋根にダメージが蓄積。
 
-Example:
+一定量を超えると家が潰れる。
 
-Avalanche Combo Bonus.
+### English
 
-Money is used to purchase tools.
+Accumulated snow increases roof stress.
 
----
-
-# 10. Tool System
-
-Tools are divided into two categories.
-
-Permanent Tools
-Consumable Tools
+If snow weight exceeds a limit, the house collapses.
 
 ---
 
-Permanent Tools
+# 8. Game Loop
 
-Unlocked permanently after purchase.
+### 日本語
 
-Can be switched during gameplay.
+降雪
+↓
+積雪増加
+↓
+雪下ろし
+↓
+家を守る
+↓
+また降雪
 
-Tools:
+### English
 
-Hands
-Stick
-Shovel
-Big Shovel
-Blower
-
----
-
-Blower
-
-Blows snow using wind.
-
-Instead of removing snow, it pushes snow across the roof.
-
-Best used to trigger avalanches.
-
----
-
-Consumable Tools
-
-Single-use tools.
-
-Must be repurchased after use.
-
-Example:
-
-Bomb
-
-Bombs remove large amounts of snow instantly.
+Snowfall
+↓
+Snow accumulation
+↓
+Snow clearing
+↓
+House saved
+↓
+More snowfall
 
 ---
 
-# 11. Snow Types
+# 9. Progression
 
-Different snow types affect gameplay.
+### 日本語
 
-Powder Snow
-Light and easy to move.
-Best tool: Blower.
+序盤
+自分の家1軒
 
-Wet Snow
-Heavy and sticky.
-Best tool: Shovel.
+中盤
+隣の家
 
-Packed Snow
-Hard compressed snow.
-Best tool: Big Shovel.
+進行すると村6軒の雪下ろしを任される。
 
-Ice Snow
-Rare large chunks.
-May cause large avalanches.
+### English
 
----
+Early game
+one house
 
-# 12. Weather Events
+Mid game
+neighbor houses
 
-Weather changes during gameplay.
-
-Examples:
-
-Light Snowfall
-Heavy Snowfall
-Blizzard
-Clear Weather
-
-Weather affects snow accumulation speed.
+Later
+player is responsible for six houses in the village.
 
 ---
 
-# 13. Avalanche System
+# 10. Events
 
-Large snow movements trigger avalanche bonuses.
+### 日本語
 
-Conditions:
+イベント例
 
-Large number of snow pieces falling simultaneously.
+・吹雪
+・大量降雪
+・急激な積雪
 
-Effects:
+### English
 
-Camera shake
-Snow particle burst
-Score multiplier
-Boy reaction animation
+Examples
 
----
-
-# 14. Mission System
-
-Small optional objectives appear during gameplay.
-
-Examples:
-
-Protect three houses.
-
-Trigger a large avalanche.
-
-Remove 500 units of snow.
-
-Use blower to move snow.
-
-Mission completion grants bonus money.
+• blizzard
+• heavy snowfall
+• rapid accumulation
 
 ---
 
-# 15. Camera
+# 11. Tools
 
-## Camera Design (Observation Camera + Eaves Line Lock)
+### 日本語
 
-Snow Panic! uses an "observation camera" to support the intended tempo:
-Think → Strike → Watch → Avalanche.
+使用可能な道具
 
-### Goals
+・スコップ
+・棒
+・その他の雪下ろし道具
 
-- Always show the full satisfying flow:
-  sliding on roof → falling at the eaves → landing near the eaves → ground pile → blink despawn
-- Avoid motion sickness and unnecessary camera complexity.
-- Support thoughtful gameplay rather than rapid tapping.
+### English
 
-### Core Rules
+Examples
 
-1) Horizontal scrolling across the village (6 houses in a row).
-
-2) Vertical movement is minimized / mostly fixed.
-
-3) **Eaves Line Lock (Key Composition Rule):**
-   Keep the roof eaves line (roof edge) at a consistent screen height (recommended around 45–60% from the top).
-   This makes the falling moment and landing behavior easy to read and consistently satisfying.
-
-4) Do NOT track individual snow chunks with the camera (avoid "follow the snow").
-
-5) For big avalanche moments only:
-   - small camera shake
-   - optional tiny zoom-out (<= 5%) if needed
-
-### Controls (PC)
-
-- Scroll camera horizontally via screen edge or A/D keys (final mapping can be decided later).
-- Optional: number keys 1–6 to jump focus to a house (later).
-
-### Implementation Notes (developer reference)
-
-- Camera Y is determined by eavesY + offset and kept stable.
-- Camera X moves smoothly within limits.
-- If houses have different eaves height, update eavesY when switching house focus.
+• shovel
+• stick
+• other snow tools
 
 ---
 
-# 16. UI
+# 12. Emotional Design
 
-HUD Elements:
+### 日本語
 
-Money counter
-Timer
-Tool selection
-Combo indicator
-Mission display
+男の子のワイプを画面に表示。
 
-Reaction window (boy character).
+表情が状況を表す。
 
----
+安全 🙂  
+雪増加 😟  
+危険 😰  
+崩壊寸前 😱  
+成功 😄  
 
-# 17. Development Priority
+### English
 
-Development focus order:
+A boy reaction window appears on screen.
 
-1 Core snow physics
-2 Snow removal gameplay
-3 House collapse system
-4 Economy
-5 Tools
-6 Village layout
-7 Camera
-8 UI
-9 Missions
-10 Weather events
+Expressions indicate danger level.
 
-Art, sound, and visual polish will be implemented later.
+Safe 🙂  
+Snow building 😟  
+Danger 😰  
+Collapse risk 😱  
+Success 😄  
 
 ---
 
-# 18. Development Roadmap
+# 13. Visual Direction
 
-Phase 1
-Snow physics prototype
+### 日本語
 
-Phase 2
-Core gameplay loop
+村の冬景色。
 
-Phase 3
-Village layout
+雪が積もる屋根。
 
-Phase 4
-Camera
+雪が滑る物理表現。
 
-Phase 5
-Tools
+### English
 
-Phase 6
-Missions
+Snow village.
 
-Phase 7
-Weather system
+Winter atmosphere.
 
-Phase 8
-Polish and balancing
+Sliding snow physics.
 
 ---
 
-# 19. Current Status
+# 14. Audio Direction
 
-Core snow physics
-In progress
+### 日本語
 
-Gameplay loop
-Not started
+雪が滑る音
+雪が落ちる音
+屋根がきしむ音
 
-Village layout
-Not started
+### English
 
-Tools
-Not started
+Snow sliding.
 
-Weather system
-Not started
+Snow falling.
 
-UI
-Not started
+Roof creaking.
+
+---
+
+# 15. Platform Strategy
+
+### 日本語
+
+最初は Steam でリリース。
+
+成功した場合スマホ版（iPhoneなど）へ展開。
+
+### English
+
+Initial release on Steam.
+
+Later expansion to mobile platforms (iPhone etc).

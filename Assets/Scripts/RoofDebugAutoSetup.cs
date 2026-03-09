@@ -61,7 +61,7 @@ public class RoofDebugAutoSetup : MonoBehaviour
         debugFlat.transform.localScale = new Vector3(debugWidth, 0.02f, debugDepth);
 
         var mat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
-        mat.color = new Color(0.2f, 0.25f, 0.3f);
+        MaterialColorHelper.SetColorSafe(mat, new Color(0.2f, 0.25f, 0.3f));
         debugFlat.GetComponent<MeshRenderer>().sharedMaterial = mat;
     }
 

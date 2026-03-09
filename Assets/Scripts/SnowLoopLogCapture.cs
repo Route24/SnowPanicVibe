@@ -20,7 +20,7 @@ public class SnowLoopLogCapture : MonoBehaviour
     static bool _assiBootEmitted;
     static bool _assiDiagnostic2sEmitted;
 
-    /// <summary>ログCapture未配置でも必ず動く。BeforeSceneLoadで最優先生成。</summary>
+    /// <summary>ログCapture未配置でも必ず動く。BeforeSceneLoadで最優先生成。VideoPipeline SelfTest中は雪系を無効化。</summary>
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void Bootstrap()
     {
@@ -28,6 +28,15 @@ public class SnowLoopLogCapture : MonoBehaviour
         var go = new GameObject("SnowLoopLogCapture");
         DontDestroyOnLoad(go);
         _instance = go.AddComponent<SnowLoopLogCapture>();
+        if (VideoPipelineSelfTestMode.IsActive)
+        {
+            _assiBootEmitted = true;
+            _assiDiagnostic2sEmitted = true;
+            return;
+        }
+        var systems = new GameObject("Systems");
+        DontDestroyOnLoad(systems);
+        systems.AddComponent<UIBootstrap>();
         go.AddComponent<AssiDebugUI>();
         go.AddComponent<DebugSnowVisibility>();
         go.AddComponent<GridVisualWatchdog>();
@@ -37,9 +46,10 @@ public class SnowLoopLogCapture : MonoBehaviour
         _assiDiagnostic2sEmitted = false;
     }
 
-    /// <summary>A) Play開始で必ず1回 [ASSI_BOOT] を出す。Start で確実に。</summary>
+    /// <summary>A) Play開始で必ず1回 [ASSI_BOOT] を出す。Start で確実に。SelfTest中はスキップ。</summary>
     void Start()
     {
+        if (VideoPipelineSelfTestMode.IsActive) return;
         if (!_assiBootEmitted)
         {
             _assiBootEmitted = true;
@@ -48,7 +58,33 @@ public class SnowLoopLogCapture : MonoBehaviour
             bool active = gameObject.activeInHierarchy;
             Debug.Log($"[ASSI_BOOT] scene={scene} enabled={en} active={active}");
         }
+        SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
+        UIBootstrap.EnsureUIRootAndScoreText();
+        SnowScoreDisplayUI.EnsureBootstrap();
+        DisableDebugGridVisuals();
         Invoke(nameof(InvokeEmitRenderVisibilitySnapshot), 0.02f);
+    }
+
+    static void DisableDebugGridVisuals()
+    {
+        var snowTest = GameObject.Find("SnowTest");
+        if (snowTest != null && snowTest.activeSelf)
+        {
+            snowTest.SetActive(false);
+            Debug.Log("[SnowLoopLogCapture] SnowTest disabled (grid/lattice prevention)");
+        }
+#pragma warning disable 0618
+        foreach (var lr in UnityEngine.Object.FindObjectsOfType<LineRenderer>())
+#pragma warning restore 0618
+        {
+            if (lr == null) continue;
+            var t = lr.transform;
+            if (t != null && (t.name.Contains("SnowTest") || t.name.Contains("Debug")))
+            {
+                lr.enabled = false;
+                Debug.Log($"[SnowLoopLogCapture] LineRenderer disabled on {t.name}");
+            }
+        }
     }
 
     void InvokeEmitRenderVisibilitySnapshot()
@@ -90,7 +126,7 @@ public class SnowLoopLogCapture : MonoBehaviour
         foreach (var r in renderers)
         {
             if (r == null || r.sharedMaterial == null) continue;
-            var c = r.sharedMaterial.color;
+            var c = MaterialColorHelper.GetColorSafe(r.sharedMaterial, Color.white);
             float brownScore = 0f;
             if (c.r > 0.3f && c.g > 0.2f && c.b < c.r && c.b < c.g) brownScore = c.r + c.g * 0.5f;
             if (r.sharedMaterial.name.IndexOf("roof", System.StringComparison.OrdinalIgnoreCase) >= 0) brownScore += 2f;
@@ -280,6 +316,7 @@ public class SnowLoopLogCapture : MonoBehaviour
     /// <summary>Consoleに出さずASSIレポート用に追記。ログ量削減用。</summary>
     public static void AppendToAssiReport(string line)
     {
+        if (VideoPipelineSelfTestMode.IsActive) return;
         if (string.IsNullOrEmpty(_latestLogPath)) return;
         try
         {

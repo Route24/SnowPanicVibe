@@ -927,7 +927,7 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
 
         Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         Material fallback = shader != null ? new Material(shader) : null;
-        if (fallback != null) fallback.color = new Color(0.92f, 0.95f, 1f, 1f);
+        if (fallback != null) MaterialColorHelper.SetColorSafe(fallback, new Color(0.92f, 0.95f, 1f, 1f));
 
         foreach (var r in snow.GetComponentsInChildren<Renderer>(true))
         {

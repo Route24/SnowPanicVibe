@@ -120,7 +120,7 @@ public class GroundSnowSystem : MonoBehaviour
             _sharedMat = sh != null ? new Material(sh) : null;
             if (_sharedMat != null)
             {
-                _sharedMat.color = snowColor;
+                MaterialColorHelper.SetColorSafe(_sharedMat, snowColor);
                 r.sharedMaterial = _sharedMat;
             }
         }

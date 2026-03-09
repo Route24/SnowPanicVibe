@@ -27,7 +27,7 @@ public class GroundSnowPile : MonoBehaviour
         {
             Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
             var mat = sh != null ? new Material(sh) : null;
-            if (mat != null) { mat.color = snowColor; r.sharedMaterial = mat; }
+            if (mat != null) { MaterialColorHelper.SetColorSafe(mat, snowColor); r.sharedMaterial = mat; }
         }
         var pile = go.AddComponent<GroundSnowPile>();
         pile._lifetimeRemaining = lifetimeSec;
@@ -43,7 +43,11 @@ public class GroundSnowPile : MonoBehaviour
             float elapsed = Time.time - _blinkStartTime;
             if (elapsed >= _blinkDuration)
             {
-                if (gameObject != null) Object.Destroy(gameObject);
+                if (gameObject != null)
+                {
+                    SnowDespawnLogger.RequestDespawn("GroundPileBlinkDone", SnowDespawnLogger.SnowState.Grounded, transform.position, gameObject);
+                    Object.Destroy(gameObject);
+                }
                 return;
             }
             float t = elapsed / _blinkDuration;

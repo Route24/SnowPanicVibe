@@ -39,9 +39,18 @@ public class SnowClump : MonoBehaviour
     [HideInInspector] public float consumeOnDepositAmount = 0.02f;
     [HideInInspector] public float groundDepositAmount = 0.10f;
     [SerializeField] LayerMask groundMask = ~0;
-    enum ClumpState { OnRoof, Falling, Landed }
+    enum ClumpState { RoofSliding, Falling, Grounded, Despawning }
     ClumpState _state;
+    const float GroundPileWaitSeconds = 4.0f;
+    const float GroundPileBlinkDuration = 1.0f;
+    const float GroundPileBlinkInterval = 0.1f;
     const float OffDistDropThreshold = 0.20f; // 0.06 -> 0.20
+
+    /// <summary>ASSI Fix Pack: 軒先落下時のチューニング（Script 先頭で変更可）</summary>
+    public static float maxFallCarrySpeed = 1.2f;
+    public static float sideDamp = 0.2f;
+    public static float dropImpulse = 0.6f;
+    public static float airDrag = 1.2f;
     const float OffDistGraceDuration = 0.25f;
     const float NearEdgeMargin = 0.02f;
     const float NearEdgeDropDelay = 0.22f; // 0.35 -> 0.22
@@ -56,6 +65,10 @@ public class SnowClump : MonoBehaviour
     static int s_forcedDepositPerSec;
     static float s_windowStart = -1f;
 
+    public const int MaxActiveSnowPieces = 400;
+    public const int MaxActiveDynamicPieces = 250;
+    static readonly List<SnowClump> s_allActive = new List<SnowClump>();
+
     void Awake()
     {
         _rb = GetComponent<Rigidbody>();
@@ -65,7 +78,7 @@ public class SnowClump : MonoBehaviour
     {
         _spawnTime = Time.time;
         _spawnPos = transform.position;
-        _state = ClumpState.OnRoof;
+        _state = ClumpState.RoofSliding;
         if (_rb != null)
         {
             _rb.useGravity = true;
@@ -84,16 +97,16 @@ public class SnowClump : MonoBehaviour
             _baseLocalPos.Add(t.localPosition);
             var r = t.GetComponent<Renderer>();
             _renderers.Add(r);
-            _baseColors.Add(r != null ? r.sharedMaterial.color : Color.white);
+            _baseColors.Add(r != null ? MaterialColorHelper.GetColorSafe(r.sharedMaterial, Color.white) : Color.white);
         }
+        s_allActive.Add(this);
     }
 
     void LateUpdate()
     {
         if (_landed)
         {
-            // 念のためのフェイルセーフ（通常は LandNow で即破棄）
-            if (Time.time - _landTime > 0.05f) FinalizeDepositAndDestroy(false);
+            if (_state == ClumpState.Grounded || _state == ClumpState.Despawning) return;
             return;
         }
 
@@ -123,10 +136,9 @@ public class SnowClump : MonoBehaviour
         if (_rb == null) return;
         if (_state == ClumpState.Falling)
         {
-            TryRaycastGroundDeposit();
             return;
         }
-        if (_state != ClumpState.OnRoof) return;
+        if (_state != ClumpState.RoofSliding) return;
         if (_rb.isKinematic) return;
         if (roofSurfaceCollider == null) return;
         if (_offDistGraceTimer > 0f) _offDistGraceTimer -= Time.fixedDeltaTime;
@@ -144,13 +156,18 @@ public class SnowClump : MonoBehaviour
         }
 
         // A) 屋根面に近い or 起動直後猶予中は拘束を適用
+        bool nearEdge = IsNearColliderEdge(closest, roofSurfaceCollider.bounds, NearEdgeMargin * 3f);
+        if (nearEdge && offDist > 0.08f)
+        {
+            BeginFall((GetRoofSlideDirection() * Mathf.Max(0.5f, initialSlideSpeed) + Vector3.down * 1.1f), "nearEavesEdge", closest, offDist);
+            return;
+        }
         if (offDist <= OffDistDropThreshold || _offDistGraceTimer > 0f)
         {
             _rb.position = closest + normal * 0.02f;
             _rb.linearVelocity = Vector3.ProjectOnPlane(_rb.linearVelocity, normal);
 
             // B-2) 縁で停滞したら強制落下
-            bool nearEdge = IsNearColliderEdge(closest, roofSurfaceCollider.bounds, NearEdgeMargin);
             float edgeSpeed = _rb.linearVelocity.magnitude;
             if (nearEdge && edgeSpeed < 0.15f)
             {
@@ -190,30 +207,33 @@ public class SnowClump : MonoBehaviour
         _rb.linearVelocity = Vector3.ProjectOnPlane(_rb.linearVelocity, normal);
     }
 
-    /// <summary>軒先トリガー用。屋根を無視して落下させる</summary>
+    /// <summary>軒先トリガー用。屋根を無視して落下させる。速度クランプ＋空気抵抗適用</summary>
     public void ForceDropFromEaves(Collider roofCol)
     {
-        if (_landed || _rb == null || _state == ClumpState.Landed) return;
+        if (_landed || _rb == null || _state == ClumpState.Grounded) return;
         if (_hasDropped) return;
         var myCol = GetComponent<Collider>();
         if (myCol != null && roofCol != null)
             Physics.IgnoreCollision(myCol, roofCol);
         RecordForcedDrop();
-        BeginFall((Vector3.down + GetRoofSlideDirection() * 0.45f).normalized * 1.2f, "forcedDrop", transform.position, 0f);
+        Vector3 initVel = (Vector3.down + GetRoofSlideDirection() * 0.45f).normalized * 1.2f;
+        BeginFall(initVel, "forcedDrop", transform.position, 0f);
     }
 
     public bool HasLanded => _landed;
 
-    /// <summary>クリックで即削除（軒先の残雪用）</summary>
+    /// <summary>クリックで即削除（軒先の残雪用）。GroundPile の場合は点滅コルーチンも停止</summary>
     public void RemoveImmediate()
     {
+        if (_state == ClumpState.Grounded || _state == ClumpState.Despawning)
+            StopAllCoroutines();
         FinalizeDepositAndDestroy(true);
     }
 
     void OnCollisionEnter(Collision col)
     {
         if (_landed) return;
-        if (_state == ClumpState.OnRoof)
+        if (_state == ClumpState.RoofSliding)
         {
             var other = col.collider.GetComponent<SnowClump>() ?? col.collider.GetComponentInParent<SnowClump>();
             if (other != null && other != this && ownerRoofSnow != null && _pressureDetachCooldown <= 0f)
@@ -235,13 +255,23 @@ public class SnowClump : MonoBehaviour
                 }
             }
         }
-        var n = col.transform.name;
         if (_state != ClumpState.Falling)
             return;
+        var otherClump = col.collider.GetComponent<SnowClump>() ?? col.collider.GetComponentInParent<SnowClump>();
+        if (otherClump != null && otherClump != this && otherClump.IsGrounded())
+        {
+            LandNow();
+            return;
+        }
+        var n = col.transform.name;
         if (n.Contains("Roof")) return;
-        if (n.Contains("HouseBody")) return; // 家の壁に当たっても落ちるまで待つ
-        if (n.Contains("Ground") || n.Contains("Plane") || n.Contains("Porch") ||
-            n.Contains("Rock") || n.Contains("Grass") || transform.position.y < 0.5f)
+        if (n.Contains("HouseBody")) return;
+        int groundLayer = LayerMask.NameToLayer("Ground");
+        bool isGroundLayer = groundLayer >= 0 && col.gameObject.layer == groundLayer;
+        bool isGroundByName = n.Contains("Ground") || n.Contains("Plane") || n.Contains("Porch") ||
+            n.Contains("Rock") || n.Contains("Grass") || n.Contains("Terrain");
+        bool isLowEnough = transform.position.y < 1.5f;
+        if ((isGroundLayer || isGroundByName) && isLowEnough)
         {
             LandNow();
         }
@@ -253,17 +283,23 @@ public class SnowClump : MonoBehaviour
         if (_rb == null) return;
         if (_pressureDetachCooldown > 0f) _pressureDetachCooldown -= Time.deltaTime;
 
-        if (_state == ClumpState.OnRoof)
+        if (_state == ClumpState.RoofSliding)
         {
             MaintainRoofSlide();
             return;
         }
 
+        if (_state == ClumpState.Falling && (Time.time - _fallStartTime) > 5f)
+        {
+            FinalizeDepositAndDestroy(true);
+            return;
+        }
+
         float speedSq = _rb.linearVelocity.sqrMagnitude;
-        if (transform.position.y < 0.65f)
+        if (transform.position.y < 0.25f && speedSq < 0.0001f)
         {
             if (_groundedStartTime < 0f) _groundedStartTime = Time.time;
-            if (speedSq < 0.01f || (Time.time - _groundedStartTime) > 0.35f)
+            if ((Time.time - _groundedStartTime) > 0.5f)
             {
                 LandNow();
                 return;
@@ -273,29 +309,52 @@ public class SnowClump : MonoBehaviour
         {
             _groundedStartTime = -1f;
         }
-
-        if (_state == ClumpState.Falling && (Time.time - _fallStartTime) > 3.5f)
-        {
-            // 落下オブジェクト寿命。残留を防ぐ
-            FinalizeDepositAndDestroy(true);
-            return;
-        }
-
-        // 地面付近（軒先より下）で止まった雪だけ着地扱いにする
-        if (transform.position.y < 0.5f && speedSq < 0.0025f)
-        {
-            LandNow();
-            return;
-        }
     }
 
     void LandNow()
     {
         if (_landed) return;
-        _state = ClumpState.Landed;
         _landed = true;
         _landTime = Time.time;
+        _state = ClumpState.Grounded;
+
+        if (_rb != null)
+        {
+            _rb.linearVelocity = Vector3.zero;
+            _rb.angularVelocity = Vector3.zero;
+            _rb.isKinematic = true;
+            _rb.Sleep();
+            _rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
+        }
+        var col = GetComponent<Collider>();
+        if (col != null) col.enabled = true;
+
+        StartCoroutine(WaitThenBlinkThenDespawn());
+    }
+
+    IEnumerator WaitThenBlinkThenDespawn()
+    {
+        yield return new WaitForSeconds(GroundPileWaitSeconds);
+        UnityEngine.Debug.Log("[DESPAWN] state=Grounded wait=4 blink=1");
+        _state = ClumpState.Despawning;
+        float blinkElapsed = 0f;
+        bool visible = true;
+        while (blinkElapsed < GroundPileBlinkDuration)
+        {
+            visible = !visible;
+            SetRenderersVisible(visible);
+            yield return new WaitForSeconds(GroundPileBlinkInterval);
+            blinkElapsed += GroundPileBlinkInterval;
+        }
+        SetRenderersVisible(false);
+        SnowPhysicsScoreManager.Instance?.AddScoreOnDespawn();
         FinalizeDepositAndDestroy(false);
+    }
+
+    void SetRenderersVisible(bool visible)
+    {
+        foreach (var r in _renderers)
+            if (r != null) r.enabled = visible;
     }
 
     void EmitToGroundSnow()
@@ -323,7 +382,7 @@ public class SnowClump : MonoBehaviour
     {
         yield return new WaitForFixedUpdate();
         if (_hasBeginSlide) yield break;
-        if (_rb == null || _state != ClumpState.OnRoof) yield break;
+        if (_rb == null || _state != ClumpState.RoofSliding) yield break;
         if (!_rb.isKinematic) yield break;
         _hasBeginSlide = true;
         RecordBeginSlide();
@@ -399,7 +458,7 @@ public class SnowClump : MonoBehaviour
 
     void BeginFall(Vector3 initialVelocity, string reason = "unknown", Vector3 closest = default, float offDist = 0f)
     {
-        if (_state == ClumpState.Falling || _state == ClumpState.Landed) return;
+        if (_state == ClumpState.Falling || _state == ClumpState.Grounded) return;
         if (_hasDropped) return;
         _hasDropped = true;
         RecordDrop();
@@ -414,8 +473,18 @@ public class SnowClump : MonoBehaviour
         _rb.isKinematic = false;
         _rb.useGravity = true;
         _rb.constraints = RigidbodyConstraints.FreezeRotation;
-        _rb.linearVelocity = initialVelocity;
-        Debug.Log($"[SnowClumpDrop] reason={reason} pos={transform.position} closest={closest} offDist={offDist:F3}");
+
+        Vector3 v = initialVelocity;
+        Vector3 downhill = GetRoofSlideDirection();
+        Vector3 vDown = Vector3.Project(v, downhill);
+        Vector3 vSide = v - vDown;
+        float downMag = Mathf.Min(vDown.magnitude, maxFallCarrySpeed);
+        v = downhill.normalized * downMag + vSide * sideDamp + Vector3.down * dropImpulse;
+        _rb.linearVelocity = v;
+
+        _rb.linearDamping = airDrag;
+        _rb.angularDamping = 2f;
+        if (debugMode) Debug.Log($"[SnowClumpDrop] reason={reason} pos={transform.position} vel={v} offDist={offDist:F3}");
     }
 
     void TryPressurePropagation()
@@ -448,7 +517,7 @@ public class SnowClump : MonoBehaviour
 
     public bool IsRoofKinematic()
     {
-        return _state == ClumpState.OnRoof && _rb != null && _rb.isKinematic;
+        return _state == ClumpState.RoofSliding && _rb != null && _rb.isKinematic;
     }
 
     public void ActivateByImpact(Vector3 dir, float impulse)
@@ -466,8 +535,50 @@ public class SnowClump : MonoBehaviour
 
     void OnDestroy()
     {
+        s_allActive.Remove(this);
         if (ownerRoofSnow != null)
             ownerRoofSnow.NotifyClumpDestroyed(this);
+    }
+
+    public static int GetActiveCount() => s_allActive.Count;
+
+    public static int GetDynamicCount()
+    {
+        int n = 0;
+        foreach (var c in s_allActive)
+            if (c != null && (c._state == ClumpState.RoofSliding || c._state == ClumpState.Falling)) n++;
+        return n;
+    }
+
+    /// <summary>ASSI: グローバル cap 超過時に古い地面雪を強制消去</summary>
+    public static void EvictOldestGroundPiecesIfNeeded(int cap = MaxActiveSnowPieces)
+    {
+        while (s_allActive.Count >= cap)
+        {
+            SnowClump oldest = null;
+            float oldestTime = float.MaxValue;
+            foreach (var c in s_allActive)
+            {
+                if (c == null || !c.IsGrounded()) continue;
+                if (c.GroundPileStartTime < oldestTime)
+                {
+                    oldestTime = c.GroundPileStartTime;
+                    oldest = c;
+                }
+            }
+            if (oldest == null) break;
+            oldest.ForceEarlyDespawn();
+        }
+    }
+
+    /// <summary>cap 用。スコア加算なしで即消去</summary>
+    public void ForceEarlyDespawn()
+    {
+        if (_hasDeposited) return;
+        StopAllCoroutines();
+        _hasDeposited = true;
+        _state = ClumpState.Grounded;
+        Destroy(gameObject);
     }
 
     static void MaybeLogCounters()
@@ -565,7 +676,7 @@ public class SnowClump : MonoBehaviour
 
     public bool IsSlidingOnRoof()
     {
-        return _state == ClumpState.OnRoof && _rb != null && !_rb.isKinematic;
+        return _state == ClumpState.RoofSliding && _rb != null && !_rb.isKinematic;
     }
 
     public bool IsFallingState()
@@ -573,28 +684,24 @@ public class SnowClump : MonoBehaviour
         return _state == ClumpState.Falling;
     }
 
+    public bool IsGroundPile()
+    {
+        return _state == ClumpState.Grounded;
+    }
+
+    public bool IsGrounded()
+    {
+        return _state == ClumpState.Grounded;
+    }
+
+    public float GroundPileStartTime => _landTime;
+
     bool IsNearColliderEdge(Vector3 point, Bounds b, float margin)
     {
         float dx = Mathf.Min(Mathf.Abs(point.x - b.min.x), Mathf.Abs(b.max.x - point.x));
         float dy = Mathf.Min(Mathf.Abs(point.y - b.min.y), Mathf.Abs(b.max.y - point.y));
         float dz = Mathf.Min(Mathf.Abs(point.z - b.min.z), Mathf.Abs(b.max.z - point.z));
         return dx <= margin || dy <= margin || dz <= margin;
-    }
-
-    void TryRaycastGroundDeposit()
-    {
-        if (_rb == null || _rb.isKinematic) return;
-        if (_hasDeposited) return;
-
-        Vector3 origin = _rb.position;
-        if (!Physics.Raycast(origin, Vector3.down, out RaycastHit hit, GroundRayDistance, groundMask, QueryTriggerInteraction.Ignore))
-            return;
-
-        // 屋根面を誤検知して堆積しないよう除外
-        if (roofSurfaceCollider != null && (hit.collider == roofSurfaceCollider || hit.collider.transform.IsChildOf(roofSurfaceCollider.transform)))
-            return;
-
-        FinalizeDepositAndDestroy(false);
     }
 
     void FinalizeDepositAndDestroy(bool forced)
@@ -624,6 +731,10 @@ public class SnowClump : MonoBehaviour
         bool hasOwner = ownerRoofSnow != null;
         if (hasOwner)
             ownerRoofSnow.OnClumpDeposited(consumeOnDepositAmount);
+        var state = _state == ClumpState.Despawning ? SnowDespawnLogger.SnowState.Despawning
+            : _state == ClumpState.Grounded ? SnowDespawnLogger.SnowState.Grounded
+            : SnowDespawnLogger.SnowState.Unknown;
+        SnowDespawnLogger.RequestDespawn(forced ? "ForcedDeposit" : "Deposit", state, transform.position, gameObject);
         Debug.Log($"[SnowClumpDeposit] destroyed=true ownerRoofSnowNull={!hasOwner} forced={forced}");
         Destroy(gameObject, 0.5f);
     }

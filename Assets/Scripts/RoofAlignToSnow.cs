@@ -205,7 +205,7 @@ public class RoofAlignToSnow : MonoBehaviour
             if (unlit != null)
             {
                 var m = new Material(unlit);
-                m.color = new Color(0.95f, 0.9f, 0.3f, 1f);
+                MaterialColorHelper.SetColorSafe(m, new Color(0.95f, 0.9f, 0.3f, 1f));
                 rend.sharedMaterial = m;
                 rend.enabled = true;
             }
@@ -215,7 +215,7 @@ public class RoofAlignToSnow : MonoBehaviour
                 if (shader != null)
                 {
                     var m = new Material(shader);
-                    m.color = new Color(0.95f, 0.9f, 0.3f, 1f);
+                    MaterialColorHelper.SetColorSafe(m, new Color(0.95f, 0.9f, 0.3f, 1f));
                     rend.sharedMaterial = m;
                 }
                 rend.enabled = true;
@@ -263,7 +263,7 @@ public class RoofAlignToSnow : MonoBehaviour
         if (r != null)
         {
             var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
-            mat.color = new Color(0f, 0.8f, 1f);
+            MaterialColorHelper.SetColorSafe(mat, new Color(0f, 0.8f, 1f));
             r.sharedMaterial = mat;
         }
     }

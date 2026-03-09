@@ -37,6 +37,8 @@ public class SnowPieceAutoSettle : MonoBehaviour
 
     void StopAndDispose()
     {
+        var falling = GetComponent<SnowPackFallingPiece>();
+        if (falling != null) return;
         if (_rb != null)
         {
             if (!_rb.isKinematic)
@@ -50,6 +52,7 @@ public class SnowPieceAutoSettle : MonoBehaviour
 
         var col = GetComponent<Collider>();
         if (col != null) col.enabled = false;
+        SnowDespawnLogger.RequestDespawn("StopAndDispose", SnowDespawnLogger.SnowState.Unknown, transform.position, gameObject);
         Destroy(gameObject, 0.05f);
     }
 }

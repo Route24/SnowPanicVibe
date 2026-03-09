@@ -45,6 +45,12 @@ sysinfo.txt
 .idea/
 *.sln.iml
 
+# Crash dumps
+mono_crash.*
+
+# Auto-commit logs (local only)
+scripts/logs/
+
 # Local build/export artifacts
 SnowPanicVibeWEB/
 SnowPanicVibeiOS/

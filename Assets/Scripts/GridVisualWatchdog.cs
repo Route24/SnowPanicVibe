@@ -7,7 +7,8 @@ using System.Collections.Generic;
 /// </summary>
 public class GridVisualWatchdog : MonoBehaviour
 {
-    public static bool showSnowGridDebug { get; set; }
+    /// <summary>true=SnowPackPiece表示（屋根雪可視）。false=非表示。通常プレイはtrue（屋根雪が見えること必須）。</summary>
+    public static bool showSnowGridDebug { get; set; } = true;
 
     static int _unauthorizedCount;
     static int _watchdogChecks;
@@ -16,7 +17,10 @@ public class GridVisualWatchdog : MonoBehaviour
 
     void Start()
     {
-        ForceDisableAllGridRenderers();
+        if (!showSnowGridDebug)
+            ForceDisableAllGridRenderers();
+        else
+            EnsureGridRenderersVisible();
     }
 
     void Update()
@@ -27,17 +31,40 @@ public class GridVisualWatchdog : MonoBehaviour
         RunWatchdog();
     }
 
+    static int _restoredCount;
+
     static void RunWatchdog()
     {
-        if (showSnowGridDebug) return;
-
         var spawner = FindFirstObjectByType<SnowPackSpawner>();
         if (spawner == null) return;
 
-        var renderers = GetAllGridRenderers(spawner);
-        for (int i = 0; i < renderers.Count; i++)
+        if (showSnowGridDebug)
         {
-            var r = renderers[i];
+            var renderers = GetAllGridRenderers(spawner);
+            for (int i = 0; i < renderers.Count; i++)
+            {
+                var r = renderers[i];
+                if (r == null) continue;
+                if (!r.enabled)
+                {
+                    if (_restoredCount < 3)
+                    {
+                        _restoredCount++;
+                        string path = r.transform != null ? GetTransformPath(r.transform) : "?";
+                        Debug.LogWarning($"[GridWatchdog] SnowPackPiece renderer was DISABLED - restored. path={path} (caller may have disabled it)");
+                    }
+                    r.enabled = true;
+                    r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                    r.receiveShadows = true;
+                }
+            }
+            return;
+        }
+
+        var list = GetAllGridRenderers(spawner);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var r = list[i];
             if (r == null) continue;
             if (r.enabled)
             {
@@ -121,6 +148,21 @@ public class GridVisualWatchdog : MonoBehaviour
             if (r == null) continue;
             r.enabled = false;
             r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+    }
+
+    static void EnsureGridRenderersVisible()
+    {
+        var spawner = FindFirstObjectByType<SnowPackSpawner>();
+        if (spawner == null) return;
+        var list = GetAllGridRenderers(spawner);
+        for (int i = 0; i < list.Count; i++)
+        {
+            var r = list[i];
+            if (r == null) continue;
+            r.enabled = true;
+            r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+            r.receiveShadows = true;
         }
     }
 }

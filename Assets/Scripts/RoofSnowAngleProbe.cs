@@ -18,6 +18,7 @@ public class RoofSnowAngleProbe : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoAttach()
     {
+        if (VideoPipelineSelfTestMode.IsActive) return;
         if (Object.FindFirstObjectByType<RoofSnowAngleProbe>() != null) return;
         var go = GameObject.Find("DebugTools");
         if (go == null) go = GameObject.Find("RoofRoot");
@@ -182,6 +183,7 @@ public class RoofSnowAngleProbe : MonoBehaviour
 
     void LogAngles()
     {
+        if (VideoPipelineSelfTestMode.IsActive) return;
         ResolveRefs();
         var snowRef = _snowPiecesRoot != null ? _snowPiecesRoot : _snowVisual;
         if (snowRef == null && _roofVisualMesh == null) return;

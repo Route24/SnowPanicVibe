@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.snowpanic.auto-commit-hourly</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/kenichinishi/unity/SnowPanicVibe/scripts/auto-commit-hourly.sh</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>WorkingDirectory</key>
+  <string>/Users/kenichinishi/unity/SnowPanicVibe</string>
+  <key>StandardOutPath</key>
+  <string>/Users/kenichinishi/unity/SnowPanicVibe/scripts/logs/launchd-stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/kenichinishi/unity/SnowPanicVibe/scripts/logs/launchd-stderr.log</string>
+</dict>
+</plist>

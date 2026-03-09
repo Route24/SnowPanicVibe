@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// Lightweight ground snow accumulation on a 2D grid.
 /// Converts impacts into persistent visual piles.
+/// pre_camera_change_good_state: OneHouse では生成停止（地面雪無し）
 /// </summary>
 public class GroundSnowAccumulator : MonoBehaviour
 {
@@ -32,6 +34,8 @@ public class GroundSnowAccumulator : MonoBehaviour
     static void EnsureBootstrap()
     {
         if (FindFirstObjectByType<GroundSnowAccumulator>() != null) return;
+        var scene = SceneManager.GetActiveScene();
+        if (!string.IsNullOrEmpty(scene.name) && scene.name.Contains("OneHouse")) return; // pre_camera_change: 地面雪無し
         var go = new GameObject("GroundSnowAccumulator");
         go.transform.position = Vector3.zero;
         go.AddComponent<GroundSnowAccumulator>();
@@ -148,7 +152,7 @@ public class GroundSnowAccumulator : MonoBehaviour
                 {
                     Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
                     _fallbackMat = sh != null ? new Material(sh) : null;
-                    if (_fallbackMat != null) _fallbackMat.color = new Color(0.92f, 0.95f, 1f, 1f);
+                    if (_fallbackMat != null) MaterialColorHelper.SetColorSafe(_fallbackMat, new Color(0.92f, 0.95f, 1f));
                 }
                 if (_fallbackMat != null) r.sharedMaterial = _fallbackMat;
             }

@@ -18,17 +18,48 @@ public static class CorniceSceneSetup
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
         if (state != PlayModeStateChange.ExitingEditMode) return;
-        if (EditorPrefs.GetBool(PrefAutoSetup, true))
+        var sceneName = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name ?? "";
+        bool isOneHouse = !string.IsNullOrEmpty(sceneName) && sceneName.Contains("OneHouse");
+        if (VideoPipelineSelfTestMode.IsActive && !isOneHouse) return;
+        if (EditorPrefs.GetBool(PrefAutoSetup, true) || isOneHouse)
             SetupAll();
         FixAllMissingScriptsAndSave();
+    }
+
+    const string OneHouseScenePath = "Assets/Scenes/Avalanche_Test_OneHouse.unity";
+
+    [MenuItem("SnowPanicVibe/Open Avalanche_Test_OneHouse", false, 50)]
+    public static void OpenAvalancheTestOneHouse()
+    {
+        if (!UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(OneHouseScenePath))
+        {
+            Debug.LogWarning("Avalanche_Test_OneHouse.unity が見つかりません。 Assets/Scenes/ を確認してください。");
+            return;
+        }
+        if (UnityEditor.SceneManagement.EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo())
+        {
+            UnityEditor.SceneManagement.EditorSceneManager.OpenScene(OneHouseScenePath);
+            FixAllMissingScripts(); // エラー（Missing Script）があれば修復
+        }
+        Debug.Log("Avalanche_Test_OneHouse を開きました。エラーがあれば SnowPanicVibe → Fix All Missing Scripts を実行してください。");
     }
 
     [MenuItem("SnowPanicVibe/Setup All (Cornice + Snow Test)")]
     public static void SetupAll()
     {
+        var sceneName = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name ?? "";
+        bool oneHouse = !string.IsNullOrEmpty(sceneName) && sceneName.Contains("OneHouse");
         SetupCorniceScene();
-        SetupSnowTest();
-        Debug.Log("Setup All 完了。Play で雪落としを楽しめます。");
+        if (!oneHouse) SetupSnowTest();
+        else
+        {
+            foreach (var name in new[] { "SnowTestRoot" })
+            {
+                var obj = GameObject.Find(name);
+                if (obj != null) Object.DestroyImmediate(obj);
+            }
+        }
+        Debug.Log(oneHouse ? "Setup All 完了（OneHouse: テスト屋根なし、アセット家屋根のみプレイ面）。" : "Setup All 完了。Play で雪落としを楽しめます。");
     }
 
     [MenuItem("SnowPanicVibe/Auto Setup on Play %#a", false, 100)]
@@ -186,8 +217,8 @@ public static class CorniceSceneSetup
     public static void SetupCorniceScene()
     {
         FixAllMissingScripts();
-        // 既存オブジェクトを掃除
-        var namesToDelete = new List<string> { "CorniceRoot", "Ground", "HouseBody", "Roof", "RoofBase", "RoofPanel", "EavesDropTrigger", "CorniceSnow", "Person", "Window", "Porch", "SnowParticle", "GroundSnow", "RoofSnow", "RoofSnowPlaceholder", "RidgeSnow", "GroundDecor", "FarmVillageBackdrop", "Houses", "DioramaVolume", "DistantTrees" };
+        // 既存オブジェクトを掃除（OneHouse時はテスト屋根も削除）
+        var namesToDelete = new List<string> { "CorniceRoot", "Ground", "HouseBody", "Roof", "RoofBase", "RoofPanel", "EavesDropTrigger", "CorniceSnow", "Person", "Window", "Porch", "SnowParticle", "GroundSnow", "RoofSnow", "RoofSnowPlaceholder", "RidgeSnow", "GroundDecor", "FarmVillageBackdrop", "Houses", "DioramaVolume", "DistantTrees", "OneHouseMarker", "SnowTestRoot" };
         for (int i = 0; i < 8; i++) namesToDelete.Add("House_" + i);
         foreach (var name in namesToDelete)
         {
@@ -221,7 +252,12 @@ public static class CorniceSceneSetup
         var groundDecor = new GameObject("GroundDecor");
         groundDecor.transform.SetParent(root.transform, false);
 
-        // 8軒の家を 2行 x 4列 で配置（片流れ屋根、同じ向き）
+        var sceneName = UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name ?? "";
+        bool oneHouseForced = !string.IsNullOrEmpty(sceneName) && sceneName.Contains("OneHouse");
+        int houseCount = oneHouseForced ? 1 : 8;
+        int rows = oneHouseForced ? 1 : 2;
+        int cols = oneHouseForced ? 1 : 4;
+
         var housesRoot = new GameObject("Houses");
         housesRoot.transform.SetParent(root.transform, false);
         housesRoot.transform.localPosition = Vector3.zero;
@@ -231,15 +267,22 @@ public static class CorniceSceneSetup
         float houseH = 1.2f;
         float spacingX = 3.2f;
         float spacingZ = 3.5f;
-        float offsetX = -spacingX * 1.5f;
-        float offsetZ = spacingZ * 0.5f;
+        float offsetX = oneHouseForced ? 0f : (-spacingX * 1.5f);
+        float offsetZ = oneHouseForced ? 0f : (spacingZ * 0.5f);
         var slideDir = new Vector3(0f, -0.42f, -0.9f).normalized;
 
-        for (int row = 0; row < 2; row++)
+        if (oneHouseForced)
         {
-            for (int col = 0; col < 4; col++)
+            var marker = new GameObject("OneHouseMarker");
+            marker.transform.SetParent(root.transform, false);
+            marker.transform.localPosition = Vector3.zero;
+        }
+
+        for (int row = 0; row < rows; row++)
+        {
+            for (int col = 0; col < cols; col++)
             {
-                int idx = row * 4 + col;
+                int idx = row * cols + col;
                 float px = offsetX + col * spacingX;
                 float pz = offsetZ - row * spacingZ;
 
@@ -263,13 +306,14 @@ public static class CorniceSceneSetup
                 roofPanel.name = "RoofPanel";
                 roofPanel.transform.SetParent(roof.transform, false);
                 roofPanel.transform.localPosition = new Vector3(0f, 0.3f, 0f);
-                roofPanel.transform.localScale = new Vector3(houseW * 1.02f, 0.12f, houseD * 1.12f);
+                float roofThick = oneHouseForced ? 0.02f : 0.12f;
+                roofPanel.transform.localScale = new Vector3(houseW * 1.02f, roofThick, houseD * 1.12f);
                 roofPanel.transform.localRotation = Quaternion.Euler(22f, 0f, 0f);
                 SetRoofMaterial(roofPanel.GetComponent<Renderer>());
-                CreateRoofEaveEdge(roof.transform, houseW, houseD);
-                CreateRoofSnowSurface(roofPanel.transform, houseW, houseD);
+                if (!oneHouseForced) CreateRoofEaveEdge(roof.transform, houseW, houseD);
+                CreateRoofSnowSurface(roofPanel.transform, houseW, houseD, oneHouseForced);
                 var roofPanelRenderer = roofPanel.GetComponent<Renderer>();
-                if (roofPanelRenderer != null) roofPanelRenderer.enabled = false;
+                if (roofPanelRenderer != null) roofPanelRenderer.enabled = oneHouseForced;
                 roofPanel.GetComponent<Collider>().material = new PhysicsMaterial("RoofSlide") { dynamicFriction = 0.05f, staticFriction = 0.08f, bounciness = 0f };
 
                 var eavesTrigger = new GameObject("EavesDropTrigger");
@@ -283,6 +327,19 @@ public static class CorniceSceneSetup
                 box.center = Vector3.zero;
                 eavesTrigger.AddComponent<EavesDropTrigger>().roofCollider = roofPanel.GetComponent<Collider>();
 
+                var catchZone = new GameObject("EavesCatchZone");
+                catchZone.transform.SetParent(roof.transform, false);
+                catchZone.transform.localPosition = new Vector3(0f, -0.35f, -0.85f);
+                catchZone.transform.localRotation = Quaternion.identity;
+                catchZone.transform.localScale = Vector3.one;
+                var catchBox = catchZone.AddComponent<BoxCollider>();
+                catchBox.isTrigger = true;
+                catchBox.size = new Vector3(2.5f, 0.8f, 1.8f);
+                catchBox.center = Vector3.zero;
+                var catchScript = catchZone.AddComponent<EavesCatchZone>();
+                catchScript.dragMultiplier = 0.92f;
+                catchScript.applyDuration = 0.3f;
+
                 CreateRoofSnowPlaceholder(roofPanel.transform, slideDir);
 
                 var window = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -293,8 +350,8 @@ public static class CorniceSceneSetup
                 SetRendererColor(window.GetComponent<Renderer>(), new Color(0.95f, 0.9f, 0.7f), 0.6f);
                 window.GetComponent<Renderer>().enabled = false;
 
-                // Holiday Kit の家見た目を追加（雪ロジック用の RoofPanel/Collider は維持）
-                CreateKenneyHolidayHouseVisual(houseGo.transform);
+                // Holiday Kit の家見た目を追加。OneHouse では屋根をスキップ（片流れ単一面のみ）
+                CreateKenneyHolidayHouseVisual(houseGo.transform, oneHouseForced);
             }
         }
 
@@ -354,7 +411,10 @@ public static class CorniceSceneSetup
         orbit.target = targetGo.transform;
         orbit.distance = 18f;
 
-        SetDioramaCamera(cam);
+        if (oneHouseForced)
+            SetRoofCenterCamera(cam);
+        else
+            SetDioramaCamera(cam);
 
         SetupDioramaVolume();
         SoftenKenneySceneMaterials();
@@ -365,6 +425,7 @@ public static class CorniceSceneSetup
 
         Selection.activeGameObject = root;
         UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene());
+        Debug.Log($"[CORNICE_SETUP] scene={sceneName} house_count={houseCount} spawn_system=CorniceSetup spawn_reason=SetupCorniceScene one_house_forced={oneHouseForced}");
         Debug.Log("Setup complete. Play モードで屋根の雪が表示されます。屋根の雪をクリックで雪落とし。");
     }
 
@@ -629,6 +690,24 @@ public static class CorniceSceneSetup
         }
     }
 
+    [MenuItem("SnowPanicVibe/Reset Camera to 屋根プレイフィールド (試作基準)")]
+    public static void Reset屋根プレイフィールドCamera()
+    {
+        var cam = Camera.main;
+        if (cam == null) { Debug.LogWarning("Main Camera not found."); return; }
+        SetRoofCenterCamera(cam);
+        Debug.Log("Camera reset to 屋根プレイフィールド view (Position 0,5.2,-5.8 Rotation 36,0,0). 屋根主役・地面ほぼ見えない低い俯瞰。");
+    }
+
+    [MenuItem("SnowPanicVibe/Reset Camera to 爽快パズル View")]
+    public static void Reset爽快パズルCamera()
+    {
+        var cam = Camera.main;
+        if (cam == null) { Debug.LogWarning("Main Camera not found."); return; }
+        SetDioramaCamera(cam);
+        Debug.Log("Camera reset to 爽快パズル view (Position -6,4,-6 Rotation 25,45,0).");
+    }
+
     [MenuItem("SnowPanicVibe/Reset Camera to 俯瞰 View")]
     public static void Reset俯瞰Camera()
     {
@@ -655,8 +734,8 @@ public static class CorniceSceneSetup
         Object.DestroyImmediate(edge.GetComponent<Collider>());
     }
 
-    /// <summary>屋根上の雪サーフェスメッシュ（ノイズ付き雪マテリアル、厚み感）</summary>
-    static void CreateRoofSnowSurface(Transform roofPanel, float houseW, float houseD)
+    /// <summary>屋根上の雪サーフェスメッシュ。OneHouse では表示してプレイ面を明確に。</summary>
+    static void CreateRoofSnowSurface(Transform roofPanel, float houseW, float houseD, bool visible = false)
     {
         var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
         quad.name = "RoofSnowSurface";
@@ -665,7 +744,7 @@ public static class CorniceSceneSetup
         quad.transform.localRotation = Quaternion.Euler(22f, 0f, 0f);
         quad.transform.localScale = new Vector3(houseW * 0.98f, houseD * 1.05f, 1f);
         SetRoofSnowSurfaceMaterial(quad.GetComponent<Renderer>());
-        quad.GetComponent<Renderer>().enabled = false;
+        quad.GetComponent<Renderer>().enabled = visible;
         Object.DestroyImmediate(quad.GetComponent<Collider>());
     }
 
@@ -716,13 +795,24 @@ public static class CorniceSceneSetup
         if (orbit != null) { orbit._yaw = 180f; orbit._pitch = 39f; orbit.distance = 12f; }
     }
 
-    static void SetDioramaCamera(Camera cam)
+    /// <summary>屋根がプレイフィールド・主役。地面ほぼ見えない低い俯瞰。試作カメラ基準。pre_camera_change_good_state用。</summary>
+    static void SetRoofCenterCamera(Camera cam)
     {
-        cam.transform.position = new Vector3(0f, 7.8f, -9.2f);
-        cam.transform.rotation = Quaternion.Euler(35f, 0f, 0f);
+        cam.transform.position = new Vector3(0f, 5.2f, -5.8f);
+        cam.transform.rotation = Quaternion.Euler(36f, 0f, 0f);
         cam.fieldOfView = 45f;
         var orbit = cam.GetComponent<CameraOrbit>();
-        if (orbit != null) { orbit._yaw = 180f; orbit._pitch = 35f; orbit.distance = 12.5f; orbit.yMin = 6f; orbit.yMax = 14f; }
+        if (orbit != null) { orbit._yaw = 180f; orbit._pitch = 36f; orbit.distance = 6.6f; orbit.yMin = 4f; orbit.yMax = 8f; }
+    }
+
+    /// <summary>爽快パズル視点。屋根・落雪・地面衝突が見える。Position(-6,4,-6) Rotation(25,45,0)。</summary>
+    static void SetDioramaCamera(Camera cam)
+    {
+        cam.transform.position = new Vector3(-6f, 4f, -6f);
+        cam.transform.rotation = Quaternion.Euler(25f, 45f, 0f);
+        cam.fieldOfView = 45f;
+        var orbit = cam.GetComponent<CameraOrbit>();
+        if (orbit != null) { orbit._yaw = 45f; orbit._pitch = 25f; orbit.distance = 10f; orbit.yMin = 3f; orbit.yMax = 8f; }
     }
 
     static void SetupDioramaVolume()
@@ -811,7 +901,7 @@ public static class CorniceSceneSetup
         }
     }
 
-    static void CreateKenneyHolidayHouseVisual(Transform houseRoot)
+    static void CreateKenneyHolidayHouseVisual(Transform houseRoot, bool skipRoof = false)
     {
         if (houseRoot == null) return;
 
@@ -849,13 +939,13 @@ public static class CorniceSceneSetup
             PlaceKenneyPart(corner, visual.transform, "Corner_BR", new Vector3(0.5f, 0f, 0.5f), new Vector3(0f, 180f, 0f));
             placed = true;
         }
-        if (roof != null)
+        if (!skipRoof && roof != null)
         {
             PlaceKenneyPart(roof, visual.transform, "Roof_A", new Vector3(0f, 0.72f, 0f), Vector3.zero);
             PlaceKenneyPart(roof, visual.transform, "Roof_B", new Vector3(0f, 0.72f, 0f), new Vector3(0f, 180f, 0f));
             placed = true;
         }
-        if (roofPoint != null) { PlaceKenneyPart(roofPoint, visual.transform, "Roof_Point", new Vector3(0f, 0.9f, 0f), Vector3.zero); placed = true; }
+        if (!skipRoof && roofPoint != null) { PlaceKenneyPart(roofPoint, visual.transform, "Roof_Point", new Vector3(0f, 0.9f, 0f), Vector3.zero); placed = true; }
 
         if (!placed && fallbackWhole != null)
             PlaceKenneyPart(fallbackWhole, visual.transform, "Cabin_Whole", Vector3.zero, Vector3.zero);
