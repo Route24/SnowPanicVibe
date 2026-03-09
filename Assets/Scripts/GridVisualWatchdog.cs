@@ -9,6 +9,8 @@ public class GridVisualWatchdog : MonoBehaviour
 {
     /// <summary>true=SnowPackPiece表示（屋根雪可視）。false=非表示。通常プレイはtrue（屋根雪が見えること必須）。</summary>
     public static bool showSnowGridDebug { get; set; } = true;
+    /// <summary>true=SnowSurfaceOverlay使用時。packedのみ非表示、slide/fallの粒演出は維持。</summary>
+    public static bool UseSnowSurfaceMode { get; set; }
 
     static int _unauthorizedCount;
     static int _watchdogChecks;
@@ -94,6 +96,7 @@ public class GridVisualWatchdog : MonoBehaviour
     {
         var list = new List<Renderer>();
         list.AddRange(spawner.GetAllPieceRenderers());
+        if (UseSnowSurfaceMode) return list;
 
         var slideLocal = GameObject.Find("LocalAvalancheSlideTemp");
         if (slideLocal != null)
