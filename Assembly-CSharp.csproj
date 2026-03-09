@@ -82,6 +82,7 @@
     <Compile Include="Assets/Scripts/SnowClump.cs" />
     <Compile Include="Assets/Scripts/RoofSnowPlaceholder.cs" />
     <Compile Include="Assets/Scripts/RoofSnowSystem.cs" />
+    <Compile Include="Assets/Scripts/SnowPanicTargetDiagnostic.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/RoofSnowMaskController.cs" />
     <Compile Include="Assets/Scripts/SnowScoreDisplayUI.cs" />

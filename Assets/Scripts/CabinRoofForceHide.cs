@@ -14,6 +14,9 @@ public class CabinRoofForceHide : MonoBehaviour
         HideAllHelperMeshesAndUnify();
         var runner = new GameObject("RoofUnifyRunner");
         runner.AddComponent<RoofUnifyDelayedLogger>();
+        var keeper = new GameObject("SnowUnifyKeeper");
+        keeper.AddComponent<SnowUnifyKeeper>();
+        Object.DontDestroyOnLoad(keeper);
     }
 
     static void HideAllHelperMeshesAndUnify()
@@ -131,7 +134,7 @@ public class CabinRoofForceHide : MonoBehaviour
     }
 }
 
-/// <summary>起動遅延後に屋根基準面統一ログを出力。GameObject名で確定。</summary>
+/// <summary>起動遅延後に屋根基準面統一ログを出力。白い雪表示とsnow_visual_targetを統一。</summary>
 class RoofUnifyDelayedLogger : MonoBehaviour
 {
     float _t;
@@ -140,8 +143,49 @@ class RoofUnifyDelayedLogger : MonoBehaviour
     {
         _t += Time.deltaTime;
         if (_t < 0.6f) return;
+        HideRoofSnowLayerForUnify();
         LogRoofTargetsByName();
+        LogSnowUnify();
         Object.Destroy(gameObject);
+    }
+
+    /// <summary>RoofSnowLayerを非表示にし、SnowPackPieceのみを雪表示にする。見えている雪とロジックを1つに統一。</summary>
+    static void HideRoofSnowLayerForUnify()
+    {
+        var roofCol = GameObject.Find("RoofSlideCollider");
+        if (roofCol == null) return;
+        var layer = roofCol.transform.Find("RoofSnowLayer");
+        if (layer == null) return;
+        var r = layer.GetComponent<Renderer>();
+        if (r != null && r.enabled)
+        {
+            r.enabled = false;
+            Debug.Log("[SNOW_UNIFY] RoofSnowLayer disabled. final_snow_source=SnowPackPiece (visible=logic=visual)");
+            SnowLoopLogCapture.AppendToAssiReport("=== SNOW_UNIFY ===");
+            SnowLoopLogCapture.AppendToAssiReport("RoofSnowLayer=disabled final_snow_source=SnowPackPiece");
+        }
+    }
+
+    static void LogSnowUnify()
+    {
+        string visibleName = "SnowPackPiecesRoot";
+        string visualName = "SnowPackVisual";
+        string logicName = "SnowPackPiecesRoot";
+        var roofCol = GameObject.Find("RoofSlideCollider");
+        if (roofCol != null)
+        {
+            var pieces = roofCol.transform.Find("SnowPackVisual/SnowPackPiecesRoot");
+            var visual = roofCol.transform.Find("SnowPackVisual");
+            if (pieces != null) { visibleName = GetFullPath(pieces); logicName = GetFullPath(pieces); }
+            if (visual != null) visualName = GetFullPath(visual);
+        }
+        bool visibleAndVisualSame = (visibleName.Contains("SnowPackVisual") || visibleName.Contains("SnowPackPiecesRoot")) && visualName.Contains("SnowPackVisual");
+        bool visualAndLogicSame = logicName.Contains("SnowPackPiecesRoot") && visualName.Contains("SnowPackVisual");
+        string finalSource = "visual";
+        string hiddenList = "[RoofSnowLayer]";
+        Debug.Log($"[SNOW_UNIFY] visible_snow_target_name={visibleName} snow_visual_target_name={visualName} snow_logic_target_name={logicName} visible_and_visual_same={visibleAndVisualSame.ToString().ToLower()} visual_and_logic_same={visualAndLogicSame.ToString().ToLower()} final_snow_source={finalSource} hidden_snow_targets={hiddenList}");
+        SnowLoopLogCapture.AppendToAssiReport($"visible_snow_target_name={visibleName} snow_visual_target_name={visualName} snow_logic_target_name={logicName}");
+        SnowLoopLogCapture.AppendToAssiReport($"visible_and_visual_same={visibleAndVisualSame.ToString().ToLower()} visual_and_logic_same={visualAndLogicSame.ToString().ToLower()} final_snow_source={finalSource} hidden_snow_targets={hiddenList}");
     }
 
     static void LogRoofTargetsByName()
@@ -254,5 +298,19 @@ class RoofUnifyDelayedLogger : MonoBehaviour
         while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
         parts.Reverse();
         return string.Join("/", parts);
+    }
+}
+
+/// <summary>RoofSnowLayerを常時非表示に維持。GridVisualWatchdogの復元より後に実行。</summary>
+class SnowUnifyKeeper : MonoBehaviour
+{
+    void LateUpdate()
+    {
+        var roofCol = GameObject.Find("RoofSlideCollider");
+        if (roofCol == null) return;
+        var layer = roofCol.transform.Find("RoofSnowLayer");
+        if (layer == null) return;
+        var r = layer.GetComponent<Renderer>();
+        if (r != null && r.enabled) r.enabled = false;
     }
 }

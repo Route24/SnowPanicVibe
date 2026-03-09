@@ -84,7 +84,7 @@ public class GridVisualWatchdog : MonoBehaviour
             if (roofR != null && !roofR.enabled)
             {
                 roofR.enabled = true;
-                if (Application.isPlaying) // Stop時のログ抑制
+                if (Application.isPlaying)
                     Debug.LogError($"[GridWatchdog] RoofSnowLayer was DISABLED unexpectedly! Restored. frame={Time.frameCount} t={Time.time:F2}\n{System.Environment.StackTrace}");
             }
         }
