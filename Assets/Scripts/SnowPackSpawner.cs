@@ -123,6 +123,8 @@ public class SnowPackSpawner : MonoBehaviour
     float _nextSyncCheckTime;
     float _nextSyncAllowedAt;
     float _nextMinFillTime = -10f;
+    float _nextRemainingBoundsLogTime = -10f;
+    float _nextClipToRoofTime = -10f;
     const bool UsingLocalPosition = true;
     const float RoofSurfaceOffset = 0.002f; // 屋根密着: 0.005→0.002 で浮き感を軽減
 
@@ -145,6 +147,7 @@ public class SnowPackSpawner : MonoBehaviour
     Vector3 _roofN, _roofR, _roofF, _roofDownhill;
     Vector3 _roofCenter;
     float _roofWidth, _roofLength;
+    float _roofProjectedW, _roofProjectedL;
     float _roofCellSize;
     int _rebuildCount;
     int _addCount;
@@ -598,8 +601,10 @@ public class SnowPackSpawner : MonoBehaviour
             projectedW = Mathf.Max(0.5f, maxR - minR);
             projectedL = Mathf.Max(0.5f, maxF - minF);
         }
-        _roofWidth = projectedW * SnowCoverScaleMultiplierX;
-        _roofLength = projectedL * SnowCoverScaleMultiplierZ;
+        _roofProjectedW = projectedW;
+        _roofProjectedL = projectedL;
+        _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
+        _roofLength = Mathf.Min(projectedL * SnowCoverScaleMultiplierZ, projectedL * 1.001f);
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
 
         float roofW = projectedW, roofL = projectedL;
@@ -607,7 +612,7 @@ public class SnowPackSpawner : MonoBehaviour
         bool matches = (Mathf.Abs(roofW - _roofWidth) <= tol && Mathf.Abs(roofL - _roofLength) <= tol) || (Mathf.Abs(roofW - _roofLength) <= tol && Mathf.Abs(roofL - _roofWidth) <= tol);
         float marginX = 0.5f * (roofW - _roofWidth);
         float marginZ = 0.5f * (roofL - _roofLength);
-        UnityEngine.Debug.Log($"[SNOW_COVER] roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2}) current_snow_scale_multiplier_x={SnowCoverScaleMultiplierX:F2} current_snow_scale_multiplier_z={SnowCoverScaleMultiplierZ:F2} margin_x={marginX:F3} margin_z={marginZ:F3} snow_cover_matches_roof={matches.ToString().ToLower()}");
+        UnityEngine.Debug.Log($"[SNOW_COVER] roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2}) clip_to_roof_bounds=true current_snow_scale_multiplier_x={SnowCoverScaleMultiplierX:F2} current_snow_scale_multiplier_z={SnowCoverScaleMultiplierZ:F2} margin_x={marginX:F3} margin_z={marginZ:F3} snow_cover_matches_roof={matches.ToString().ToLower()}");
 
         float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
@@ -2516,6 +2521,63 @@ public class SnowPackSpawner : MonoBehaviour
         UnityEngine.Debug.Log($"[SnowPack] {kind} reason={reason} frame={frame} t={t:F2} scene={scene} rootChildren={rootChildren} depth={targetDepthMeters:F2} size={pieceSize:F2} local={localText} roofRotY={roofY:F1} packRotY={packY:F1}");
     }
 
+    void LogRemainingSnowVsRoofBounds()
+    {
+        if (roofCollider == null) roofCollider = ResolveRoofCollider();
+        if (roofCollider == null || _piecesRoot == null) return;
+        var roofBounds = roofCollider.bounds;
+        Vector3 roofSize = roofBounds.size;
+        Vector3 roofMin = roofBounds.min;
+        Vector3 roofMax = roofBounds.max;
+        float tol = 0.02f;
+        Vector3 initialSnowSize = new Vector3(_roofWidth, 0.1f, _roofLength);
+        Vector3 snowMin = Vector3.one * float.MaxValue;
+        Vector3 snowMax = Vector3.one * float.MinValue;
+        int packedCount = 0;
+        for (int i = 0; i < _piecesRoot.childCount; i++)
+        {
+            var t = _piecesRoot.GetChild(i);
+            if (t == null || !t.gameObject.activeSelf) continue;
+            Vector3 p = t.position;
+            snowMin = Vector3.Min(snowMin, p);
+            snowMax = Vector3.Max(snowMax, p);
+            packedCount++;
+        }
+        Vector3 remainingSize = packedCount > 0 ? (snowMax - snowMin) : Vector3.zero;
+        bool initialExceeds = _roofWidth > roofSize.x + tol || _roofLength > roofSize.z + tol ||
+            _roofWidth > roofSize.z + tol || _roofLength > roofSize.x + tol;
+        bool remainingExceeds = packedCount > 0 && (
+            snowMin.x < roofMin.x - tol || snowMax.x > roofMax.x + tol ||
+            snowMin.y < roofMin.y - tol || snowMax.y > roofMax.y + tol ||
+            snowMin.z < roofMin.z - tol || snowMax.z > roofMax.z + tol);
+        string mismatchStage = initialExceeds && remainingExceeds ? "both" : (remainingExceeds ? "remaining" : (initialExceeds ? "initial" : "none"));
+        UnityEngine.Debug.Log($"[SNOW_BOUNDS] roof_bounds_size=({roofSize.x:F3},{roofSize.y:F3},{roofSize.z:F3}) initial_snow_bounds_size=({initialSnowSize.x:F3},{initialSnowSize.z:F3}) remaining_snow_bounds_size=({remainingSize.x:F3},{remainingSize.y:F3},{remainingSize.z:F3}) remaining_snow_exceeds_roof={remainingExceeds.ToString().ToLower()} clip_to_roof_bounds=true mismatch_stage={mismatchStage}");
+    }
+
+    void ClipRemainingSnowToRoofBounds()
+    {
+        if (roofCollider == null || _piecesRoot == null || _roofWidth <= 0f || _roofLength <= 0f) return;
+        float halfW = _roofWidth * 0.5f;
+        float halfL = _roofLength * 0.5f;
+        float margin = 0.02f;
+        int clipped = 0;
+        for (int i = 0; i < _piecesRoot.childCount; i++)
+        {
+            var t = _piecesRoot.GetChild(i);
+            if (t == null || !t.gameObject.activeSelf) continue;
+            Vector3 d = t.position - _roofCenter;
+            float u = Vector3.Dot(d, _roofR);
+            float v = Vector3.Dot(d, _roofF);
+            if (Mathf.Abs(u) > halfW + margin || Mathf.Abs(v) > halfL + margin)
+            {
+                t.gameObject.SetActive(false);
+                clipped++;
+            }
+        }
+        if (clipped > 0)
+            UnityEngine.Debug.Log($"[SNOW_CLIP] clipped_to_roof_bounds count={clipped}");
+    }
+
     void Update()
     {
         if (!Application.isPlaying) return;
@@ -2719,6 +2781,18 @@ public class SnowPackSpawner : MonoBehaviour
                         UnityEngine.Debug.Log($"[SnowPackSync] roofDepth={roofDepth:F3} visualDepth={_visualDepth:F3} packDepth={oldPack:F3} delta={delta:F3} action={action}");
                 }
             }
+        }
+
+        // E) Clip remaining snow to roof bounds (every 0.2s) + bounds log (every 3s)
+        if (Time.time >= _nextClipToRoofTime)
+        {
+            _nextClipToRoofTime = Time.time + 0.2f;
+            ClipRemainingSnowToRoofBounds();
+        }
+        if (Time.time >= _nextRemainingBoundsLogTime)
+        {
+            _nextRemainingBoundsLogTime = Time.time + 3f;
+            LogRemainingSnowVsRoofBounds();
         }
 
         if (_visualRoot == null || _piecesRoot == null) return;

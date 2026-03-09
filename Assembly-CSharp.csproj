@@ -52,6 +52,7 @@
     <Compile Include="Assets/Scripts/SnowPackSpawner.cs" />
     <Compile Include="Assets/Scripts/SnowfallEventBurst.cs" />
     <Compile Include="Assets/Scripts/MvpSnowChunkMotion.cs" />
+    <Compile Include="Assets/Scripts/SnowPanicMinimalSample.cs" />
     <Compile Include="Assets/Scripts/RoofSnowCleanup.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineSelfTestOverlay.cs" />
     <Compile Include="Assets/Scripts/SnowPackFallingPiece.cs" />

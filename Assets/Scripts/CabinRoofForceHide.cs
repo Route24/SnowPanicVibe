@@ -1,6 +1,7 @@
 using UnityEngine;
+using System.Collections.Generic;
 
-/// <summary>cabin-roofを初手から絶対に表示しない。茶色屋根一瞬表示の防止。</summary>
+/// <summary>cabin-roofを初手から絶対に表示しない。屋根基準面を1つに統一し、補助メッシュを非表示。</summary>
 [DefaultExecutionOrder(-32767)]
 public class CabinRoofForceHide : MonoBehaviour
 {
@@ -10,6 +11,37 @@ public class CabinRoofForceHide : MonoBehaviour
         ForceHideAndLog();
         DestroyRoofProxyAndLog();
         ForceHideDebugPanels();
+        HideAllHelperMeshesAndUnify();
+        var runner = new GameObject("RoofUnifyRunner");
+        runner.AddComponent<RoofUnifyDelayedLogger>();
+    }
+
+    static void HideAllHelperMeshesAndUnify()
+    {
+        var hidden = new List<string>();
+        string[] hideNames = { "RoofDebugFlat", "RoofSlideColliderDebug", "RoofSnowSurface", "cabin-roof", "RoofProxy" };
+        foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t == null) continue;
+            string name = t.gameObject.name;
+            foreach (var n in hideNames)
+            {
+                if (name != n) continue;
+                if (name == "RoofProxy") { Object.Destroy(t.gameObject); hidden.Add(GetTransformPath(t)); break; }
+                var r = t.GetComponent<Renderer>();
+                if (r != null && r.enabled) { r.enabled = false; hidden.Add(GetTransformPath(t)); }
+                else if (name == "RoofSlideColliderDebug" && t.gameObject.activeSelf)
+                { t.gameObject.SetActive(false); hidden.Add(GetTransformPath(t)); }
+                break;
+            }
+        }
+        var roofCol = GameObject.Find("RoofSlideCollider");
+        if (roofCol != null)
+        {
+            var debug = roofCol.transform.Find("RoofSlideColliderDebug");
+            if (debug != null && debug.gameObject.activeSelf) { debug.gameObject.SetActive(false); if (!hidden.Contains(GetTransformPath(debug))) hidden.Add(GetTransformPath(debug)); }
+        }
+        SnowLoopLogCapture.AppendToAssiReport($"hidden_helper_meshes=[{string.Join(",", hidden)}]");
     }
 
     static void ForceHideDebugPanels()
@@ -92,6 +124,132 @@ public class CabinRoofForceHide : MonoBehaviour
     {
         if (t == null) return "?";
         var parts = new System.Collections.Generic.List<string>();
+        var cur = t;
+        while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
+    }
+}
+
+/// <summary>起動遅延後に屋根基準面統一ログを出力。GameObject名で確定。</summary>
+class RoofUnifyDelayedLogger : MonoBehaviour
+{
+    float _t;
+
+    void Update()
+    {
+        _t += Time.deltaTime;
+        if (_t < 0.6f) return;
+        LogRoofTargetsByName();
+        Object.Destroy(gameObject);
+    }
+
+    static void LogRoofTargetsByName()
+    {
+        string roofLogicName = "none";
+        string roofVisualName = "none";
+        string snowSpawnName = "none";
+        string snowVisualName = "none";
+        bool sameLogicAndVisual = false;
+        bool sameLogicAndSpawn = false;
+        bool sameSpawnAndVisual = false;
+        string logicTransform = "none";
+        string visualTransform = "none";
+        string spawnTransform = "none";
+        string snowVisualTransform = "none";
+        string hiddenStr = "none";
+
+        var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
+        var spawner = Object.FindFirstObjectByType<SnowPackSpawner>();
+
+        Collider roofLogicCol = roofSys != null ? roofSys.roofSlideCollider : null;
+        if (roofLogicCol == null) roofLogicCol = GameObject.Find("RoofSlideCollider")?.GetComponent<Collider>();
+        if (roofLogicCol != null)
+        {
+            roofLogicName = roofLogicCol.gameObject.name;
+            logicTransform = FormatTransform(roofLogicCol.transform);
+
+            roofVisualName = roofLogicName;
+            visualTransform = logicTransform;
+            sameLogicAndVisual = true;
+
+            var layer = roofLogicCol.transform.Find("RoofSnowLayer");
+            if (layer != null)
+            {
+                snowVisualName = GetFullPath(layer);
+                snowVisualTransform = FormatTransform(layer);
+            }
+            else snowVisualName = "RoofSnowLayer(not_found)";
+        }
+
+        if (spawner != null && spawner.roofCollider != null)
+        {
+            snowSpawnName = spawner.roofCollider.gameObject.name;
+            spawnTransform = FormatTransform(spawner.roofCollider.transform);
+            sameLogicAndSpawn = roofLogicCol != null && spawner.roofCollider == roofLogicCol;
+
+            var roofT = spawner.roofCollider.transform;
+            var snowLayer = roofT.Find("RoofSnowLayer");
+            var snowVisual = roofT.Find("SnowPackVisual");
+            if (snowLayer != null && snowVisual != null)
+            {
+                snowVisualName = GetFullPath(snowLayer) + "+" + GetFullPath(snowVisual);
+                snowVisualTransform = FormatTransform(snowLayer) + " | " + FormatTransform(snowVisual);
+            }
+            else if (snowLayer != null)
+            {
+                snowVisualName = GetFullPath(snowLayer);
+                snowVisualTransform = FormatTransform(snowLayer);
+            }
+            else if (snowVisual != null)
+            {
+                snowVisualName = GetFullPath(snowVisual);
+                snowVisualTransform = FormatTransform(snowVisual);
+            }
+            else if (snowVisualName == "RoofSnowLayer(not_found)")
+                snowVisualName = "none";
+        }
+
+        sameSpawnAndVisual = roofLogicCol != null && spawner != null && spawner.roofCollider == roofLogicCol && (snowVisualName.Contains("RoofSnowLayer") || snowVisualName.Contains("SnowPackVisual"));
+
+        var hidden = new List<string>();
+        foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t == null) continue;
+            string n = t.gameObject.name;
+            if (n != "cabin-roof" && n != "RoofDebugFlat" && n != "RoofSlideColliderDebug" && n != "RoofSnowSurface") continue;
+            bool isHidden = !t.gameObject.activeSelf;
+            if (!isHidden) { var r = t.GetComponent<Renderer>(); if (r != null && !r.enabled) isHidden = true; }
+            if (isHidden) hidden.Add(GetPath(t));
+        }
+        if (hidden.Count > 0) hiddenStr = "[" + string.Join(",", hidden) + "]";
+
+        Debug.Log($"[ROOF_TARGETS] roof_logic_target_name={roofLogicName} roof_visual_target_name={roofVisualName} snow_spawn_target_name={snowSpawnName} snow_visual_target_name={snowVisualName} same_logic_and_visual={sameLogicAndVisual.ToString().ToLower()} same_logic_and_spawn={sameLogicAndSpawn.ToString().ToLower()} same_spawn_and_visual={sameSpawnAndVisual.ToString().ToLower()} roof_logic_transform={logicTransform} roof_visual_transform={visualTransform} snow_spawn_transform={spawnTransform} snow_visual_transform={snowVisualTransform} hidden_helper_meshes={hiddenStr}");
+        SnowLoopLogCapture.AppendToAssiReport($"[ROOF_TARGETS] logic={roofLogicName} visual={roofVisualName} spawn={snowSpawnName} snow_visual={snowVisualName} same_lv={sameLogicAndVisual} same_ls={sameLogicAndSpawn} same_sv={sameSpawnAndVisual}");
+    }
+
+    static string FormatTransform(Transform t)
+    {
+        if (t == null) return "none";
+        var p = t.position;
+        var e = t.rotation.eulerAngles;
+        return $"pos=({p.x:F2},{p.y:F2},{p.z:F2}) euler=({e.x:F1},{e.y:F1},{e.z:F1})";
+    }
+
+    static string GetFullPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new List<string>();
+        var cur = t;
+        while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
+    }
+
+    static string GetPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new List<string>();
         var cur = t;
         while (cur != null) { parts.Add(cur.name); cur = cur.parent; }
         parts.Reverse();
