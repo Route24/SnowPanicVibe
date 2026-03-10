@@ -122,8 +122,35 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
             sb.AppendLine(BuildVideoPipelineLogsSection());
             sb.AppendLine("");
+            sb.AppendLine("=== TEST RESULT ===");
+            sb.AppendLine(BuildTestResultSection(lines));
+            sb.AppendLine("");
             sb.AppendLine("=== DEBUG SCREENSHOT STATUS ===");
             sb.AppendLine(BuildDebugScreenshotStatusSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== SCENE STATE ===");
+            sb.AppendLine(BuildSceneStateSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== EVENT TRACE ===");
+            sb.AppendLine(BuildEventTraceSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== STATE SNAPSHOT ===");
+            sb.AppendLine(BuildStateSnapshotSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== BUG ORIGIN ANALYSIS ===");
+            sb.AppendLine(BuildBugOriginAnalysisSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== OBJECT TRACKING ===");
+            sb.AppendLine(BuildObjectTrackingSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== MODIFY TARGET ===");
+            sb.AppendLine(BuildModifyTargetSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== FILE CHANGE CHECK ===");
+            sb.AppendLine(BuildFileChangeCheckSection(lines));
+            sb.AppendLine("");
+            sb.AppendLine("=== CODE DIFF ===");
+            sb.AppendLine(BuildCodeDiffSection(lines));
             sb.AppendLine("");
             sb.AppendLine("=== CORNICE SCENE CHECK ===");
             sb.AppendLine(BuildCorniceSceneCheckSection(lines));
@@ -193,8 +220,44 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine(BuildTapLocalAvalancheReport(lines));
         sb.AppendLine();
 
+        sb.AppendLine("=== TEST RESULT ===");
+        sb.AppendLine(BuildTestResultSection(lines));
+        sb.AppendLine();
+
         sb.AppendLine("=== DEBUG SCREENSHOT STATUS ===");
         sb.AppendLine(BuildDebugScreenshotStatusSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== SCENE STATE ===");
+        sb.AppendLine(BuildSceneStateSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== EVENT TRACE ===");
+        sb.AppendLine(BuildEventTraceSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== STATE SNAPSHOT ===");
+        sb.AppendLine(BuildStateSnapshotSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== BUG ORIGIN ANALYSIS ===");
+        sb.AppendLine(BuildBugOriginAnalysisSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== OBJECT TRACKING ===");
+        sb.AppendLine(BuildObjectTrackingSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== MODIFY TARGET ===");
+        sb.AppendLine(BuildModifyTargetSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== FILE CHANGE CHECK ===");
+        sb.AppendLine(BuildFileChangeCheckSection(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== CODE DIFF ===");
+        sb.AppendLine(BuildCodeDiffSection(lines));
         sb.AppendLine();
 
         sb.AppendLine("=== ASSI観測ログ（必須・差分関係なく出力） ===");
@@ -1083,6 +1146,212 @@ public static class SnowLoopNoaReportAutoCopy
         return sb.ToString();
     }
 
+    static string BuildTestResultSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0)
+        {
+            sb.AppendLine("TEST_SCENE_LOADED: (no_log)");
+            sb.AppendLine("TEST_CAMERA_LOCK: (no_log)");
+            sb.AppendLine("TEST_SCORE_UPDATE: (no_log)");
+            sb.AppendLine("TEST_SNOW_HIT: (no_log)");
+            return sb.ToString();
+        }
+        var assiLines = lines.Where(l => l.Contains("[ASSI]") && (
+            l.Contains("TEST RESULT [") || l.Contains("expected:") || l.Contains("result:") || l.Contains("value_"))).ToList();
+        foreach (var line in assiLines)
+        {
+            int idx = line.IndexOf("[ASSI]");
+            if (idx < 0) continue;
+            string content = line.Substring(idx + "[ASSI] ".Length).Trim();
+            if (!string.IsNullOrEmpty(content)) sb.AppendLine(content);
+        }
+        if (assiLines.Count == 0)
+        {
+            sb.AppendLine("TEST_SCENE_LOADED: (no data)");
+            sb.AppendLine("TEST_CAMERA_LOCK: (no data)");
+            sb.AppendLine("TEST_SCORE_UPDATE: (no data)");
+            sb.AppendLine("TEST_SNOW_HIT: (no data)");
+        }
+        return sb.ToString();
+    }
+
+    static string BuildSceneStateSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0)
+        {
+            sb.AppendLine("scene_name=");
+            sb.AppendLine("root_object_count=0");
+            sb.AppendLine("active_snow_pieces=-1");
+            sb.AppendLine("score_value=0");
+            return sb.ToString();
+        }
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var assiLines = lines.Where(l => l.Contains("[ASSI]") && (l.Contains("SCENE STATE") || l.Contains("scene_name=") || l.Contains("root_object_count=") || l.Contains("active_snow_pieces=") || l.Contains("score_value="))).ToList();
+        foreach (var line in assiLines)
+        {
+            int idx = line.IndexOf("[ASSI]");
+            if (idx < 0) continue;
+            string content = line.Substring(idx + "[ASSI] ".Length).Trim();
+            if (string.IsNullOrEmpty(content) || content == "=== SCENE STATE ===") continue;
+            int eq = content.IndexOf('=');
+            if (eq > 0) dict[content.Substring(0, eq).Trim()] = content.Substring(eq + 1).Trim();
+        }
+        sb.AppendLine($"scene_name={dict.TryGetValue("scene_name", out var sn) ? sn : ""}");
+        sb.AppendLine($"root_object_count={dict.TryGetValue("root_object_count", out var rc) ? rc : "0"}");
+        sb.AppendLine($"active_snow_pieces={dict.TryGetValue("active_snow_pieces", out var asp) ? asp : "-1"}");
+        sb.AppendLine($"score_value={dict.TryGetValue("score_value", out var sv) ? sv : "0"}");
+        return sb.ToString();
+    }
+
+    static string BuildEventTraceSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0) { sb.AppendLine("(no_log)"); return sb.ToString(); }
+        var evtLines = lines.Where(l => l.Contains("[ASSI]") && (l.Contains("time=") || l.Contains("event=") || l.Contains("object=") || l.Contains("script=") || l.Contains("position="))).ToList();
+        bool inTrace = false;
+        foreach (var l in evtLines)
+        {
+            int idx = l.IndexOf("[ASSI]");
+            if (idx < 0) continue;
+            string c = l.Substring(idx + "[ASSI] ".Length).Trim();
+            if (c.StartsWith("time=") || c.StartsWith("event=") || c.StartsWith("object=") || c.StartsWith("script=") || c.StartsWith("position="))
+            { sb.AppendLine(c); inTrace = true; }
+        }
+        if (!inTrace) sb.AppendLine("(no_event_trace)");
+        return sb.ToString();
+    }
+
+    static string BuildStateSnapshotSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0) { sb.AppendLine("scene=\nactive_snow_pieces=-1\nsnow_root_children=-1\nscore=0\ncameraPos=(0,0,0)"); return sb.ToString(); }
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var snapLines = lines.Where(l => l.Contains("[ASSI]") && (l.Contains("scene=") || l.Contains("active_snow_pieces=") || l.Contains("snow_root_children=") || l.Contains("score=") || l.Contains("cameraPos=") || l.Contains("snow_pieces_destroyed="))).ToList();
+        foreach (var l in snapLines)
+        {
+            int idx = l.IndexOf("[ASSI]");
+            if (idx < 0) continue;
+            string c = l.Substring(idx + "[ASSI] ".Length).Trim();
+            int eq = c.IndexOf('=');
+            if (eq > 0) dict[c.Substring(0, eq).Trim()] = c.Substring(eq + 1).Trim();
+        }
+        sb.AppendLine($"scene={dict.TryGetValue("scene", out var sc) ? sc : ""}");
+        sb.AppendLine($"active_snow_pieces={dict.TryGetValue("active_snow_pieces", out var asp) ? asp : "-1"}");
+        sb.AppendLine($"snow_root_children={dict.TryGetValue("snow_root_children", out var src) ? src : "-1"}");
+        sb.AppendLine($"score={dict.TryGetValue("score", out var sc2) ? sc2 : "0"}");
+        sb.AppendLine($"cameraPos={dict.TryGetValue("cameraPos", out var cp) ? cp : "(0,0,0)"}");
+        return sb.ToString();
+    }
+
+    static string BuildBugOriginAnalysisSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0) { sb.AppendLine("detected_error=(none)"); sb.AppendLine("last_events="); sb.AppendLine("possible_origin_script="); return sb.ToString(); }
+        bool inBlock = false;
+        foreach (var l in lines)
+        {
+            if (!l.Contains("[ASSI]")) continue;
+            int idx = l.IndexOf("[ASSI]");
+            string c = l.Substring(idx + "[ASSI] ".Length).Trim();
+            if (c.Contains("=== BUG ORIGIN ANALYSIS ===")) { inBlock = true; continue; }
+            if (inBlock)
+            {
+                if (c.StartsWith("===") && !c.Contains("BUG ORIGIN")) break;
+                if (c.StartsWith("detected_error=") || c.StartsWith("detail=") || c == "last_events=" || c == "possible_origin_script=" || c == "SnowDetach" || c == "ObjectDestroy" || c == "SnowAvalanche" || c == "ScoreUpdate" || c == "SceneLoad" || c == "ObjectSpawn" || (c.EndsWith(".cs") && c.Length < 80))
+                    sb.AppendLine(c);
+            }
+        }
+        if (sb.Length == 0) { sb.AppendLine("detected_error=(none)"); sb.AppendLine("last_events="); sb.AppendLine("possible_origin_script="); }
+        return sb.ToString();
+    }
+
+    static string BuildObjectTrackingSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0) { sb.AppendLine("snow_root_children=-1"); sb.AppendLine("snow_pieces_active=-1"); sb.AppendLine("snow_pieces_destroyed=0"); return sb.ToString(); }
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in lines)
+        {
+            if (!l.Contains("[ASSI]")) continue;
+            int idx = l.IndexOf("[ASSI]");
+            string c = l.Substring(idx + "[ASSI] ".Length).Trim();
+            if (c.StartsWith("snow_root_children=") || c.StartsWith("snow_pieces_active=") || c.StartsWith("snow_pieces_destroyed="))
+            { int eq = c.IndexOf('='); if (eq > 0) dict[c.Substring(0, eq).Trim()] = c.Substring(eq + 1).Trim(); }
+        }
+        sb.AppendLine($"snow_root_children={dict.TryGetValue("snow_root_children", out var src) ? src : "-1"}");
+        sb.AppendLine($"snow_pieces_active={dict.TryGetValue("snow_pieces_active", out var spa) ? spa : "-1"}");
+        sb.AppendLine($"snow_pieces_destroyed={dict.TryGetValue("snow_pieces_destroyed", out var spd) ? spd : "0"}");
+        return sb.ToString();
+    }
+
+    static string BuildFileChangeCheckSection(string[] lines)
+    {
+#if UNITY_EDITOR
+        string allowed = "";
+        string protectedSys = "";
+        if (lines != null && lines.Length > 0)
+        {
+            foreach (var l in lines.Where(x => x.Contains("[ASSI]") && (x.Contains("allowed_files=") || x.Contains("protected_systems="))))
+            {
+                int idx = l.IndexOf("[ASSI]");
+                if (idx < 0) continue;
+                string c = l.Substring(idx + "[ASSI] ".Length).Trim();
+                int eq = c.IndexOf('=');
+                if (eq > 0)
+                {
+                    string k = c.Substring(0, eq).Trim();
+                    string v = c.Substring(eq + 1).Trim();
+                    if (k == "allowed_files") allowed = v;
+                    if (k == "protected_systems") protectedSys = v;
+                }
+            }
+        }
+        if (string.IsNullOrEmpty(allowed)) allowed = ModifyTargetDeclaration.AllowedFiles;
+        if (string.IsNullOrEmpty(protectedSys)) protectedSys = ModifyTargetDeclaration.ProtectedSystems;
+        return FileChangeChecker.BuildFileChangeCheckSection(allowed, protectedSys);
+#else
+        return "changed_files=\nunexpected_changes=\nresult=PASS";
+#endif
+    }
+
+    static string BuildCodeDiffSection(string[] lines)
+    {
+#if UNITY_EDITOR
+        return FileChangeChecker.BuildCodeDiffSection(30);
+#else
+        return "";
+#endif
+    }
+
+    static string BuildModifyTargetSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        if (lines == null || lines.Length == 0)
+        {
+            sb.AppendLine("target_system=AIPipelineBase");
+            sb.AppendLine("allowed_files=DebugDiagnostics.cs,AIPipelineTestCollector.cs,ModifyTargetDeclaration.cs");
+            sb.AppendLine("protected_systems=SnowPhysics,SnowSpawner,SnowAvalanche,CameraController,ParticleSystem");
+            return sb.ToString();
+        }
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var assiLines = lines.Where(l => l.Contains("[ASSI]") && (l.Contains("MODIFY TARGET") || l.Contains("target_system=") || l.Contains("allowed_files=") || l.Contains("protected_systems="))).ToList();
+        foreach (var line in assiLines)
+        {
+            int idx = line.IndexOf("[ASSI]");
+            if (idx < 0) continue;
+            string content = line.Substring(idx + "[ASSI] ".Length).Trim();
+            if (string.IsNullOrEmpty(content) || content == "=== MODIFY TARGET ===") continue;
+            int eq = content.IndexOf('=');
+            if (eq > 0) dict[content.Substring(0, eq).Trim()] = content.Substring(eq + 1).Trim();
+        }
+        sb.AppendLine($"target_system={dict.TryGetValue("target_system", out var ts) ? ts : "AIPipelineBase"}");
+        sb.AppendLine($"allowed_files={dict.TryGetValue("allowed_files", out var af) ? af : ""}");
+        sb.AppendLine($"protected_systems={dict.TryGetValue("protected_systems", out var ps) ? ps : "SnowPhysics,SnowSpawner,SnowAvalanche,CameraController,ParticleSystem"}");
+        return sb.ToString();
+    }
+
     static string BuildDebugScreenshotStatusSection(string[] lines)
     {
         var sb = new StringBuilder();
@@ -1141,7 +1410,7 @@ public static class SnowLoopNoaReportAutoCopy
     static string BuildAssiAngleReport(string[] lines)
     {
         var sb = new StringBuilder();
-        var assiLines = lines.Where(l => l.Contains("[ASSI]") && !l.Contains("DEBUG SCREENSHOT [")).ToList();
+        var assiLines = lines.Where(l => l.Contains("[ASSI]") && !l.Contains("DEBUG SCREENSHOT [") && !l.Contains("TEST RESULT [") && !l.Contains("=== SCENE STATE ===") && !l.Contains("=== MODIFY TARGET ===") && !l.Contains("=== EVENT TRACE ===") && !l.Contains("=== STATE SNAPSHOT ===") && !l.Contains("=== BUG ORIGIN ANALYSIS ===") && !l.Contains("=== OBJECT TRACKING ===") && !l.Contains("scene_name=") && !l.Contains("root_object_count=") && !l.Contains("active_snow_pieces=") && !l.Contains("score_value=") && !l.Contains("target_system=") && !l.Contains("allowed_files=") && !l.Contains("protected_systems=") && !l.Contains("snow_root_children=") && !l.Contains("snow_pieces_active=") && !l.Contains("snow_pieces_destroyed=")).ToList();
         if (assiLines.Count == 0) return sb.AppendLine("※ ANGLE MINI / ANGLE FIX / DEBUG CAMERA なし").ToString();
 
         foreach (var line in assiLines)

@@ -38,6 +38,13 @@ public class AvalancheFeedback : MonoBehaviour
         _instance.StartCoroutine(_instance.SmallShakeRoutine(0.15f, 0.04f));
     }
 
+    /// <summary>雪崩物理: 局所崩壊時の微小シェイク（小クラスター用）</summary>
+    public static void TriggerMicroShakeIfExists()
+    {
+        if (_instance == null) return;
+        _instance.StartCoroutine(_instance.SmallShakeRoutine(0.06f, 0.015f));
+    }
+
     IEnumerator SmallShakeRoutine(float duration, float intensity)
     {
         var cam = Camera.main;

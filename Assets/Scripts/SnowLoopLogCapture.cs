@@ -37,7 +37,8 @@ public class SnowLoopLogCapture : MonoBehaviour
         var systems = new GameObject("Systems");
         DontDestroyOnLoad(systems);
         systems.AddComponent<UIBootstrap>();
-        systems.AddComponent<DebugScreenshotCapture>();
+        try { systems.AddComponent<DebugScreenshotCapture>(); } catch (System.Exception ex) { UnityEngine.Debug.LogWarning($"[SnowLoopLogCapture] DebugScreenshotCapture add failed: {ex.Message}"); }
+        try { systems.AddComponent<AIPipelineTestCollector>(); } catch (System.Exception ex) { UnityEngine.Debug.LogWarning($"[SnowLoopLogCapture] AIPipelineTestCollector add failed: {ex.Message}"); }
         go.AddComponent<AssiDebugUI>();
         go.AddComponent<DebugSnowVisibility>();
         go.AddComponent<GridVisualWatchdog>();
@@ -58,6 +59,8 @@ public class SnowLoopLogCapture : MonoBehaviour
             bool en = enabled;
             bool active = gameObject.activeInHierarchy;
             Debug.Log($"[ASSI_BOOT] scene={scene} enabled={en} active={active}");
+            BugOriginTracker.RecordSceneLoad(scene);
+            ModifyTargetDeclaration.EmitToReport();
         }
         SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
         UIBootstrap.EnsureUIRootAndScoreText();
@@ -241,6 +244,8 @@ public class SnowLoopLogCapture : MonoBehaviour
     static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
     {
         if (string.IsNullOrEmpty(_latestLogPath)) return;
+        if (type == LogType.Error || type == LogType.Exception)
+            BugOriginTracker.OnException(condition ?? "", stackTrace ?? "");
         try
         {
             string ts = DateTime.Now.ToString("HH:mm:ss");

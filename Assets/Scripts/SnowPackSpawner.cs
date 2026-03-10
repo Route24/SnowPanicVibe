@@ -1779,6 +1779,7 @@ public class SnowPackSpawner : MonoBehaviour
         var go = new GameObject("SnowPackPiece");
         int before = _piecesRoot.childCount;
         go.transform.SetParent(_piecesRoot, true);
+        BugOriginTracker.RecordEvent(BugOriginTracker.EventObjectSpawn, go.name, "SnowPackSpawner.cs", worldPos);
         LogRootMutation(before, before + 1, "SpawnPieceRoofBasis");
         PushLastEvent("SpawnPieceRoofBasis", $"pieceId={go.GetInstanceID()}", null);
         float h = Mathf.Max(0.03f, size * pieceHeightScale * UnityEngine.Random.Range(0.8f, 1.2f));
@@ -2202,6 +2203,69 @@ public class SnowPackSpawner : MonoBehaviour
     public Vector3 RoofDownhill => _roofDownhill;
     public Vector3 RoofUp => _roofN;
 
+    /// <summary>AvalanchePhysicsSystem用。Packedピースとグリッド座標を収集。</summary>
+    public void CollectPackedPiecesWithGrid(System.Collections.Generic.List<(Transform t, int ix, int iz)> outList)
+    {
+        outList?.Clear();
+        if (outList == null) return;
+        foreach (var kv in _pieceToGridData)
+        {
+            if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy) continue;
+            outList.Add((kv.Key, kv.Value.ix, kv.Value.iz));
+        }
+    }
+
+    /// <summary>AvalanchePhysicsSystem用。指定ピースを直接Detachして斜面滑走開始。</summary>
+    public void DetachPiecesDirect(System.Collections.Generic.List<Transform> pieces, Vector3 slideDir, float slideSpeed)
+    {
+        if (pieces == null || pieces.Count == 0) return;
+        EnsureRoot();
+        if (_cachedLayerStep <= 0f) CacheGridParams();
+
+        var toRemove = new System.Collections.Generic.List<Transform>();
+        foreach (var t in pieces)
+        {
+            if (t == null || !t.gameObject.activeInHierarchy) continue;
+            if (!_pieceToGridData.ContainsKey(t)) continue;
+            toRemove.Add(t);
+        }
+        if (toRemove.Count == 0) return;
+
+        int packedBefore = GetPackedCubeCountRealtime();
+        foreach (var t in toRemove)
+        {
+            var k = FindGridKeyForPiece(t);
+            if (k.HasValue && _gridPieces.TryGetValue(k.Value, out var list))
+            {
+                list.Remove(t);
+                if (list.Count == 0) _gridPieces.Remove(k.Value);
+            }
+            _pieceToGridData.Remove(t);
+            _pieceToLayerType.Remove(t);
+            for (int li = _layerPieces.Count - 1; li >= 0; li--)
+            {
+                if (_layerPieces[li].Remove(t)) break;
+            }
+        }
+        for (int i = _layerPieces.Count - 1; i >= 0; i--)
+        {
+            if (_layerPieces[i].Count == 0) _layerPieces.RemoveAt(i);
+        }
+
+        int removedCount = toRemove.Count;
+        LastTapWorld = toRemove[0] != null ? toRemove[0].position : _roofCenter;
+        LastTapTime = Time.time;
+        LastPackedTotalBefore = packedBefore;
+        LastPackedTotalAfter = packedBefore - removedCount;
+        LastRemovedCount = removedCount;
+        _lastAvalanchePackedCountAfter = packedBefore - removedCount;
+        if (_layerPieces.Count > 0 && _cachedLayerStep > 0f)
+            packDepthMeters = Mathf.Max(minVisibleDepth, _layerPieces.Count * _cachedLayerStep);
+
+        _inAvalancheSlide = true;
+        StartCoroutine(LocalAvalancheSlideRoutine(toRemove, slideDir.normalized, slideSpeed));
+    }
+
     public void LogNearestPieceToTap(Vector3 tapWorld)
     {
         if (_piecesRoot == null) return;
@@ -2528,6 +2592,8 @@ public class SnowPackSpawner : MonoBehaviour
     void OnPieceDeactivated(Transform t, string reason, string source, bool toPool, bool allowDuringSlide = false)
     {
         if (t == null || t.gameObject == null) return;
+        string eventType = toPool ? BugOriginTracker.EventSnowDetach : BugOriginTracker.EventObjectDestroy;
+        BugOriginTracker.RecordEvent(eventType, t.gameObject.name ?? "SnowPackPiece", "SnowPackSpawner.cs", t.position);
         if (SnowVerifyB2Debug.Enabled)
         {
             SnowVerifyB2Debug.RecordDiscard(reason, source);
@@ -2600,6 +2666,7 @@ public class SnowPackSpawner : MonoBehaviour
                 _firstActiveZeroTime = timeVal;
                 _firstActiveZeroFrame = frame;
             }
+            BugOriginTracker.OnSnowPiecesZero();
             TryLogException($"[ACTIVE=0] firstFrame={_firstActiveZeroFrame} firstTime={_firstActiveZeroTime:F2}");
             // 直前20は Update の ACTIVE=0 検出で DumpLast20Events("ACTIVE=0") により出力
         }

@@ -41,11 +41,19 @@ public static class DebugScreenshotEditor
 
     static void CaptureEditorWindows()
     {
-        string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-
-        CaptureWindow(KindScene, () => SceneView.lastActiveSceneView, ts);
-        CaptureWindow(KindConsole, () => GetWindowByType("UnityEditor.ConsoleWindow"), ts);
-        CaptureWindow(KindInspector, () => GetWindowByType("UnityEditor.InspectorWindow"), ts);
+        try
+        {
+            string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            CaptureWindow(KindScene, () => SceneView.lastActiveSceneView, ts);
+            CaptureWindow(KindConsole, () => GetWindowByType("UnityEditor.ConsoleWindow"), ts);
+            CaptureWindow(KindInspector, () => GetWindowByType("UnityEditor.InspectorWindow"), ts);
+        }
+        catch (Exception ex)
+        {
+            UnityEngine.Debug.LogWarning($"[DebugScreenshotEditor] CaptureEditorWindows failed: {ex.Message}\n{ex.StackTrace}");
+            AppendToLogFile("=== DEBUG SCREENSHOT [EDITOR] ===");
+            AppendToLogFile("error=" + ex.Message);
+        }
     }
 
     static EditorWindow GetWindowByType(string typeName)

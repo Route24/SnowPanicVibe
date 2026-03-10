@@ -71,10 +71,12 @@
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB2.cs" />
     <Compile Include="Assets/Scripts/RoofAlignToSnow.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestor.cs" />
+    <Compile Include="Assets/Scripts/BugOriginTracker.cs" />
     <Compile Include="Assets/Scripts/SnowModule.cs" />
     <Compile Include="Assets/Scripts/GroundSnowSystem.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseA.cs" />
     <Compile Include="Assets/Scripts/GridVisualWatchdog.cs" />
+    <Compile Include="Assets/Scripts/ModifyTargetDeclaration.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineSelfTestMode.cs" />
     <Compile Include="Assets/Scripts/RoofSnow.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB.cs" />
@@ -104,9 +106,11 @@
     <Compile Include="Assets/Scripts/RoofSnowReportWriter.cs" />
     <Compile Include="Assets/Scripts/DebugScreenshotCapture.cs" />
     <Compile Include="Assets/Scripts/GroundSnowPile.cs" />
+    <Compile Include="Assets/Scripts/AIPipelineTestCollector.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB1.cs" />
     <Compile Include="Assets/Scripts/SnowDespawnLogger.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestorBehaviour.cs" />
+    <Compile Include="Assets/Scripts/DebugDiagnostics.cs" />
     <Compile Include="Assets/Scripts/CorniceRuntimeSnowSetup.cs" />
     <Compile Include="Assets/Scripts/GroundSnowAccumulator.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyMinimalScene.cs" />

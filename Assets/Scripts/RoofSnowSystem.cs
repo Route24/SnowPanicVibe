@@ -104,6 +104,7 @@ public class RoofSnowSystem : MonoBehaviour
     {
         _startTime = Time.time;
         ResolveDefaults();
+        EnsureAvalanchePhysicsSystem();
         EnsureRoofVisual();
         UpdateRoofVisual();
         if (roofSlideCollider != null)
@@ -265,11 +266,23 @@ public class RoofSnowSystem : MonoBehaviour
     public void RequestTapSlide(Vector3 tapWorldPoint)
     {
         if (roofSlideCollider == null || snowPackSpawner == null) return;
+        BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowHit, "RoofTap", "RoofSnowSystem.cs", tapWorldPoint);
         if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.RecordTapForTestB(Time.time);
         snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
         _nextAvalancheTime = Time.time + 0.3f;
-        snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
+
+        var avalanchePhys = FindFirstObjectByType<AvalanchePhysicsSystem>();
+        if (avalanchePhys != null && avalanchePhys.useAvalanchePhysics)
+        {
+            avalanchePhys.OnSnowHit(tapWorldPoint);
+            SnowPackSpawner.LastRemovedCount = AvalanchePhysicsSystem.LastTapRemovedTotal;
+        }
+        else
+        {
+            snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
+        }
         int removed = SnowPackSpawner.LastRemovedCount;
+        BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowAvalanche, "TapSlide", "RoofSnowSystem.cs", tapWorldPoint);
         if (removed > 0)
         {
             SnowVisual.SpawnPowderAt(tapWorldPoint);
@@ -397,6 +410,7 @@ public class RoofSnowSystem : MonoBehaviour
         Debug.DrawRay(origin, burstVel * 2f, Color.red, 1f, false);
         Debug.DrawRay(origin, roofFwd * 2f, Color.green, 1f, false);
         Debug.DrawRay(origin, roofUp * 2f, Color.blue, 1f, false);
+        BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowAvalanche, "AutoAvalanche", "RoofSnowSystem.cs", roofSlideCollider != null ? roofSlideCollider.bounds.center : Vector3.zero);
         Debug.Log($"[Avalanche] fired depthBefore={before:F3} depthAfter={after:F3} burstAmount={burstAmount:F3} burstVel={burstVel}");
     }
 
@@ -410,6 +424,17 @@ public class RoofSnowSystem : MonoBehaviour
         if (snowPackSpawner == null) snowPackSpawner = FindFirstObjectByType<SnowPackSpawner>();
         if (snowPackSpawner != null)
             snowPackSpawner.EnsureSnowPackVisualHierarchy();
+    }
+
+    void EnsureAvalanchePhysicsSystem()
+    {
+        if (FindFirstObjectByType<AvalanchePhysicsSystem>() != null) return;
+        var go = snowPackSpawner != null ? snowPackSpawner.gameObject : gameObject;
+        var aps = go.AddComponent<AvalanchePhysicsSystem>();
+        aps.snowPackSpawner = snowPackSpawner;
+        aps.roofSnowSystem = this;
+        aps.useAvalanchePhysics = true;
+        Debug.Log("[AvalanchePhysics] Auto-added AvalanchePhysicsSystem to " + go.name);
     }
 
     void EnsureRoofVisual()

@@ -121,6 +121,8 @@ public class DebugScreenshotCapture : MonoBehaviour
         }
 
         Debug.Log($"[DebugScreenshot] {kind} local_path={localPath} exists={exists} size_bytes={sizeBytes}");
+        try
+        {
         SnowLoopLogCapture.AppendToAssiReport($"=== DEBUG SCREENSHOT [{kind.ToUpper()}] ===");
         SnowLoopLogCapture.AppendToAssiReport($"{kind}_local_path={localPath}");
         SnowLoopLogCapture.AppendToAssiReport($"{kind}_exists={exists}");
@@ -130,5 +132,7 @@ public class DebugScreenshotCapture : MonoBehaviour
         SnowLoopLogCapture.AppendToAssiReport($"error={(err ?? "none")}");
         if (!string.IsNullOrEmpty(sessionPath))
             SnowLoopLogCapture.AppendToAssiReport($"{kind}_session_path={sessionPath}");
+        }
+        catch (System.Exception ex) { Debug.LogWarning($"[DebugScreenshot] EmitReport failed: {ex.Message}"); }
     }
 }

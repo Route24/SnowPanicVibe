@@ -35,11 +35,22 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         Add(ScorePerDespawn);
     }
 
+    /// <summary>Run Structure: 新Run開始時にスコアをリセット。</summary>
+    public static void ResetForNewRun()
+    {
+        if (Instance == null) return;
+        Instance._score = 0;
+        Instance.OnScoreChanged?.Invoke(0);
+        Debug.Log("[SnowPhysicsScore] ResetForNewRun");
+    }
+
     /// <summary>スコア加算。ScoreText は変化時のみ更新。</summary>
     public void Add(int delta)
     {
         if (delta <= 0) return;
+        int before = _score;
         _score += delta;
+        BugOriginTracker.RecordScoreUpdate(before, _score);
         OnScoreChanged?.Invoke(_score);
         Debug.Log($"[SnowPhysicsScore] +{delta} total={_score}");
     }
