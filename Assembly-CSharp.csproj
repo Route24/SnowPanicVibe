@@ -59,6 +59,7 @@
     <Compile Include="Assets/Scripts/CameraOrbit.cs" />
     <Compile Include="Assets/Scripts/SnowPhysicsScoreManager.cs" />
     <Compile Include="Assets/Scripts/SnowFallSystem.cs" />
+    <Compile Include="Assets/Scripts/SnowVerifyB2Debug.cs" />
     <Compile Include="Assets/Scripts/AvalancheFeedback.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowSegment.cs" />
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
@@ -66,6 +67,7 @@
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
     <Compile Include="Assets/Scripts/RoofDebugGizmo.cs" />
+    <Compile Include="Assets/Scripts/SnowVerifyPhaseB2.cs" />
     <Compile Include="Assets/Scripts/RoofAlignToSnow.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestor.cs" />
     <Compile Include="Assets/Scripts/SnowModule.cs" />
@@ -99,6 +101,7 @@
     <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
     <Compile Include="Assets/Scripts/RoofSnowReportWriter.cs" />
     <Compile Include="Assets/Scripts/GroundSnowPile.cs" />
+    <Compile Include="Assets/Scripts/SnowVerifyPhaseB1.cs" />
     <Compile Include="Assets/Scripts/SnowDespawnLogger.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestorBehaviour.cs" />
     <Compile Include="Assets/Scripts/CorniceRuntimeSnowSetup.cs" />

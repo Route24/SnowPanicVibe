@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>SnowPackPoolError 連打停止パッチ（コピー用）</title>
+  <style>
+    body { font-family: monospace; padding: 1em; max-width: 90ch; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; overflow-x: auto; white-space: pre-wrap; }
+    button { padding: 0.5em 1em; font-size: 14px; cursor: pointer; margin-bottom: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>SnowPackPoolError 連打停止</h1>
+  <button onclick="copyAll()">全体をコピー</button>
+  <pre id="content">## 変更ファイル
+Assets/Scripts/SnowPackSpawner.cs
+Assets/Scripts/SnowVerifyPhaseB2.cs
+
+## 対応内容
+- total=0 検出後、エラーは1回のみ（LogWarning）
+- 2回目以降は抑制（error_suppressed_after_first=true を1回だけログ）
+- total>0 に戻ったらフラグリセット
+
+## 必須ログ
+zero_total_detected, zero_total_first_frame, zero_total_repeat_count
+monitor_loop_active, cleanup_loop_active, pool_monitor_active
+error_emitted_once, error_suppressed_after_first
+zero_total_recovery_attempted, zero_total_recovery_condition
+
+## 成功条件
+- 落雪後に total=0 になっても Console が連打されない
+- エラーは1回だけ（Warning化済み）
+- 監視ループの出力が止まる</pre>
+  <script>
+    function copyAll() {
+      const el = document.getElementById('content');
+      navigator.clipboard.writeText(el.textContent).then(() => alert('コピーしました'));
+    }
+  </script>
+</body>
+</html>

@@ -20,6 +20,8 @@ public class SnowPackFallingPiece : MonoBehaviour
 
     enum State { Falling, Grounded, Despawning }
     State _state = State.Falling;
+
+    public bool hasLanded => _state == State.Grounded;
     Rigidbody _rb;
     float _startTime;
     Renderer[] _renderers;

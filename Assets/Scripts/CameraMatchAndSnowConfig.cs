@@ -81,6 +81,8 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         _applied = true;
         ApplyRoofBasedCamera();
         ApplySnowConfigOverrides();
+        ApplySnowFeelTuning();
+        ApplySnowConfigOverridesRebuild();
         ApplyFallDirectionAndSnowOffset();
         LogRequiredValues();
     }
@@ -195,11 +197,62 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         spawner.snowRenderThicknessScale = 0.75f;
         spawner.pieceSize = 0.17f;
         spawner.pieceHeightScale = 0.9f;
+        // Rebuild は ApplySnowFeelTuning でまとめて行う（oneHouse 時）
+    }
+
+    void ApplySnowConfigOverridesRebuild()
+    {
+        var spawner = Object.FindFirstObjectByType<SnowPackSpawner>();
+        if (spawner == null) return;
+        string scene = SceneManager.GetActiveScene().name ?? "";
+        bool oneHouse = !string.IsNullOrEmpty(scene) && (scene.Contains("OneHouse") || GameObject.Find("OneHouseMarker") != null);
+        if (oneHouse) return;
+        if (spawner.rebuildOnPlay && spawner.isActiveAndEnabled)
+            spawner.RebuildSnowPack("CameraMatchAndSnowConfig_thickness_up");
+    }
+
+    /// <summary>1軒シーン用: 狙い撃ちが気持ちいい・連鎖で大きく崩れる・雪っぽい見た目に調整。</summary>
+    void ApplySnowFeelTuning()
+    {
+        string scene = SceneManager.GetActiveScene().name ?? "";
+        bool oneHouse = !string.IsNullOrEmpty(scene) && (scene.Contains("OneHouse") || GameObject.Find("OneHouseMarker") != null);
+        if (!oneHouse) return;
+
+        var spawner = Object.FindFirstObjectByType<SnowPackSpawner>();
+        var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
+        if (spawner == null || roofSys == null) return;
+
+        // 一撃で剥がれる量: やや狭め＝狙いが必要。うまく当てると適量剥がれる
+        roofSys.hitRadiusR = 0.88f;
+        spawner.localAvalancheMinDetach = 18;
+        spawner.localAvalancheMaxDetach = 65;
+
+        // 連鎖の起きやすさ: 条件が揃うと大きく連鎖
+        spawner.chainDetachChance = 0.82f;
+        spawner.secondaryDetachFraction = 0.4f;
+        spawner.maxSecondaryDetachPerHit = 32;
+        spawner.unstableRadiusScale = 1.5f;
+        spawner.secondaryDetachDelaySec = 0.32f;
+        spawner.unstableDurationSec = 1.5f;
+
+        // 塊で落ちる感じ
+        roofSys.localAvalancheSlideSpeed = 1.05f;
+        roofSys.burstChunkCount = 44;
+        roofSys.burstChunkSpeed = 2.4f;
+
+        // 残雪の見え方
+        spawner.snowRenderThicknessScale = 0.78f;
+        spawner.pieceHeightScale = 0.88f;
+
+        // 雪っぽさ（キューブ感軽減）
+        spawner.pieceSize = 0.155f;
+        spawner.jitter = 0.038f;
+        spawner.normalInset = 0.014f;
+        spawner.snowColor = new Color(0.94f, 0.97f, 1f, 1f);
 
         if (spawner.rebuildOnPlay && spawner.isActiveAndEnabled)
-        {
-            spawner.RebuildSnowPack("CameraMatchAndSnowConfig_thickness_up");
-        }
+            spawner.RebuildSnowPack("SnowFeelTuning");
+        Debug.Log("[SnowFeelTuning] oneHouse=true 狙い撃ち・連鎖・塊感・雪っぽさ 調整適用");
     }
 
     void ApplyFallDirectionAndSnowOffset()

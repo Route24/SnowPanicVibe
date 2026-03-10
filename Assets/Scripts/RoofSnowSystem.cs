@@ -265,6 +265,7 @@ public class RoofSnowSystem : MonoBehaviour
     public void RequestTapSlide(Vector3 tapWorldPoint)
     {
         if (roofSlideCollider == null || snowPackSpawner == null) return;
+        if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.RecordTapForTestB(Time.time);
         snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
         _nextAvalancheTime = Time.time + 0.3f;
         snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);

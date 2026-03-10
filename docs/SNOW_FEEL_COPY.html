@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>雪の気持ちよさ調整（コピー用）</title>
+  <style>
+    body { font-family: monospace; padding: 1em; max-width: 90ch; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; overflow-x: auto; white-space: pre-wrap; }
+    button { padding: 0.5em 1em; font-size: 14px; cursor: pointer; margin-bottom: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>雪の気持ちよさ調整</h1>
+  <button onclick="copyAll()">全体をコピー</button>
+  <pre id="content">## 変更ファイル
+Assets/Scripts/CameraMatchAndSnowConfig.cs
+
+## 1軒シーン (Avalanche_Test_OneHouse) で自動適用
+
+## 主要パラメータ
+hitRadiusR=0.88 hit半径やや狭め
+localAvalancheMaxDetach=65 1撃上限
+chainDetachChance=0.82 連鎖しやすく
+secondaryDetachFraction=0.4 二次崩壊多め
+localAvalancheSlideSpeed=1.05 塊で落ちる
+pieceSize=0.155 jitter=0.038 雪っぽく
+
+## 確認
+Play → 屋根叩く → 狙い撃ちが気持ちいいか
+連鎖で大きく崩れるか
+見た目が雪らしいか</pre>
+  <script>
+    function copyAll() {
+      const el = document.getElementById('content');
+      navigator.clipboard.writeText(el.textContent).then(() => alert('コピーしました'));
+    }
+  </script>
+</body>
+</html>

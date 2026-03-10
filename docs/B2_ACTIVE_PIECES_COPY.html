@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>activePieces 判定ズレ診断（コピー用）</title>
+  <style>
+    body { font-family: monospace; padding: 1em; max-width: 90ch; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; overflow-x: auto; white-space: pre-wrap; }
+    button { padding: 0.5em 1em; font-size: 14px; cursor: pointer; margin-bottom: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>activePieces 判定ズレ診断</h1>
+  <button onclick="copyAll()">全体をコピー</button>
+  <pre id="content">## 変更ファイル
+Assets/Scripts/SnowPackSpawner.cs
+
+## 対応内容
+- LogActivePiecesDiagnostic: 各 child の非カウント理由をログ
+- onlyAnchorLeft: SnowPackAnchor のみ残る場合は FAIL しない
+- FAIL 前に B2_ACTIVE_DIAG を必ず出力
+
+## 必須ログ
+rootChildren, activePieces, nonCountedChildren
+child_N_reason_not_counted
+pooled_flag_count, inactive_hierarchy_count
+renderer_disabled_count, no_renderer_count
+anchor_count, detached_but_should_survive_count
+landed_but_should_survive_count
+count_rule_relaxed_test, activePieces_after_relax
+
+## 成功条件
+- root 配下の child が activePieces に正しく数えられる
+- または、数えられない明確な理由が特定できる
+- activePieces=0 FAIL の直接原因が1箇所に絞れる</pre>
+  <script>
+    function copyAll() {
+      const el = document.getElementById('content');
+      navigator.clipboard.writeText(el.textContent).then(() => alert('コピーしました'));
+    }
+  </script>
+</body>
+</html>

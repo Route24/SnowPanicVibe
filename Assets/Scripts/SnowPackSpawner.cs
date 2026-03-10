@@ -182,6 +182,10 @@ public class SnowPackSpawner : MonoBehaviour
     int _lastActivePiecesCountForUI = -1;
     bool _entityCountDumpedForActiveZero;
     bool _autoRebuildFired;
+    bool _zeroTotalErrorEmittedOnce;
+    int _zeroTotalFirstFrame = -1;
+    int _zeroTotalRepeatCount;
+    bool _zeroTotalSuppressLogged;
     bool _autoRebuildRecovered;
     int _autoRebuildFrame = -1;
     float _activeZeroUIFadeAt = -1f;
@@ -346,6 +350,41 @@ public class SnowPackSpawner : MonoBehaviour
         LogPiecePoseSampleFirst3();
         LogRotationOverrideSuspectedLocations();
         LogSnowLayerMix();
+
+        if (SnowVerifyB2Debug.Enabled)
+            LogB2PieceStatesRightAfterGeneration(spawned);
+    }
+
+    void LogB2PieceStatesRightAfterGeneration(int generatedTotal)
+    {
+        if (_piecesRoot == null) return;
+        int survived = 0;
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[B2_DEBUG] generated_total={generatedTotal}");
+
+        int idx = 0;
+        for (int i = 0; i < _piecesRoot.childCount; i++)
+        {
+            var tr = _piecesRoot.GetChild(i);
+            if (tr == null || tr.gameObject.name != "SnowPackPiece") continue;
+            bool active = tr.gameObject.activeSelf;
+            bool pooled = _piecePool != null && _piecePool.Contains(tr);
+            if (active && !pooled) survived++;
+
+            if (idx < SnowVerifyB2Debug.MaxPieceDetailLogs)
+            {
+                string disc = active ? "survived" : (pooled ? "pooled" : "inactive");
+                sb.AppendLine(SnowVerifyB2Debug.FormatPieceState(idx, tr, active, pooled, disc));
+                idx++;
+            }
+        }
+        int pooledCount = _piecePool != null ? _piecePool.Count : 0;
+        int discarded = generatedTotal - survived;
+        sb.AppendLine($"[B2_DEBUG] survived_after_generation={survived} discarded_after_generation={discarded} rootChildren={_piecesRoot.childCount} pooled={pooledCount}");
+        sb.AppendLine($"[B2_DEBUG] discard_reason_counts={SnowVerifyB2Debug.GetDiscardReasonCountsString()} cleanup_called={SnowVerifyB2Debug.CleanupCalled.ToString().ToLower()} pool_return_called={SnowVerifyB2Debug.PoolReturnCalled.ToString().ToLower()}");
+        int total = GetB2TotalCount();
+        if (total <= 0) SnowVerifyB2Debug.RecordZeroTransition("generation");
+        UnityEngine.Debug.Log(sb.ToString());
     }
 
     /// <summary>layerIndex: 0=bottom(根雪側), layers-1=top(表面). 比率 Powder45% Slab40% Base15%</summary>
@@ -1055,6 +1094,12 @@ public class SnowPackSpawner : MonoBehaviour
                 toRemove.RemoveAt(i);
         }
 
+        if (SnowVerifyB2Debug.Enabled && toRemove.Count > 0)
+        {
+            int beforeTotal = GetB2TotalCount();
+            UnityEngine.Debug.Log($"[B2_BEFORE_DETACH] tap_received=true before_detach_total={beforeTotal} to_remove_count={toRemove.Count}");
+        }
+
         foreach (var t in toRemove)
         {
             var k = FindGridKeyForPiece(t);
@@ -1183,6 +1228,14 @@ public class SnowPackSpawner : MonoBehaviour
             MarkNeighborsUnstable(cx, cz, radXFinal, outerRad, unstableDurationSec);
         }
         _inAvalancheSlide = true;
+        if (SnowVerifyB2Debug.Enabled)
+        {
+            int total = GetB2TotalCount();
+            int active = GetB2ActiveCount();
+            int surv = GetPackedCubeCountRealtime() + toRemove.Count;
+            UnityEngine.Debug.Log($"[B2_AFTER_TAP] tap_received=true after_detach_total={total} after_detach_active={active} surviving_count={surv} detached_count={toRemove.Count}");
+            if (total <= 0) SnowVerifyB2Debug.RecordZeroTransition("after_tap");
+        }
         StartCoroutine(LocalAvalancheSlideRoutine(toRemove, _roofDownhill, slideSpeed));
     }
 
@@ -1419,6 +1472,13 @@ public class SnowPackSpawner : MonoBehaviour
         {
             _poolReturnQueue.Add(t);
             returnedCount++;
+        }
+        if (SnowVerifyB2Debug.Enabled)
+        {
+            int total = GetB2TotalCount();
+            int active = GetB2ActiveCount();
+            UnityEngine.Debug.Log($"[B2_AFTER_DETACH] after_detach_total={total} after_detach_active={active} surviving_count={active} queue_size={_poolReturnQueue.Count}");
+            if (total <= 0) SnowVerifyB2Debug.RecordZeroTransition("after_detach");
         }
         _pendingSlideRootToDestroy = slideRoot;
         _inAvalancheSlide = false;
@@ -2072,6 +2132,18 @@ public class SnowPackSpawner : MonoBehaviour
         return _piecePool != null ? _piecePool.Count : 0;
     }
 
+    /// <summary>B2-debug: 屋根+slideRoot内のピース数（pool除く）。</summary>
+    public int GetB2ActiveCount()
+    {
+        return _visualRoot != null ? CountPiecesUnder(_visualRoot) : 0;
+    }
+
+    /// <summary>B2-debug: active + pooled。ゼロ化タイミング特定用。</summary>
+    public int GetB2TotalCount()
+    {
+        return GetB2ActiveCount() + GetPooledCount();
+    }
+
     /// <summary>DebugSnowVisibility用。全SnowPackPieceのRendererを返す。</summary>
     public System.Collections.Generic.List<Renderer> GetAllPieceRenderers()
     {
@@ -2126,6 +2198,16 @@ public class SnowPackSpawner : MonoBehaviour
 
     public void ClearSnowPack(string reason)
     {
+        if (SnowVerifyB2Debug.Enabled)
+        {
+            SnowVerifyB2Debug.CleanupCalled = true;
+            if (SnowVerifyB2Debug.PauseCleanup)
+            {
+                int surv = GetB2TotalCount();
+                UnityEngine.Debug.Log($"[B2_CLEANUP_SKIP] cleanup_called=true surviving_count_before_cleanup={surv} PauseCleanup=true skipping_clear");
+                return;
+            }
+        }
         PushLastEvent("Clear", reason);
         _returnedToPoolIds.Clear();
         EnsureRoot();
@@ -2164,6 +2246,8 @@ public class SnowPackSpawner : MonoBehaviour
                 OnPieceDeactivated(c, "Clear", "ClearSnowPack", toPool: false);
             }
         }
+        if (SnowVerifyB2Debug.Enabled)
+            UnityEngine.Debug.Log($"[B2_CLEANUP_DONE] cleanup_called=true surviving_count_after_cleanup={GetB2TotalCount()}");
     }
 
     void AddLayers(int n)
@@ -2334,6 +2418,11 @@ public class SnowPackSpawner : MonoBehaviour
     void OnPieceDeactivated(Transform t, string reason, string source, bool toPool, bool allowDuringSlide = false)
     {
         if (t == null || t.gameObject == null) return;
+        if (SnowVerifyB2Debug.Enabled)
+        {
+            SnowVerifyB2Debug.RecordDiscard(reason, source);
+            if (toPool) SnowVerifyB2Debug.PoolReturnCalled = true;
+        }
         _pieceToLayerType.Remove(t);
         int pieceId = t.GetInstanceID();
         if (toPool && _returnedToPoolIds.Contains(pieceId)) return;
@@ -2414,6 +2503,88 @@ public class SnowPackSpawner : MonoBehaviour
         for (int i = 0; i < rnds.Length; i++)
             if (rnds[i] != null && rnds[i].enabled) n++;
         return n;
+    }
+
+    /// <summary>activePieces=0 時、各 child がなぜ数えられないか診断。B2 用。</summary>
+    void LogActivePiecesDiagnostic(int rootChildren, int activePiecesCount, int poolCount)
+    {
+        if (_piecesRoot == null || rootChildren <= 0) return;
+        int nonCounted = rootChildren;
+        for (int i = 0; i < rootChildren; i++)
+        {
+            var c = _piecesRoot.GetChild(i);
+            if (c == null) continue;
+            var r = c.GetComponentInChildren<Renderer>(true);
+            if (r != null && r.enabled) nonCounted--;
+        }
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"[B2_ACTIVE_DIAG] rootChildren={rootChildren} activePieces={activePiecesCount} nonCountedChildren={nonCounted}");
+        int pooledFlagCount = 0;
+        int inactiveHierarchyCount = 0;
+        int rendererDisabledCount = 0;
+        int noRendererCount = 0;
+        int anchorCount = 0;
+        int detachedCount = 0;
+        int landedPieceCount = 0;
+        int relaxedPieceCount = 0;
+        for (int i = 0; i < rootChildren; i++)
+        {
+            var c = _piecesRoot.GetChild(i);
+            if (c == null) continue;
+            bool activeSelf = c.gameObject.activeSelf;
+            bool activeInHierarchy = c.gameObject.activeInHierarchy;
+            var r = c.GetComponentInChildren<Renderer>(true);
+            bool hasRenderer = r != null;
+            bool rendererEnabled = hasRenderer && r.enabled;
+            var col = c.GetComponentInChildren<Collider>(true);
+            bool colliderEnabled = col != null && col.enabled;
+            bool pooled = _piecePool != null && _piecePool.Contains(c);
+            bool isAnchor = c.name == "SnowPackAnchor";
+            bool isPiece = c.name == "SnowPackPiece";
+            bool detached = c.parent != _piecesRoot;
+            var falling = c.GetComponent<SnowPackFallingPiece>();
+            bool landed = falling != null && falling.hasLanded;
+            var pos = c.position;
+            var scale = c.lossyScale;
+            string reason = "";
+            if (isAnchor)
+            {
+                anchorCount++;
+                reason = "anchor_not_snow_piece";
+            }
+            else if (pooled)
+            {
+                pooledFlagCount++;
+                reason = "pooled";
+            }
+            else if (!activeInHierarchy)
+            {
+                inactiveHierarchyCount++;
+                reason = "inactive_hierarchy";
+            }
+            else if (!hasRenderer)
+            {
+                noRendererCount++;
+                reason = "no_renderer";
+            }
+            else if (!rendererEnabled)
+            {
+                rendererDisabledCount++;
+                reason = "renderer_disabled";
+            }
+            else
+            {
+                reason = "counted";
+            }
+            if (isPiece)
+            {
+                relaxedPieceCount++;
+                if (landed) landedPieceCount++;
+            }
+            sb.AppendLine($"  child_{i}_reason_not_counted={reason} name={c.name} activeSelf={activeSelf} activeInHierarchy={activeInHierarchy} renderer_enabled={rendererEnabled} collider_enabled={colliderEnabled} pooled={pooled} detached={detached} landed={landed} pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) scale=({scale.x:F2},{scale.y:F2},{scale.z:F2})");
+        }
+        sb.AppendLine($"[B2_ACTIVE_DIAG] pooled_flag_count={pooledFlagCount} inactive_hierarchy_count={inactiveHierarchyCount} renderer_disabled_count={rendererDisabledCount} no_renderer_count={noRendererCount} anchor_count={anchorCount} detached_but_should_survive_count={detachedCount} landed_but_should_survive_count={landedPieceCount} count_rule_relaxed_test={(relaxedPieceCount > 0).ToString().ToLower()} activePieces_after_relax={relaxedPieceCount}");
+        UnityEngine.Debug.Log(sb.ToString());
     }
 
     struct EntityCounts
@@ -2723,12 +2894,17 @@ public class SnowPackSpawner : MonoBehaviour
             float v = Vector3.Dot(d, _roofF);
             if (Mathf.Abs(u) > halfW + margin || Mathf.Abs(v) > halfL + margin)
             {
+                if (SnowVerifyB2Debug.Enabled)
+                    UnityEngine.Debug.Log($"[B2_DEBUG] ClipToRoofBounds piece={t.name} pos=({t.position.x:F3},{t.position.y:F3},{t.position.z:F3}) u={u:F3} v={v:F3} halfW={halfW} halfL={halfL} margin={margin}");
                 t.gameObject.SetActive(false);
                 clipped++;
             }
         }
         if (clipped > 0)
+        {
+            if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.RecordClip(clipped);
             UnityEngine.Debug.Log($"[SNOW_CLIP] clipped_to_roof_bounds count={clipped}");
+        }
     }
 
     void Update()
@@ -2821,11 +2997,26 @@ public class SnowPackSpawner : MonoBehaviour
         // B) Pool返却キューの処理（Avalanche, returnRate=0.3 全削除禁止, max 50/frame）
         if (_poolReturnQueue.Count > 0 && !_inAvalancheSlide)
         {
+            if (SnowVerifyB2Debug.Enabled && SnowVerifyB2Debug.PausePoolReturn)
+            {
+                if (Time.time - SnowVerifyB2Debug.LastPoolSkipLogTime >= 0.5f)
+                {
+                    SnowVerifyB2Debug.LastPoolSkipLogTime = Time.time;
+                    int surv = GetB2TotalCount();
+                    int queueSize = _poolReturnQueue.Count;
+                    UnityEngine.Debug.Log($"[B2_POOL_SKIP] pool_return_called=false surviving_count_after_pool={surv} queue_size={queueSize} PausePoolReturn=true skipping_return");
+                }
+            }
+            else
+            {
             int queueCount = _poolReturnQueue.Count;
             int toReturn = Mathf.Min(MaxPoolReturnsPerFrame, Mathf.Max(1, (int)(queueCount * AvalancheReturnRate)));
             int returnedPieces = 0;
             int packedNow = GetPackedCubeCountRealtime();
             bool allowReturnWhenPackedZero = packedNow <= 0; // packed=0時はslideRoot残骸を必ず返却（止まり雪対策）
+            int survBeforeReturn = SnowVerifyB2Debug.Enabled ? GetB2TotalCount() : 0;
+            if (SnowVerifyB2Debug.Enabled)
+                UnityEngine.Debug.Log($"[B2_POOL_BEFORE] surviving_count_before_cleanup={survBeforeReturn} queue_count={_poolReturnQueue.Count}");
             for (int i = 0; i < toReturn; i++)
             {
                 if (_poolReturnQueue.Count == 0) break;
@@ -2836,6 +3027,8 @@ public class SnowPackSpawner : MonoBehaviour
                 ReturnToPool(t, "Queue", "Avalanche");
                 returnedPieces++;
             }
+            if (SnowVerifyB2Debug.Enabled && returnedPieces > 0)
+                UnityEngine.Debug.Log($"[B2_POOL_AFTER] pool_return_called=true surviving_count_after_pool={GetB2TotalCount()} returned_this_frame={returnedPieces}");
             int activeAfter = CountActivePieces();
             UnityEngine.Debug.Log($"[AvalancheReturn] returnedPieces={returnedPieces} activeAfter={activeAfter} queueRemaining={_poolReturnQueue.Count}");
 
@@ -2843,6 +3036,12 @@ public class SnowPackSpawner : MonoBehaviour
             {
                 _lastAvalanchePackedCountAfter = -1;
                 int ap = CountActivePieces();
+                if (SnowVerifyB2Debug.Enabled)
+                {
+                    int survBefore = GetB2TotalCount();
+                    UnityEngine.Debug.Log($"[B2_AFTER_CLEANUP] surviving_count_before_cleanup={survBefore} cleanup_called={SnowVerifyB2Debug.CleanupCalled.ToString().ToLower()} surviving_count_after_cleanup={survBefore} pool_return_called={SnowVerifyB2Debug.PoolReturnCalled.ToString().ToLower()}");
+                    if (survBefore <= 0) SnowVerifyB2Debug.RecordZeroTransition("after_cleanup");
+                }
                 if (debugAutoRefillRoofSnow && ap == 0)
                 {
                     RebuildSnowPack("AvalancheActiveZero"); // ClearSnowPack で slideRoot 破棄
@@ -2852,6 +3051,7 @@ public class SnowPackSpawner : MonoBehaviour
                     UnityEngine.Object.Destroy(_pendingSlideRootToDestroy);
                 }
                 _pendingSlideRootToDestroy = null;
+            }
             }
         }
 
@@ -3026,10 +3226,40 @@ public class SnowPackSpawner : MonoBehaviour
         _prevActivePiecesCount = activePiecesCount;
         bool invariantOk = true;
         bool likelyTeardown = rootChildren == 0 && activePiecesCount == 0;
+        if (total > 0)
+        {
+            _zeroTotalErrorEmittedOnce = false;
+            _zeroTotalFirstFrame = -1;
+            _zeroTotalRepeatCount = 0;
+            _zeroTotalSuppressLogged = false;
+        }
         if (total == 0 && _poolInstantiated > 0 && !likelyTeardown)
         {
             invariantOk = false;
-            UnityEngine.Debug.LogError($"[SnowPackPoolError] reason=totalBecameZeroAfterGeneration total={total} active={activeCount} pooled={poolCount}");
+            _zeroTotalRepeatCount++;
+            int survivingCount = GetB2TotalCount();
+            string triggerStep = SnowVerifyB2Debug.Enabled ? (SnowVerifyB2Debug.ZeroTransitionStep ?? SnowVerifyB2Debug.ZeroTotalTriggerStep ?? "invariant_check") : "invariant_check";
+            if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.ZeroTotalTriggerStep = triggerStep;
+            bool isFirst = !_zeroTotalErrorEmittedOnce;
+            if (isFirst)
+            {
+                _zeroTotalFirstFrame = Time.frameCount;
+                _zeroTotalErrorEmittedOnce = true;
+                bool cleanupActive = SnowVerifyB2Debug.Enabled && SnowVerifyB2Debug.CleanupCalled;
+                bool poolActive = _poolReturnQueue.Count > 0;
+                bool recoveryAttempted = debugAutoRefillRoofSnow && _autoRebuildFired;
+                string recoveryCond = debugAutoRefillRoofSnow ? "debugAutoRefillRoofSnow_active_zero" : "none";
+                UnityEngine.Debug.Log($"[B2_ZERO_MONITOR] zero_total_detected=true zero_total_first_frame={_zeroTotalFirstFrame} zero_total_repeat_count={_zeroTotalRepeatCount} monitor_loop_active=true cleanup_loop_active={cleanupActive.ToString().ToLower()} pool_monitor_active={poolActive.ToString().ToLower()} error_emitted_once=true error_suppressed_after_first=false zero_total_recovery_attempted={recoveryAttempted.ToString().ToLower()} zero_total_recovery_condition={recoveryCond}");
+                UnityEngine.Debug.LogWarning($"[SnowPackPoolError] reason=totalBecameZeroAfterGeneration total={total} active={activeCount} pooled={poolCount} (1回のみ、以降は抑制)");
+            }
+            else
+            {
+                if (!_zeroTotalSuppressLogged)
+                {
+                    _zeroTotalSuppressLogged = true;
+                    UnityEngine.Debug.Log($"[B2_ZERO_MONITOR] zero_total_detected=true zero_total_first_frame={_zeroTotalFirstFrame} zero_total_repeat_count={_zeroTotalRepeatCount} monitor_loop_active=true error_emitted_once=true error_suppressed_after_first=true zero_total_recovery_attempted={(_autoRebuildFired && debugAutoRefillRoofSnow).ToString().ToLower()} error_suppressed_after_first=true");
+                }
+            }
             _nextSyncCheckTime = Time.time + 1f;
             return;
         }
@@ -3091,12 +3321,13 @@ public class SnowPackSpawner : MonoBehaviour
 #else
                 bool skipFail = false;
 #endif
-                // rootChildren<=1: SnowPackAnchorのみ残る「積雪ゼロ」状態は正常
-                bool allCleared = rootChildren <= 1 && poolCount > 0;
+                bool onlyAnchorLeft = rootChildren == 1 && _piecesRoot != null && _piecesRoot.childCount >= 1 && _piecesRoot.GetChild(0).name == "SnowPackAnchor";
+                bool allCleared = (rootChildren <= 1 && poolCount > 0) || onlyAnchorLeft;
                 if (!_snowPackPassErrorLogged && Application.isPlaying && rootChildren > 0 && !skipFail && !allCleared)
                 {
+                    LogActivePiecesDiagnostic(rootChildren, activePiecesCount, poolCount);
                     _snowPackPassErrorLogged = true;
-                    UnityEngine.Debug.LogError($"[SnowPackPASS] activePieces=0 FAIL frame={Time.frameCount} t={Time.time:F2} rootChildren={rootChildren} pooled={poolCount} (1回のみ表示)");
+                    UnityEngine.Debug.LogError($"[SnowPackPASS] activePieces=0 FAIL frame={Time.frameCount} t={Time.time:F2} rootChildren={rootChildren} pooled={poolCount} (1回のみ表示、上に B2_ACTIVE_DIAG 参照)");
                 }
                 if (!_activeZeroReportLogged && _firstActiveZeroTime >= 0f)
                 {

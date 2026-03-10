@@ -54,6 +54,8 @@
     <Compile Include="Assets/Scripts/Editor/AssiReportWindow.cs" />
     <Compile Include="Assets/Scripts/Editor/DioramaRoofSetup.cs" />
     <Compile Include="Assets/Editor/SnowTestSnowPackSetup.cs" />
+    <Compile Include="Assets/Editor/SnowVerifyPhaseB1Creator.cs" />
+    <Compile Include="Assets/Editor/SnowVerifyPhaseB2Creator.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
     <Compile Include="Assets/Editor/SnowTestPrefabBuilder.cs" />
     <Compile Include="Assets/Editor/TMP_ImporterFix.cs" />

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>B2-debug サマリ（コピー用）</title>
+  <style>
+    body { font-family: monospace; padding: 1em; max-width: 90ch; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; overflow-x: auto; }
+    button { padding: 0.5em 1em; font-size: 14px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>B2-debug: Test A/B 分離サマリ</h1>
+  <button onclick="copyAll()">全体をコピー</button>
+  <pre id="content">## 変更ファイル
+Assets/Scripts/SnowVerifyB2Debug.cs
+Assets/Scripts/SnowPackSpawner.cs
+Assets/Scripts/RoofSnowSystem.cs
+Assets/Scripts/SnowVerifyPhaseB2.cs
+Assets/Editor/SnowVerifyPhaseB2Creator.cs
+
+## 必須ログ
+test_a_no_input_total, test_a_no_input_active, test_a_error_occurred
+test_b_after_tap_total, test_b_after_tap_active
+test_b_after_detach_total, test_b_after_detach_active
+test_b_after_cleanup_total, test_b_after_cleanup_active
+zero_transition_step, discard_reason_counts, cleanup_called, pool_return_called
+
+## 実行
+SnowPanic → Phase B2: Create Multi-Piece Snow Verify
+Test A: Play → 4秒放置
+Test B: Play → 1回タップ → 8秒で最終サマリ</pre>
+  <script>
+    function copyAll() {
+      const el = document.getElementById('content');
+      navigator.clipboard.writeText(el.textContent).then(() => alert('コピーしました'));
+    }
+  </script>
+</body>
+</html>

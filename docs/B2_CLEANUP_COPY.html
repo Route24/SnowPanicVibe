@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>B2 cleanup/pool/survival パッチ（コピー用）</title>
+  <style>
+    body { font-family: monospace; padding: 1em; max-width: 90ch; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; overflow-x: auto; white-space: pre-wrap; }
+    button { padding: 0.5em 1em; font-size: 14px; cursor: pointer; margin-bottom: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>PhaseB2: cleanup / survival / pool 切り分け</h1>
+  <button onclick="copyAll()">全体をコピー</button>
+  <pre id="content">## 変更ファイル
+Assets/Scripts/SnowVerifyB2Debug.cs
+Assets/Scripts/SnowPackSpawner.cs
+Assets/Scripts/SnowVerifyPhaseB2.cs
+
+## 仮ルール
+PauseCleanup=true, PausePoolReturn=true
+→ 落雪後も slideRoot 内にピース残す
+→ surviving_count >= 1 を確認
+
+## 必須ログ
+tap_received, before_detach_total
+after_detach_total, after_detach_active
+surviving_count_before_cleanup, cleanup_called
+surviving_count_after_cleanup, pool_return_called
+surviving_count_after_pool
+zero_total_guard_triggered, zero_total_trigger_step
+
+## 実行
+Phase B2 シーン → Play → 1回タップ
+→ B2_BEFORE_DETACH, B2_AFTER_TAP, B2_AFTER_DETACH
+→ B2_POOL_SKIP (PausePoolReturn時)
+→ B2_AFTER_CLEANUP, B2_ZERO_GUARD (エラー時)</pre>
+  <script>
+    function copyAll() {
+      const el = document.getElementById('content');
+      navigator.clipboard.writeText(el.textContent).then(() => alert('コピーしました'));
+    }
+  </script>
+</body>
+</html>
