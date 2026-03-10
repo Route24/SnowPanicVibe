@@ -262,6 +262,15 @@ public class AvalanchePhysicsSystem : MonoBehaviour
         if (cluster == null || cluster.ActivePieceCount == 0) return;
         if (_detachedThisHit.Contains(cluster)) return;
 
+        int scoreNow = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        int pieceCount = 0;
+        string firstName = "cluster";
+        foreach (var t in cluster.piece_list)
+        {
+            if (t != null && t.gameObject.activeInHierarchy) { pieceCount++; if (firstName == "cluster") firstName = t.name; }
+        }
+        UnityEngine.Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object_name={firstName} script_source=AvalanchePhysicsSystem.cs time={UnityEngine.Time.time:F2} current_score={scoreNow}");
+
         _detachedThisHit.Add(cluster);
         _consecutiveDetachThisHit++;
         _maxChainDepth = Mathf.Max(_maxChainDepth, chainDepth);
@@ -287,7 +296,11 @@ public class AvalanchePhysicsSystem : MonoBehaviour
         if (toDetach.Count == 0) return;
 
         if (fromWeakPoint && SnowPhysicsScoreManager.Instance != null)
+        {
+            int scoreBefore = SnowPhysicsScoreManager.Instance.Score;
+            UnityEngine.Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object=cluster_pieces_count={toDetach.Count} script=AvalanchePhysicsSystem.cs time={UnityEngine.Time.time:F2} current_score={scoreBefore}");
             SnowPhysicsScoreManager.Instance.Add(toDetach.Count);
+        }
 
         Vector3 slideDir = snowPackSpawner.RoofDownhill;
         if (slideDir.sqrMagnitude < 0.001f && roofSnowSystem != null && roofSnowSystem.roofSlideCollider != null)

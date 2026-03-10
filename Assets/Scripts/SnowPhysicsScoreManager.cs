@@ -113,6 +113,8 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=true");
         Debug.Log($"[RAW_SCORE_CHECK] score_after={_score}");
         Debug.Log("[RAW_SCORE_CHECK] score_changed=true");
+        Debug.Log($"[RAW_SCORE_CHECK] increment_owner_file={ownerFile}");
+        Debug.Log($"[RAW_SCORE_CHECK] increment_owner_class={ownerClass}");
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]

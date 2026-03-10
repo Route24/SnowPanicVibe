@@ -347,6 +347,8 @@ public class SnowClump : MonoBehaviour
             blinkElapsed += GroundPileBlinkInterval;
         }
         SetRenderersVisible(false);
+        int scoreBefore = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        UnityEngine.Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object={gameObject.name} script=SnowClump.cs time={Time.time:F2} current_score={scoreBefore}");
         SnowPhysicsScoreManager.Instance?.AddScoreOnDespawn();
         FinalizeDepositAndDestroy(false);
     }

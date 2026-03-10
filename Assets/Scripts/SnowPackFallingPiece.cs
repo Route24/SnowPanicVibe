@@ -227,6 +227,8 @@ public class SnowPackFallingPiece : MonoBehaviour
             blinkElapsed += BlinkInterval;
         }
         SetRenderersVisible(false);
+        int scoreBefore = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        UnityEngine.Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object={gameObject.name} script=SnowPackFallingPiece.cs time={Time.time:F2} current_score={scoreBefore}");
         SnowPhysicsScoreManager.Instance?.AddScoreOnDespawn();
         CoreGameplayManager.Instance?.AddMoneyFromFallingPiece();
         ReturnFromFall("Despawn");

@@ -611,6 +611,8 @@ public class SnowTestSlideAssist : MonoBehaviour
             yield return new WaitForSeconds(0.1f);
         }
         if (r != null) r.enabled = false;
+        int scoreBefore = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object={gameObject.name} script=SnowTestSlideAssist.cs time={Time.time:F2} current_score={scoreBefore}");
         SnowPhysicsScoreManager.Instance?.AddScoreOnDespawn();
         DespawnTrace.Log("GroundDeposit", "SnowTestSlideAssist", "Grounded", transform.position);
         Destroy(gameObject, 0.02f);

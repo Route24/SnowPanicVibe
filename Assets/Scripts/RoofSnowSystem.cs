@@ -266,6 +266,8 @@ public class RoofSnowSystem : MonoBehaviour
     public void RequestTapSlide(Vector3 tapWorldPoint)
     {
         if (roofSlideCollider == null || snowPackSpawner == null) return;
+        int scoreNow = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object_name=tap_point script_source=RoofSnowSystem.cs time={Time.time:F2} current_score={scoreNow}");
         BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowHit, "RoofTap", "RoofSnowSystem.cs", tapWorldPoint);
         if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.RecordTapForTestB(Time.time);
         snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);

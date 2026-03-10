@@ -173,8 +173,8 @@ public class ScoreUiCheckEmitter : MonoBehaviour
             r.text = textProp != null ? (string)(textProp.GetValue(tmp)) : "";
             var rt = scoreGo.GetComponent<RectTransform>();
             r.fixedPosition = IsFixedTopLeft(rt);
-            var outlineW = tmp.GetType().GetProperty("outlineWidth")?.GetValue(tmp);
-            r.style = (outlineW != null && (float)outlineW > 0.001f) ? "outline" : "none";
+            var backing = hud.transform.Find("ScoreBacking");
+            r.style = (backing != null && backing.gameObject.activeInHierarchy) ? "background" : "none";
             r.count = 1;
             return r;
         }
@@ -186,8 +186,8 @@ public class ScoreUiCheckEmitter : MonoBehaviour
             r.text = text.text ?? "";
             var rt = scoreGo.GetComponent<RectTransform>();
             r.fixedPosition = IsFixedTopLeft(rt);
-            bool hasOl = scoreGo.GetComponent<Outline>() != null, hasSh = scoreGo.GetComponent<Shadow>() != null;
-            r.style = (hasOl && hasSh) ? "outline+shadow" : hasOl ? "outline" : hasSh ? "shadow" : "none";
+            var backing = hud.transform.Find("ScoreBacking");
+            r.style = (backing != null && backing.gameObject.activeInHierarchy) ? "background" : "none";
             r.count = 1;
             return r;
         }

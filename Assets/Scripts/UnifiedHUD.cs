@@ -80,8 +80,28 @@ public class UnifiedHUD : MonoBehaviour
         return string.Join("/", parts);
     }
 
+    void CreateScoreBacking()
+    {
+        var backing = new GameObject("ScoreBacking");
+        backing.transform.SetParent(transform, false);
+        backing.transform.SetAsFirstSibling();
+        var img = backing.AddComponent<Image>();
+        var tex = new Texture2D(1, 1);
+        tex.SetPixel(0, 0, Color.white);
+        tex.Apply();
+        img.sprite = Sprite.Create(tex, new Rect(0, 0, 1, 1), new Vector2(0.5f, 0.5f));
+        img.color = Color.black;
+        var rt = backing.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(8f, -8f);
+        rt.sizeDelta = new Vector2(420f, 110f);
+    }
+
     bool TryCreateScoreText()
     {
+        CreateScoreBacking();
         var tmpType = System.Type.GetType("TMPro.TextMeshProUGUI, Unity.TextMeshPro");
         if (tmpType == null) return false;
         var go = new GameObject(ScoreTextName);
@@ -105,6 +125,7 @@ public class UnifiedHUD : MonoBehaviour
 
     void CreateScoreTextLegacy()
     {
+        CreateScoreBacking();
         var go = new GameObject(ScoreTextName);
         go.transform.SetParent(transform, false);
         var t = go.AddComponent<Text>();
@@ -166,6 +187,40 @@ public class UnifiedHUD : MonoBehaviour
         var mgr = SnowPhysicsScoreManager.Instance;
         if (mgr != null && (_scoreText != null || _scoreTMP != null))
             mgr.OnScoreChanged += OnScoreChanged;
+        Invoke(nameof(InspectScoreStyle), 0.2f);
+    }
+
+    void InspectScoreStyle()
+    {
+        var go = _scoreTMP != null ? _scoreTMP.gameObject : _scoreText != null ? _scoreText.gameObject : null;
+        if (go == null) { Debug.Log("[SCORE_STYLE_INSPECT] text_gameobject=null"); return; }
+        string path = GetPath(go.transform);
+        var comps = go.GetComponents<Component>();
+        var compNames = new System.Collections.Generic.List<string>();
+        foreach (var c in comps) { if (c != null) compNames.Add(c.GetType().Name); }
+        string componentType = _scoreTMP != null ? "TextMeshProUGUI" : "UI.Text";
+        string currentText = _scoreText != null ? (_scoreText.text ?? "") : (string)(_scoreTMP?.GetType().GetProperty("text")?.GetValue(_scoreTMP) ?? "");
+        Debug.Log($"[SCORE_STYLE_INSPECT] owner_file=UnifiedHUD.cs owner_class=UnifiedHUD text_gameobject_name={go.name} full_hierarchy_path={path} component_type={componentType} attached_components=[{string.Join(",", compNames)}] current_text={currentText}");
+        if (_scoreTMP != null)
+        {
+            float ow = 0f; try { var p = _scoreTMP.GetType().GetProperty("outlineWidth"); if (p != null) ow = (float)(p.GetValue(_scoreTMP) ?? 0f); } catch { }
+            object oc = null; try { var p = _scoreTMP.GetType().GetProperty("outlineColor"); if (p != null) oc = p.GetValue(_scoreTMP); } catch { }
+            object fc = null; try { var p = _scoreTMP.GetType().GetProperty("color"); if (p != null) fc = p.GetValue(_scoreTMP); } catch { }
+            string matName = "unknown"; try { var fontProp = _scoreTMP.GetType().GetProperty("font"); if (fontProp != null) { var font = fontProp.GetValue(_scoreTMP); if (font != null) matName = font.GetType().GetProperty("material")?.GetValue(font)?.ToString() ?? "null"; } } catch { }
+            var sharedMatProp = _scoreTMP.GetType().GetProperty("fontSharedMaterial"); if (sharedMatProp != null) { try { var mat = sharedMatProp.GetValue(_scoreTMP); if (mat != null) matName = mat.ToString(); } catch { } }
+            Debug.Log($"[SCORE_STYLE_INSPECT] tmp_material={matName} tmp_outline_width={ow} tmp_outline_color={oc} tmp_face_color={fc}");
+        }
+        if (_scoreText != null)
+        {
+            var outline = go.GetComponent<Outline>();
+            var shadow = go.GetComponent<Shadow>();
+            Debug.Log($"[SCORE_STYLE_INSPECT] ui_outline_exists={outline != null} ui_outline_effectColor={(outline != null ? outline.effectColor.ToString() : "n/a")} ui_outline_effectDistance={(outline != null ? outline.effectDistance.ToString() : "n/a")} ui_shadow_exists={shadow != null}");
+        }
+        if (_scoreTMP != null)
+        {
+            var outline = go.GetComponent<Outline>();
+            Debug.Log($"[SCORE_STYLE_INSPECT] ui_outline_exists={outline != null} ui_outline_effectColor={(outline != null ? outline.effectColor.ToString() : "n/a")} ui_outline_effectDistance={(outline != null ? outline.effectDistance.ToString() : "n/a")}");
+        }
     }
 
     void OnDisable()
