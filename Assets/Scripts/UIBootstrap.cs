@@ -95,7 +95,15 @@ public class UIBootstrap : MonoBehaviour
             {
                 ApplyScoreTextLayout(text);
                 text.text = "SCORE: 0";
-                Debug.Log("[UIBootstrap] ScoreText found");
+                Debug.Log("[UIBootstrap] ScoreText found (Legacy)");
+                return;
+            }
+            var tmp = existing.GetComponent(System.Type.GetType("TMPro.TextMeshProUGUI, Unity.TextMeshPro"));
+            if (tmp != null)
+            {
+                ApplyScoreTextLayoutTMP(tmp);
+                tmp.GetType().GetProperty("text")?.SetValue(tmp, "SCORE: 0");
+                Debug.Log("[UIBootstrap] ScoreText found (TMP)");
                 return;
             }
         }
@@ -144,13 +152,9 @@ public class UIBootstrap : MonoBehaviour
     static void ApplyScoreTextLayout(Text t)
     {
         if (t == null) return;
-        t.fontSize = 144;
+        t.fontSize = 72;
         t.color = ScoreTextColor;
         t.fontStyle = FontStyle.Bold;
-        var shadow = t.gameObject.GetComponent<UnityEngine.UI.Shadow>();
-        if (shadow == null) shadow = t.gameObject.AddComponent<UnityEngine.UI.Shadow>();
-        shadow.effectColor = Color.black;
-        shadow.effectDistance = new Vector2(4f, 4f);
         var outline = t.gameObject.GetComponent<UnityEngine.UI.Outline>();
         if (outline == null) outline = t.gameObject.AddComponent<UnityEngine.UI.Outline>();
         outline.effectColor = Color.black;
@@ -160,17 +164,39 @@ public class UIBootstrap : MonoBehaviour
         rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(10f, -10f);
-        rt.sizeDelta = new Vector2(840f, 192f);
-        LogScoreVisualLegacy(t);
+        rt.sizeDelta = new Vector2(420f, 96f);
+        LogScoreOutline(t, "UI.Outline");
     }
 
-    static void LogScoreVisualLegacy(Text t)
+    static void LogScoreOutline(Text t, string method)
     {
         if (t == null) return;
         var ol = t.gameObject.GetComponent<UnityEngine.UI.Outline>();
         bool outlineOn = ol != null;
-        UnityEngine.Debug.Log($"[ScoreVisual] score_text_color={t.color} score_outline_enabled={outlineOn.ToString().ToLower()} score_outline_color={(ol != null ? ol.effectColor.ToString() : "n/a")} score_font_size={t.fontSize} score_visual_pass={outlineOn.ToString().ToLower()}");
-        SnowLoopLogCapture.AppendToAssiReport($"=== ScoreVisual === score_text_color={t.color} score_outline_enabled={outlineOn} score_outline_color={(ol != null ? ol.effectColor.ToString() : "n/a")} score_font_size={t.fontSize} score_visual_pass={outlineOn}");
+        string path = GetGameObjectPath(t.gameObject);
+        int dupCount = CountScoreObjects();
+        UnityEngine.Debug.Log($"[ScoreOutline] score_object_name={t.gameObject.name} score_object_path={path} score_duplicate_count={dupCount} score_outline_enabled={outlineOn.ToString().ToLower()} score_outline_method={method} score_outline_color=#000000 score_font_size={t.fontSize} score_position=top-left score_single_display_pass={(dupCount == 1).ToString().ToLower()} score_outline_visual_pass={outlineOn.ToString().ToLower()}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== ScoreOutline === score_object_name={t.gameObject.name} score_object_path={path} score_duplicate_count={dupCount} score_outline_enabled={outlineOn} score_outline_method={method} score_outline_color=#000000 score_font_size={t.fontSize} score_position=top-left score_single_display_pass={(dupCount == 1)} score_outline_visual_pass={outlineOn}");
+    }
+
+    static string GetGameObjectPath(GameObject go)
+    {
+        if (go == null) return "?";
+        var parts = new System.Collections.Generic.List<string>();
+        var t = go.transform;
+        while (t != null) { parts.Add(t.name); t = t.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
+    }
+
+    static int CountScoreObjects()
+    {
+        int c = 0;
+        foreach (var t in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsSortMode.None))
+        {
+            if (t.name == "ScoreText" && t.gameObject.activeInHierarchy) c++;
+        }
+        return c;
     }
 
     static void ApplyScoreTextLayoutTMP(Component tmp)
@@ -183,22 +209,41 @@ public class UIBootstrap : MonoBehaviour
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = new Vector2(10f, -10f);
-            rt.sizeDelta = new Vector2(840f, 192f);
+            rt.sizeDelta = new Vector2(420f, 96f);
         }
         try
         {
-            tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 144);
+            tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 72);
             tmp.GetType().GetProperty("color")?.SetValue(tmp, ScoreTextColor);
-            tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.35f);
+            tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.25f);
             tmp.GetType().GetProperty("outlineColor")?.SetValue(tmp, Color.black);
-            var go = (tmp as MonoBehaviour)?.gameObject;
-            if (go != null)
+            var fontMat = tmp.GetType().GetProperty("fontMaterial")?.GetValue(tmp);
+            if (fontMat is Material mat && mat != null)
             {
-                var ol = go.GetComponent<UnityEngine.UI.Outline>();
-                if (ol == null) ol = go.AddComponent<UnityEngine.UI.Outline>();
-                if (ol != null) { ol.effectColor = Color.black; ol.effectDistance = new Vector2(4f, 4f); }
+                mat.EnableKeyword("OUTLINE_ON");
+                mat.SetFloat("_OutlineWidth", 0.25f);
+                mat.SetColor("_OutlineColor", Color.black);
             }
-            LogScoreVisual(tmp);
+            var updatePad = tmp.GetType().GetMethod("UpdateMeshPadding", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance, null, System.Type.EmptyTypes, null);
+            updatePad?.Invoke(tmp, null);
+            LogScoreOutlineTMP(tmp, "TMP_outline+material");
+        }
+        catch { }
+    }
+
+    static void LogScoreOutlineTMP(Component tmp, string method)
+    {
+        if (tmp == null) return;
+        try
+        {
+            var outlineW = tmp.GetType().GetProperty("outlineWidth")?.GetValue(tmp);
+            bool outlineOn = outlineW != null && ((float)outlineW) > 0.001f;
+            var fsVal = tmp.GetType().GetProperty("fontSize")?.GetValue(tmp);
+            int fs = fsVal != null ? (int)(float)fsVal : 72;
+            string path = GetGameObjectPath((tmp as MonoBehaviour)?.gameObject);
+            int dupCount = CountScoreObjects();
+            UnityEngine.Debug.Log($"[ScoreOutline] score_object_name={((tmp as MonoBehaviour)?.gameObject?.name ?? "?")} score_object_path={path} score_duplicate_count={dupCount} score_outline_enabled={outlineOn.ToString().ToLower()} score_outline_method={method} score_outline_color=#000000 score_font_size={fs} score_position=top-left score_single_display_pass={(dupCount == 1).ToString().ToLower()} score_outline_visual_pass={outlineOn.ToString().ToLower()}");
+            SnowLoopLogCapture.AppendToAssiReport($"=== ScoreOutline === score_object_name={((tmp as MonoBehaviour)?.gameObject?.name ?? "?")} score_object_path={path} score_duplicate_count={dupCount} score_outline_enabled={outlineOn} score_outline_method={method} score_outline_color=#000000 score_font_size={fs} score_position=top-left score_single_display_pass={(dupCount == 1)} score_outline_visual_pass={outlineOn}");
         }
         catch { }
     }

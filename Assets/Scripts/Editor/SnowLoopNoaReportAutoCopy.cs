@@ -122,6 +122,9 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
             sb.AppendLine(BuildVideoPipelineLogsSection());
             sb.AppendLine("");
+            sb.AppendLine("=== DEBUG SCREENSHOT STATUS ===");
+            sb.AppendLine(BuildDebugScreenshotStatusSection(lines));
+            sb.AppendLine("");
             sb.AppendLine("=== CORNICE SCENE CHECK ===");
             sb.AppendLine(BuildCorniceSceneCheckSection(lines));
             sb.AppendLine("");
@@ -188,6 +191,10 @@ public static class SnowLoopNoaReportAutoCopy
 
         sb.AppendLine("=== タップ・局所雪崩レポート（必須） ===");
         sb.AppendLine(BuildTapLocalAvalancheReport(lines));
+        sb.AppendLine();
+
+        sb.AppendLine("=== DEBUG SCREENSHOT STATUS ===");
+        sb.AppendLine(BuildDebugScreenshotStatusSection(lines));
         sb.AppendLine();
 
         sb.AppendLine("=== ASSI観測ログ（必須・差分関係なく出力） ===");
@@ -1076,10 +1083,65 @@ public static class SnowLoopNoaReportAutoCopy
         return sb.ToString();
     }
 
+    static string BuildDebugScreenshotStatusSection(string[] lines)
+    {
+        var sb = new StringBuilder();
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        string summaryError = (lines == null || lines.Length == 0) ? "no_log" : "none";
+
+        if (lines != null && lines.Length > 0)
+        {
+            var assiLines = lines.Where(l => l.Contains("[ASSI]") && (
+                l.Contains("DEBUG SCREENSHOT [") || l.Contains("_local_path=") || l.Contains("_exists=") ||
+                l.Contains("_size_bytes=") || l.Contains("_drive_link=") || l.Contains("_drive_upload_success=") ||
+                l.Contains("error=") || l.Contains("_session_path="))).ToList();
+            foreach (var line in assiLines)
+            {
+                int idx = line.IndexOf("[ASSI]");
+                if (idx < 0) continue;
+                string content = line.Substring(idx + "[ASSI] ".Length).Trim();
+                if (string.IsNullOrEmpty(content)) continue;
+                int eq = content.IndexOf('=');
+                if (eq > 0)
+                {
+                    string key = content.Substring(0, eq).Trim();
+                    string val = content.Substring(eq + 1).Trim();
+                    dict[key] = val;
+                    if (key == "error" && !string.IsNullOrEmpty(val) && val != "none") summaryError = val;
+                }
+            }
+            if (dict.Count == 0) summaryError = "no_capture";
+        }
+
+        foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
+        {
+            sb.AppendLine($"{k}_local_path={dict.TryGetValue(k + "_local_path", out var v) ? v : ""}");
+        }
+        sb.AppendLine();
+        foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
+        {
+            sb.AppendLine($"{k}_exists={dict.TryGetValue(k + "_exists", out var v) ? v : "false"}");
+        }
+        sb.AppendLine();
+        foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
+        {
+            sb.AppendLine($"{k}_size_bytes={dict.TryGetValue(k + "_size_bytes", out var v) ? v : "0"}");
+        }
+        sb.AppendLine();
+        foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
+        {
+            sb.AppendLine($"{k}_drive_link={dict.TryGetValue(k + "_drive_link", out var v) ? v : ""}");
+        }
+        sb.AppendLine();
+        sb.AppendLine($"drive_upload_success={dict.TryGetValue("gameview_drive_upload_success", out var du) ? du : "false"}");
+        sb.AppendLine($"error={summaryError}");
+        return sb.ToString();
+    }
+
     static string BuildAssiAngleReport(string[] lines)
     {
         var sb = new StringBuilder();
-        var assiLines = lines.Where(l => l.Contains("[ASSI]")).ToList();
+        var assiLines = lines.Where(l => l.Contains("[ASSI]") && !l.Contains("DEBUG SCREENSHOT [")).ToList();
         if (assiLines.Count == 0) return sb.AppendLine("※ ANGLE MINI / ANGLE FIX / DEBUG CAMERA なし").ToString();
 
         foreach (var line in assiLines)

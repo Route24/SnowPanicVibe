@@ -102,6 +102,7 @@
     <Compile Include="Assets/Scripts/SnowLoopLogCapture.cs" />
     <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
     <Compile Include="Assets/Scripts/RoofSnowReportWriter.cs" />
+    <Compile Include="Assets/Scripts/DebugScreenshotCapture.cs" />
     <Compile Include="Assets/Scripts/GroundSnowPile.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB1.cs" />
     <Compile Include="Assets/Scripts/SnowDespawnLogger.cs" />

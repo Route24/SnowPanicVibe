@@ -57,6 +57,7 @@
     <Compile Include="Assets/Editor/SnowVerifyPhaseB1Creator.cs" />
     <Compile Include="Assets/Editor/SnowVerifyPhaseB2Creator.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
+    <Compile Include="Assets/Editor/DebugScreenshotEditor.cs" />
     <Compile Include="Assets/Editor/SnowTestPrefabBuilder.cs" />
     <Compile Include="Assets/Editor/TMP_ImporterFix.cs" />
     <Compile Include="Assets/Editor/SnowVerifyMinimalSceneCreator.cs" />

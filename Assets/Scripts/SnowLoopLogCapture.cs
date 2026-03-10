@@ -37,6 +37,7 @@ public class SnowLoopLogCapture : MonoBehaviour
         var systems = new GameObject("Systems");
         DontDestroyOnLoad(systems);
         systems.AddComponent<UIBootstrap>();
+        systems.AddComponent<DebugScreenshotCapture>();
         go.AddComponent<AssiDebugUI>();
         go.AddComponent<DebugSnowVisibility>();
         go.AddComponent<GridVisualWatchdog>();

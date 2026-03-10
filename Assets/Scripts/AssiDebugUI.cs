@@ -44,7 +44,6 @@ public class AssiDebugUI : MonoBehaviour
 
     void OnGUI()
     {
-        DrawScoreWithOutline();
         var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>();
         if (cooldownMgr != null) DrawCooldownRing(cooldownMgr);
         if (!debugOverlayEnabled) return;
@@ -276,50 +275,6 @@ public class AssiDebugUI : MonoBehaviour
     {
         UnityEngine.Debug.Log($"[CoolTimeVisual] cooltime_text_color={textColor} cooltime_outline_enabled={outlineEnabled.ToString().ToLower()} cooltime_outline_color={outlineColor} cooltime_font_size={fontSize} cooltime_visual_pass={outlineEnabled.ToString().ToLower()}");
         SnowLoopLogCapture.AppendToAssiReport($"=== CoolTimeVisual === cooltime_text_color={textColor} cooltime_outline_enabled={outlineEnabled} cooltime_outline_color={outlineColor} cooltime_font_size={fontSize} cooltime_visual_pass={outlineEnabled}");
-    }
-
-    static bool _scoreOutlineApplied;
-
-    /// <summary>Cool Time と同じ DrawLabelWithOutline 方式で Score を描画。Canvas ScoreText は非表示にする。</summary>
-    void DrawScoreWithOutline()
-    {
-        var mgr = Object.FindFirstObjectByType<SnowPhysicsScoreManager>();
-        int score = mgr != null ? mgr.Score : 0;
-        string text = "SCORE: " + score;
-
-        var root = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
-        var scoreObj = root != null ? root.transform.Find("ScoreText") : null;
-        if (scoreObj != null)
-        {
-            if (scoreObj.gameObject.activeSelf) scoreObj.gameObject.SetActive(false);
-        }
-
-        const int outlinePx = 3;
-        const float x = 20f;
-        float y = Screen.height - 200f;
-        var rect = new Rect(x, y, 600f, 180f);
-        var style = new GUIStyle(GUI.skin.label) { fontSize = 144, fontStyle = FontStyle.Bold };
-        style.normal.textColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
-
-        var prev = style.normal.textColor;
-        style.normal.textColor = Color.black;
-        GUI.Label(new Rect(rect.x - outlinePx, rect.y - outlinePx, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x - outlinePx, rect.y + outlinePx, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x + outlinePx, rect.y - outlinePx, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x + outlinePx, rect.y + outlinePx, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x - outlinePx, rect.y, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x + outlinePx, rect.y, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x, rect.y - outlinePx, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x, rect.y + outlinePx, rect.width, rect.height), text, style);
-        style.normal.textColor = prev;
-        GUI.Label(rect, text, style);
-
-        if (!_scoreOutlineApplied)
-        {
-            _scoreOutlineApplied = true;
-            Debug.Log("[ScoreOutline] score_text_object=ScoreText(OnGUI_overlay) score_outline_enabled=true score_outline_color=#000000 score_outline_width=3 cooltime_outline_reference=DrawLabelWithOutline");
-            SnowLoopLogCapture.AppendToAssiReport("=== ScoreOutline === score_text_object=ScoreText(OnGUI_overlay) score_outline_enabled=true score_outline_color=#000000 score_outline_width=3 cooltime_outline_reference=DrawLabelWithOutline");
-        }
     }
 
     static readonly int _outlinePx = 5;
