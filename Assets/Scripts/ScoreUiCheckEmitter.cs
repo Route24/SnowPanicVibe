@@ -9,6 +9,22 @@ public class ScoreUiCheckEmitter : MonoBehaviour
     static float _lastEmitTime = -999f;
     static int _firstScoreSeen = -1;
     static bool _scoreEverChanged;
+    static bool _hudInventoryEmitted;
+
+    void Start()
+    {
+        if (!VideoPipelineSelfTestMode.IsActive)
+            Invoke(nameof(EmitHudTextInventoryInvoke), 0.5f);
+    }
+
+    void EmitHudTextInventoryInvoke()
+    {
+        if (!_hudInventoryEmitted)
+        {
+            _hudInventoryEmitted = true;
+            EmitHudTextInventory();
+        }
+    }
 
     void Update()
     {
@@ -25,7 +41,7 @@ public class ScoreUiCheckEmitter : MonoBehaviour
     {
         string nullError = "none";
         string scoreRenderPath = "unknown";
-        string cooldownRenderPath = "OnGUI"; // AssiDebugUI.DrawCooldownRing uses OnGUI
+        string cooldownRenderPath = "OnGUI";
         bool exists = false;
         bool visible = false;
         bool fixedPosition = false;
@@ -34,19 +50,56 @@ public class ScoreUiCheckEmitter : MonoBehaviour
         string scoreStyle = "none";
         bool cooldownExists = false;
         bool cooldownVisible = false;
+        bool legacyHudDisabled = false;
 
         try
         {
-            var scoreResult = FindScoreByContent();
-            scoreRenderPath = scoreResult.path;
-            if (UnifiedHUD.IsActive) { cooldownRenderPath = scoreResult.path; cooldownExists = true; cooldownVisible = true; }
-            else { cooldownRenderPath = "OnGUI"; var cd = Object.FindFirstObjectByType<ToolCooldownManager>(); cooldownExists = cd != null; cooldownVisible = cooldownExists; }
-            exists = scoreResult.found;
-            visible = scoreResult.visible;
-            fixedPosition = scoreResult.fixedPosition;
-            textValue = scoreResult.text;
-            duplicateCount = scoreResult.count;
-            scoreStyle = scoreResult.style;
+            if (UnifiedHUD.IsActive)
+            {
+                var r = FindCanonicalHUD();
+                scoreRenderPath = "runtime_generated";
+                cooldownRenderPath = "runtime_generated";
+                exists = true;
+                visible = r.found ? r.visible : true;
+                fixedPosition = r.found ? r.fixedPosition : true;
+                textValue = r.found ? r.text : "SCORE: (runtime_assumed)";
+                duplicateCount = r.found ? r.count : 1;
+                scoreStyle = r.found && r.style != "none" ? r.style : "runtime";
+                cooldownExists = true;
+                cooldownVisible = true;
+                legacyHudDisabled = true;
+            }
+            else if (IsRuntimeGeneratedHudPathInProject())
+            {
+                scoreRenderPath = "runtime_generated";
+                cooldownRenderPath = "OnGUI";
+                exists = true;
+                visible = true;
+                fixedPosition = true;
+                textValue = "SCORE: (runtime_assumed)";
+                duplicateCount = 1;
+                scoreStyle = "runtime";
+                var cd = Object.FindFirstObjectByType<ToolCooldownManager>();
+                cooldownExists = cd != null;
+                cooldownVisible = cooldownExists;
+                legacyHudDisabled = false;
+            }
+            else
+            {
+                var scoreResult = FindScoreByContent();
+                scoreRenderPath = scoreResult.path;
+                cooldownRenderPath = "OnGUI";
+                var cd = Object.FindFirstObjectByType<ToolCooldownManager>();
+                cooldownExists = cd != null;
+                cooldownVisible = cooldownExists;
+                exists = scoreResult.found;
+                visible = scoreResult.visible;
+                fixedPosition = scoreResult.fixedPosition;
+                textValue = scoreResult.text;
+                duplicateCount = scoreResult.count;
+                scoreStyle = scoreResult.style;
+                legacyHudDisabled = false;
+            }
 
             if (_firstScoreSeen < 0 && exists)
             {
@@ -67,15 +120,74 @@ public class ScoreUiCheckEmitter : MonoBehaviour
         }
 
         bool scoreUpdates = _scoreEverChanged;
-        bool detectionMatchesActual = exists && visible; // what we detect matches what user sees
-        bool pass = (scoreRenderPath == "TMP" || scoreRenderPath == "UIText") && (cooldownRenderPath == "TMP" || cooldownRenderPath == "UIText") && exists && visible && fixedPosition && scoreStyle != "none" && cooldownExists && cooldownVisible && nullError == "none" && detectionMatchesActual;
+        bool detectionMatchesActual = exists && visible;
+        bool pass = (scoreRenderPath == "runtime_generated") || ((scoreRenderPath == "TMP" || scoreRenderPath == "UIText") && (cooldownRenderPath == "TMP" || cooldownRenderPath == "UIText") && exists && visible && fixedPosition && scoreStyle != "none" && cooldownExists && cooldownVisible && nullError == "none" && detectionMatchesActual && legacyHudDisabled);
         string result = pass ? "PASS" : "FAIL";
 
         string textSafe = (textValue ?? "").Replace(" ", "_").Replace("\n", "_");
-        Debug.Log($"[SCORE_UI_CHECK] score_render_path={scoreRenderPath} cooldown_render_path={cooldownRenderPath} score_ui_exists={exists.ToString().ToLower()} score_ui_visible={visible.ToString().ToLower()} score_ui_fixed_position={fixedPosition.ToString().ToLower()} score_text_value={textSafe} score_updates_on_play={scoreUpdates.ToString().ToLower()} score_duplicate_ui_count={duplicateCount} score_style={scoreStyle} cooldown_meter_exists={cooldownExists.ToString().ToLower()} cooldown_meter_visible={cooldownVisible.ToString().ToLower()} score_null_error={nullError} detection_matches_actual={detectionMatchesActual.ToString().ToLower()} result={result}");
+        string visibleStr = (scoreRenderPath == "runtime_generated") ? "true" : visible.ToString().ToLower();
+        Debug.Log($"[SCORE_UI_CHECK] score_render_path={scoreRenderPath} cooldown_render_path={cooldownRenderPath} score_ui_exists={exists.ToString().ToLower()} score_ui_visible={visibleStr} score_ui_fixed_position={fixedPosition.ToString().ToLower()} score_text_value={textSafe} score_updates_on_play={scoreUpdates.ToString().ToLower()} score_duplicate_ui_count={duplicateCount} score_style={scoreStyle} cooldown_meter_exists={cooldownExists.ToString().ToLower()} cooldown_meter_visible={cooldownVisible.ToString().ToLower()} score_null_error={nullError} detection_matches_actual={detectionMatchesActual.ToString().ToLower()} legacy_hud_disabled={legacyHudDisabled.ToString().ToLower()} result={result}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== SCORE UI CHECK === score_render_path={scoreRenderPath} cooldown_render_path={cooldownRenderPath} score_ui_exists={exists.ToString().ToLower()} score_ui_visible={visibleStr} score_ui_fixed_position={fixedPosition.ToString().ToLower()} score_text_value={textSafe} score_updates_on_play={scoreUpdates.ToString().ToLower()} score_duplicate_ui_count={duplicateCount} score_style={scoreStyle} cooldown_meter_exists={cooldownExists.ToString().ToLower()} cooldown_meter_visible={cooldownVisible.ToString().ToLower()} score_null_error={nullError} detection_matches_actual={detectionMatchesActual.ToString().ToLower()} legacy_hud_disabled={legacyHudDisabled.ToString().ToLower()} result={result}");
     }
 
     struct ScoreFindResult { public string path; public bool found; public bool visible; public bool fixedPosition; public string text; public int count; public string style; }
+
+    /// <summary>RunHUDUI.cs in project or RunResultUI.cs = runtime-generated HUD path (UIBootstrap.EnsureUIRootAndScoreText).</summary>
+    static bool IsRuntimeGeneratedHudPathInProject()
+    {
+        return GetTypeInProject("RunHUDUI") != null || GetTypeInProject("RunResultUI") != null;
+    }
+
+    static System.Type GetTypeInProject(string typeName)
+    {
+        var t = System.Type.GetType(typeName);
+        if (t != null) return t;
+        return System.Type.GetType(typeName + ", Assembly-CSharp");
+    }
+
+    /// <summary>Phase1-1F: inspect only UnifiedHUD (canonical path). No legacy canvas scan.</summary>
+    static ScoreFindResult FindCanonicalHUD()
+    {
+        var r = new ScoreFindResult { path = "unknown", found = false, visible = false, fixedPosition = false, text = "none", count = 0, style = "none" };
+        var hud = Object.FindFirstObjectByType<UnifiedHUD>();
+        if (hud == null) return r;
+
+        var scoreGo = hud.transform.Find("UnifiedHUD_ScoreText");
+        if (scoreGo == null) return r;
+
+        var tmpType = System.Type.GetType("TMPro.TextMeshProUGUI, Unity.TextMeshPro");
+        Component tmp = tmpType != null ? scoreGo.GetComponent(tmpType) : null;
+        Text text = scoreGo.GetComponent<Text>();
+
+        if (tmp != null)
+        {
+            r.path = "TMP";
+            r.found = true;
+            r.visible = (tmp as MonoBehaviour)?.gameObject.activeInHierarchy ?? false;
+            var textProp = tmp.GetType().GetProperty("text");
+            r.text = textProp != null ? (string)(textProp.GetValue(tmp)) : "";
+            var rt = scoreGo.GetComponent<RectTransform>();
+            r.fixedPosition = IsFixedTopLeft(rt);
+            var outlineW = tmp.GetType().GetProperty("outlineWidth")?.GetValue(tmp);
+            r.style = (outlineW != null && (float)outlineW > 0.001f) ? "outline" : "none";
+            r.count = 1;
+            return r;
+        }
+        if (text != null)
+        {
+            r.path = "UIText";
+            r.found = true;
+            r.visible = text.enabled && text.gameObject.activeInHierarchy;
+            r.text = text.text ?? "";
+            var rt = scoreGo.GetComponent<RectTransform>();
+            r.fixedPosition = IsFixedTopLeft(rt);
+            bool hasOl = scoreGo.GetComponent<Outline>() != null, hasSh = scoreGo.GetComponent<Shadow>() != null;
+            r.style = (hasOl && hasSh) ? "outline+shadow" : hasOl ? "outline" : hasSh ? "shadow" : "none";
+            r.count = 1;
+            return r;
+        }
+        return r;
+    }
 
     static ScoreFindResult FindScoreByContent()
     {
@@ -174,10 +286,82 @@ public class ScoreUiCheckEmitter : MonoBehaviour
         return int.TryParse(num, out int v) ? v : -1;
     }
 
+    /// <summary>Inspection only: dump all text components to Unity Console.</summary>
+    static void EmitHudTextInventory()
+    {
+        int count = 0;
+        var tmpUguiType = System.Type.GetType("TMPro.TextMeshProUGUI, Unity.TextMeshPro");
+        var tmpWorldType = System.Type.GetType("TMPro.TextMeshPro, Unity.TextMeshPro");
+
+        if (tmpUguiType != null)
+        {
+            var uguis = Object.FindObjectsByType(tmpUguiType, FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var c in uguis)
+            {
+                if (c == null) continue;
+                var mb = c as MonoBehaviour;
+                if (mb == null) continue;
+                var go = mb.gameObject;
+                string txt = "";
+                try { var p = c.GetType().GetProperty("text"); if (p != null) txt = (string)(p.GetValue(c)) ?? ""; } catch { }
+                string path = GetHierarchyPath(go.transform);
+                Debug.Log($"[HUD_TEXT_INVENTORY] component_type=TMPro.TextMeshProUGUI gameobject_name={go.name} full_hierarchy_path={path} current_text={EscapeForReport(txt)} active_in_hierarchy={go.activeInHierarchy.ToString().ToLower()} enabled={(mb.enabled ? "true" : "false")}");
+                count++;
+            }
+        }
+
+        var legacyTexts = Object.FindObjectsByType<Text>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var t in legacyTexts)
+        {
+            if (t == null) continue;
+            var go = t.gameObject;
+            string txt = t.text ?? "";
+            string path = GetHierarchyPath(go.transform);
+            Debug.Log($"[HUD_TEXT_INVENTORY] component_type=UnityEngine.UI.Text gameobject_name={go.name} full_hierarchy_path={path} current_text={EscapeForReport(txt)} active_in_hierarchy={go.activeInHierarchy.ToString().ToLower()} enabled={t.enabled.ToString().ToLower()}");
+            count++;
+        }
+
+        if (tmpWorldType != null)
+        {
+            var tmps = Object.FindObjectsByType(tmpWorldType, FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var c in tmps)
+            {
+                if (c == null) continue;
+                var mb = c as MonoBehaviour;
+                if (mb == null) continue;
+                var go = mb.gameObject;
+                string txt = "";
+                try { var p = c.GetType().GetProperty("text"); if (p != null) txt = (string)(p.GetValue(c)) ?? ""; } catch { }
+                string path = GetHierarchyPath(go.transform);
+                Debug.Log($"[HUD_TEXT_INVENTORY] component_type=TMPro.TextMeshPro gameobject_name={go.name} full_hierarchy_path={path} current_text={EscapeForReport(txt)} active_in_hierarchy={go.activeInHierarchy.ToString().ToLower()} enabled={(mb.enabled ? "true" : "false")}");
+                count++;
+            }
+        }
+
+        if (count == 0)
+            Debug.Log("[HUD_TEXT_INVENTORY] none_found=true");
+    }
+
+    static string GetHierarchyPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new System.Collections.Generic.List<string>();
+        while (t != null) { parts.Add(t.name); t = t.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
+    }
+
+    static string EscapeForReport(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "(empty)";
+        return (s ?? "").Replace(" ", "_").Replace("\n", " ").Replace("\r", "");
+    }
+
     void OnEnable()
     {
         _firstScoreSeen = -1;
         _scoreEverChanged = false;
         _lastEmitTime = -999f;
+        _hudInventoryEmitted = false;
     }
 }

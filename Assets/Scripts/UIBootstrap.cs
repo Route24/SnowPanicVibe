@@ -29,7 +29,8 @@ public class UIBootstrap : MonoBehaviour
         _booted = true;
         try
         {
-            EnsureUIRootAndScoreText();
+            UnifiedHUD.EnsureBootstrap(); // ensure canonical HUD first
+            if (!UnifiedHUD.IsActive) EnsureUIRootAndScoreText();
             SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
             var c = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
             Debug.Log($"[UIBootstrap] BeforeSceneLoad complete Canvas={(c != null ? "OK" : "FAIL")}");
@@ -43,12 +44,14 @@ public class UIBootstrap : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void BootstrapAfterScene()
     {
-        EnsureUIRootAndScoreText();
+        UnifiedHUD.EnsureBootstrap();
+        if (!UnifiedHUD.IsActive) EnsureUIRootAndScoreText();
         SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
     }
 
     public static void EnsureUIRootAndScoreText()
     {
+        if (UnifiedHUD.IsActive) return; // Phase1-1F: canonical HUD only - no legacy Canvas/ScoreText
         var root = EnsureCanvas();
         EnsureScoreText(root);
     }
@@ -246,9 +249,9 @@ public class UIBootstrap : MonoBehaviour
         try
         {
             tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 72);
-            tmp.GetType().GetProperty("color")?.SetValue(tmp, ScoreTextColor);
+            SetTMPColorSafe(tmp, "color", (Color32)ScoreTextColor);
             tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.25f);
-            tmp.GetType().GetProperty("outlineColor")?.SetValue(tmp, Color.black);
+            SetTMPColorSafe(tmp, "outlineColor", new Color32(0, 0, 0, 255));
             var fontMat = tmp.GetType().GetProperty("fontMaterial")?.GetValue(tmp);
             if (fontMat is Material mat && mat != null)
             {
@@ -285,6 +288,15 @@ public class UIBootstrap : MonoBehaviour
         var tmpType = System.Type.GetType("TMPro.TextMeshProUGUI, Unity.TextMeshPro");
         if (tmpType == null) return null;
         return go.AddComponent(tmpType) as Component;
+    }
+
+    /// <summary>TMP の color/outlineColor を PropertyType に合わせて安全に設定。Color32→Color 例外を回避。</summary>
+    static void SetTMPColorSafe(Component tmp, string propName, Color32 c32)
+    {
+        var prop = tmp?.GetType().GetProperty(propName);
+        if (prop == null) return;
+        object val = prop.PropertyType == typeof(Color) ? (Color)c32 : c32;
+        prop.SetValue(tmp, val);
     }
 
     static void WireScoreToText(Text t)

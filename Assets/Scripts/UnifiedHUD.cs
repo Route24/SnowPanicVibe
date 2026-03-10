@@ -46,7 +46,38 @@ public class UnifiedHUD : MonoBehaviour
         if (!scoreTMP) CreateScoreTextLegacy();
         bool statusTMP = TryCreateStatusText();
         if (!statusTMP) CreateStatusTextLegacy();
+        DisableLegacyHUD();
         Debug.Log($"[UnifiedHUD] Created Score+Status (scoreTMP={scoreTMP} statusTMP={statusTMP})");
+    }
+
+    /// <summary>Phase1-1F: disable legacy ScoreText/Canvas that would conflict with canonical HUD.</summary>
+    void DisableLegacyHUD()
+    {
+        foreach (var c in Object.FindObjectsByType<Canvas>(FindObjectsSortMode.None))
+        {
+            if (c == null || c.gameObject == gameObject) continue;
+            var st = c.transform.Find("ScoreText");
+            if (st != null && st.gameObject.activeSelf)
+            {
+                st.gameObject.SetActive(false);
+                Debug.Log("[UnifiedHUD] Disabled legacy ScoreText: " + GetPath(st));
+            }
+        }
+        var snowScore = Object.FindFirstObjectByType<SnowScoreDisplayUI>();
+        if (snowScore != null && snowScore.gameObject.activeInHierarchy)
+        {
+            snowScore.gameObject.SetActive(false);
+            Debug.Log("[UnifiedHUD] Disabled legacy SnowScoreDisplayUI");
+        }
+    }
+
+    static string GetPath(Transform t)
+    {
+        if (t == null) return "?";
+        var parts = new System.Collections.Generic.List<string>();
+        while (t != null) { parts.Add(t.name); t = t.parent; }
+        parts.Reverse();
+        return string.Join("/", parts);
     }
 
     bool TryCreateScoreText()
@@ -59,9 +90,9 @@ public class UnifiedHUD : MonoBehaviour
         if (tmp == null) return false;
         tmp.GetType().GetProperty("text")?.SetValue(tmp, "SCORE: 0");
         tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 72);
-        tmp.GetType().GetProperty("color")?.SetValue(tmp, new Color(255f/255f, 220f/255f, 0f, 1f));
+        SetTMPColorSafe(tmp, "color", new Color32(255, 220, 0, 255));
         tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.2f);
-        tmp.GetType().GetProperty("outlineColor")?.SetValue(tmp, Color.black);
+        SetTMPColorSafe(tmp, "outlineColor", new Color32(0, 0, 0, 255));
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(0f, 1f); rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(12f, -12f); rt.sizeDelta = new Vector2(400f, 90f);
@@ -97,9 +128,9 @@ public class UnifiedHUD : MonoBehaviour
         if (tmp == null) return false;
         tmp.GetType().GetProperty("text")?.SetValue(tmp, "Ready");
         tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 48);
-        tmp.GetType().GetProperty("color")?.SetValue(tmp, new Color(255f/255f, 220f/255f, 0f, 1f));
+        SetTMPColorSafe(tmp, "color", new Color32(255, 220, 0, 255));
         tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.2f);
-        tmp.GetType().GetProperty("outlineColor")?.SetValue(tmp, Color.black);
+        SetTMPColorSafe(tmp, "outlineColor", new Color32(0, 0, 0, 255));
         try { var alignProp = tmp.GetType().GetProperty("alignment"); if (alignProp != null) alignProp.SetValue(tmp, 514); } catch { } // TMP Center
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0.5f, 0f); rt.anchorMax = new Vector2(0.5f, 0f); rt.pivot = new Vector2(0.5f, 0.5f);
@@ -120,6 +151,7 @@ public class UnifiedHUD : MonoBehaviour
         t.alignment = TextAnchor.MiddleCenter;
         t.text = "Ready";
         var shadow = go.AddComponent<Shadow>(); shadow.effectColor = Color.black; shadow.effectDistance = new Vector2(2f, 2f);
+        var outline = go.AddComponent<Outline>(); outline.effectColor = Color.black; outline.effectDistance = new Vector2(2f, 2f);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0.5f, 0f); rt.anchorMax = new Vector2(0.5f, 0f); rt.pivot = new Vector2(0.5f, 0.5f);
         rt.anchoredPosition = new Vector2(0f, 120f); rt.sizeDelta = new Vector2(300f, 60f);
@@ -176,4 +208,13 @@ public class UnifiedHUD : MonoBehaviour
     }
 
     public static void EnsureBootstrap() { Bootstrap(); }
+
+    /// <summary>TMP の color/outlineColor を PropertyType に合わせて安全に設定。Color32→Color 例外を回避。</summary>
+    static void SetTMPColorSafe(Component tmp, string propName, Color32 c32)
+    {
+        var prop = tmp?.GetType().GetProperty(propName);
+        if (prop == null) return;
+        object val = prop.PropertyType == typeof(Color) ? (Color)c32 : c32;
+        prop.SetValue(tmp, val);
+    }
 }

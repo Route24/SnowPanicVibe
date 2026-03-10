@@ -13,6 +13,7 @@ public class SnowScoreDisplayUI : MonoBehaviour
 
     public static void EnsureBootstrap()
     {
+        if (UnifiedHUD.IsActive) return; // Phase1-1F: canonical HUD only - no legacy SnowScoreDisplay
         if (FindFirstObjectByType<SnowScoreDisplayUI>() != null) return;
         var uiroot = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
         if (uiroot != null && uiroot.transform.Find("ScoreText") != null)
