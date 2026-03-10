@@ -272,6 +272,7 @@ public class RoofSnowSystem : MonoBehaviour
         int removed = SnowPackSpawner.LastRemovedCount;
         if (removed > 0)
         {
+            SnowVisual.SpawnPowderAt(tapWorldPoint);
             Vector3 roofUp = roofSlideCollider.transform.up.normalized;
             Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
             if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
@@ -386,6 +387,9 @@ public class RoofSnowSystem : MonoBehaviour
         Debug.Log($"[AvalancheBeforeAfter] beforeDepth={before:F3} afterDepth={after:F3} packedCubeCountBefore={packedBefore} packedCubeCountAfter={packedAfter} burstAmount={burstAmount:F3}");
 
         SpawnAvalancheBurstVisual(burstAmount);
+
+        Vector3 powderPos = roofSlideCollider.bounds.center + roofUp * (roofSlideCollider.bounds.extents.y + 0.15f);
+        SnowVisual.SpawnPowderAt(powderPos);
 
         Vector3 burstVel = slopeDir * burstChunkSpeed;
         Vector3 roofFwd = roofSlideCollider.transform.forward.normalized;

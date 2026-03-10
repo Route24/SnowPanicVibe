@@ -1,10 +1,10 @@
-# 雪の気持ちよさ調整（1軒シーン用）
+# 雪の気持ちよさ調整（1軒本番シーン用）
 
 ## 実装サマリ
 
 - **ApplySnowFeelTuning**: Avalanche_Test_OneHouse で自動適用
-- 狙い撃ち・連鎖・塊感・雪っぽさを調整
-- 6軒には戻さない（1軒のみ）
+- **3項目のみ**: 一撃量・連鎖・塊感（PhaseB2卒業→本番手触り）
+- キューブ軽減は jitter のみ軽く
 
 ---
 
@@ -18,33 +18,27 @@
 
 ---
 
-## 調整項目と値
+## 調整項目と値（3項目+軽い jitter）
 
 | 項目 | 調整後 | 狙い |
 |------|--------|------|
-| **一撃で剥がれる量** | | |
-| hitRadiusR | 0.88 | やや狭め＝狙いが必要 |
-| localAvalancheMinDetach | 18 | 最低剥がれ量 |
-| localAvalancheMaxDetach | 65 | 1撃上限（連鎖に委ねる） |
-| **連鎖の起きやすさ** | | |
-| chainDetachChance | 0.82 | 条件で大きく連鎖 |
-| secondaryDetachFraction | 0.4 | 二次崩壊多め |
-| maxSecondaryDetachPerHit | 32 | 連鎖キャパ拡大 |
-| unstableRadiusScale | 1.5 | 不安定ゾーン広め |
-| secondaryDetachDelaySec | 0.32 | 連鎖やや速め |
-| unstableDurationSec | 1.5 | 連鎖継続時間 |
-| **塊で落ちる感じ** | | |
-| localAvalancheSlideSpeed | 1.05 | やや速め＝インパクト |
-| burstChunkCount | 44 | 塊の数 |
-| burstChunkSpeed | 2.4 | 落下速さ |
-| **残雪の見え方** | | |
-| snowRenderThicknessScale | 0.78 | 厚み感 |
-| pieceHeightScale | 0.88 | 高さ |
-| **雪っぽさ（キューブ軽減）** | | |
-| pieceSize | 0.155 | やや小さめ＝粒感 |
-| jitter | 0.038 |  irregular |
-| normalInset | 0.014 | 角の丸み |
-| snowColor | (0.94,0.97,1) | 柔らかい白 |
+| **1) 一撃で剥がれる量** | | |
+| hitRadiusR | 0.9 | 叩く場所で変わる・狙いが必要 |
+| localAvalancheMinDetach | 16 | 最低剥がれ量 |
+| localAvalancheMaxDetach | 60 | 1撃上限（連鎖に委ねる） |
+| **2) 連鎖の起きやすさ** | | |
+| chainDetachChance | 0.8 | うまく当てると大きく連鎖 |
+| secondaryDetachFraction | 0.38 | 二次崩壊 |
+| maxSecondaryDetachPerHit | 30 | 連鎖キャパ |
+| unstableRadiusScale | 1.45 | 不安定ゾーン |
+| secondaryDetachDelaySec | 0.33 | 連鎖タイミング |
+| unstableDurationSec | 1.4 | 連鎖継続 |
+| **3) 塊で落ちる気持ちよさ** | | |
+| localAvalancheSlideSpeed | 1.02 | 塊感・インパクト |
+| burstChunkCount | 42 | 塊の数 |
+| burstChunkSpeed | 2.3 | 落下速さ |
+| **キューブ軽減（軽く）** | | |
+| jitter | 0.032 | わずかになめらか |
 
 ---
 

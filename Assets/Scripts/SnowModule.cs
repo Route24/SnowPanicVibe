@@ -25,6 +25,8 @@ public struct RoofDefinition
     public Vector3 roofF;
     public Vector3 roofDownhill;
     public bool isValid;
+    /// <summary>true時は積雪範囲を屋根と完全一致(scale=1.0)。MeshRenderer.bounds 由来のときにセット。</summary>
+    public bool useExactRoofSize;
 
     public static RoofDefinition Invalid => default;
 
@@ -81,11 +83,40 @@ public static class RoofDefinitionResolver
         Vector3 downhill = Vector3.ProjectOnPlane(g, rawN).normalized;
         if (downhill.sqrMagnitude < 1e-6f) downhill = -angleT.forward.normalized;
 
-        Bounds b = roofCollider.bounds;
-        Vector3 center = b.center;
+        Vector3 center;
         float projectedW, projectedL;
+        bool fromMeshRenderer = false;
 
-        if (roofCollider is BoxCollider box)
+        // 優先: 屋根MeshRenderer.bounds（scale反映済み）で実寸を取得
+        var mr = roofCollider.GetComponent<MeshRenderer>();
+        if (mr == null) mr = roofCollider.GetComponentInParent<MeshRenderer>();
+        if (mr == null) mr = roofCollider.GetComponentInChildren<MeshRenderer>();
+        if (mr != null)
+        {
+            Bounds meshBounds = mr.bounds;
+            center = meshBounds.center;
+            float minR = float.MaxValue, maxR = float.MinValue, minF = float.MaxValue, maxF = float.MinValue;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = meshBounds.center + new Vector3(
+                    (i & 1) != 0 ? meshBounds.extents.x : -meshBounds.extents.x,
+                    (i & 2) != 0 ? meshBounds.extents.y : -meshBounds.extents.y,
+                    (i & 4) != 0 ? meshBounds.extents.z : -meshBounds.extents.z);
+                float cr = Vector3.Dot(corner - center, r);
+                float cf = Vector3.Dot(corner - center, f);
+                if (cr < minR) minR = cr; if (cr > maxR) maxR = cr;
+                if (cf < minF) minF = cf; if (cf > maxF) maxF = cf;
+            }
+            projectedW = Mathf.Max(0.5f, maxR - minR);
+            projectedL = Mathf.Max(0.5f, maxF - minF);
+            fromMeshRenderer = true;
+        }
+        else
+        {
+            Bounds b = roofCollider.bounds;
+            center = b.center;
+
+            if (roofCollider is BoxCollider box)
         {
             var t = roofCollider.transform;
             Vector3 c = box.center;
@@ -121,6 +152,7 @@ public static class RoofDefinitionResolver
             projectedW = Mathf.Max(0.5f, maxR - minR);
             projectedL = Mathf.Max(0.5f, maxF - minF);
         }
+        }
 
         float slopeAngle = 90f - Vector3.Angle(rawN, Vector3.up);
 
@@ -135,7 +167,8 @@ public static class RoofDefinitionResolver
             roofR = r,
             roofF = f,
             roofDownhill = downhill,
-            isValid = true
+            isValid = true,
+            useExactRoofSize = fromMeshRenderer
         };
         return true;
     }

@@ -187,8 +187,9 @@ public class AssiDebugUI : MonoBehaviour
         var scoreMgr = Object.FindFirstObjectByType<SnowPhysicsScoreManager>();
         if (scoreMgr != null)
         {
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold };
-            GUI.Label(new Rect(HudX, 8f, 350, 20), $"Score: {scoreMgr.Score}", style);
+            var style = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold };
+            style.normal.textColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
+            DrawLabelWithOutline(new Rect(HudX, 8f, 400, 40), $"Score: {scoreMgr.Score}", style);
         }
 
         // Core gameplay debug: Money, Roof weight
@@ -198,11 +199,12 @@ public class AssiDebugUI : MonoBehaviour
             float roofWeight = core.RoofWeightMeters;
             float threshold = core.CollapseThreshold;
             bool gameOver = core.IsGameOver;
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 12, fontStyle = FontStyle.Bold };
-            float yy = scoreMgr != null ? 26f : 8f;
-            GUI.Label(new Rect(HudX, yy, 350, 20), $"Money: {money}", style); yy += 18;
-            GUI.Label(new Rect(HudX, yy, 350, 20), $"Roof weight: {roofWeight:F3} / {threshold:F3}", style); yy += 18;
-            if (gameOver) GUI.Label(new Rect(HudX, yy, 350, 20), "GAME OVER", new GUIStyle(style) { normal = { textColor = Color.red } }); yy += 18;
+            var style = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold };
+            style.normal.textColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
+            float yy = scoreMgr != null ? 50f : 8f;
+            DrawLabelWithOutline(new Rect(HudX, yy, 400, 40), $"Money: {money}", style); yy += 36;
+            DrawLabelWithOutline(new Rect(HudX, yy, 450, 40), $"Roof weight: {roofWeight:F3} / {threshold:F3}", style); yy += 36;
+            if (gameOver) { var goStyle = new GUIStyle(style) { normal = { textColor = Color.red } }; DrawLabelWithOutline(new Rect(HudX, yy, 350, 40), "GAME OVER", goStyle); yy += 36; }
         }
 
         int packedInRadius = SnowPackSpawner.LastPackedInRadiusBefore;
@@ -211,7 +213,8 @@ public class AssiDebugUI : MonoBehaviour
         float rate = fall != null ? fall.spawnIntervalSeconds : 0f;
         var uv = SnowPackSpawner.LastTapRoofLocal;
         var downhill = spawner != null ? spawner.RoofDownhill : Vector3.zero;
-        var hudStyle = new GUIStyle(GUI.skin.label) { fontSize = 10 };
+        var hudStyle = new GUIStyle(GUI.skin.label) { fontSize = 20 };
+        hudStyle.normal.textColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
         float hudY = HudY;
         float roofSnowVisualAmount = roof != null ? roof.RoofSnowVisualAmount : -1f;
         string roofMaskState = packedTotal == 0 ? "cleared" : "active";
@@ -236,13 +239,13 @@ public class AssiDebugUI : MonoBehaviour
         float total = cooldown.cooldownSec;
         float fill01 = total > 0.001f ? Mathf.Clamp01(rem / total) : 0f;
         float cx = Screen.width * 0.5f;
-        float cy = Screen.height - 60f;
-        float r = 26f;
+        float cy = Screen.height - 80f;
+        float r = 52f;
         int segments = 36;
-        Color fillColor = new Color(0.3f, 0.55f, 0.95f, 0.85f);
-        Color emptyColor = new Color(0.5f, 0.5f, 0.55f, 0.35f);
-        float segW = 4f;
-        float segH = 6f;
+        Color fillColor = new Color(255f/255f, 220f/255f, 0f, 0.95f);
+        Color emptyColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
+        float segW = 8f;
+        float segH = 12f;
         for (int i = 0; i < segments; i++)
         {
             float segEnd = (i + 1f) / segments;
@@ -257,9 +260,22 @@ public class AssiDebugUI : MonoBehaviour
         }
         if (rem > 0.01f)
         {
-            var lbl = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 10 };
-            GUI.Label(new Rect(cx - 30f, cy - 8f, 60f, 16f), $"{rem:F1}s", lbl);
+            var lbl = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 20, fontStyle = FontStyle.Bold };
+            lbl.normal.textColor = new Color(255f/255f, 220f/255f, 0f, 1f);
+            DrawLabelWithOutline(new Rect(cx - 40f, cy - 14f, 80f, 32f), $"{rem:F1}s", lbl);
         }
+    }
+
+    static void DrawLabelWithOutline(Rect rect, string text, GUIStyle style)
+    {
+        var prev = style.normal.textColor;
+        style.normal.textColor = Color.black;
+        GUI.Label(new Rect(rect.x - 2, rect.y - 2, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x - 2, rect.y + 2, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + 2, rect.y - 2, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + 2, rect.y + 2, rect.width, rect.height), text, style);
+        style.normal.textColor = prev;
+        GUI.Label(rect, text, style);
     }
 
     bool Button(float x, float y, string label)

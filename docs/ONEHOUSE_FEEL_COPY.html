@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>1軒本番・気持ちよさ調整（コピー用）</title>
+  <style>
+    body { font-family: monospace; padding: 1em; max-width: 90ch; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 1em; overflow-x: auto; white-space: pre-wrap; }
+    button { padding: 0.5em 1em; font-size: 14px; cursor: pointer; margin-bottom: 0.5em; }
+  </style>
+</head>
+<body>
+  <h1>PhaseB2 卒業 → 1軒本番</h1>
+  <button onclick="copyAll()">全体をコピー</button>
+  <pre id="content">## シーン
+Avalanche_Test_OneHouse（1軒本番寄り）
+SnowVerify_PhaseB2 は卒業・掘り下げ停止
+
+## 開き方
+SnowPanicVibe → Open Avalanche_Test_OneHouse
+
+## 調整3項目（ApplySnowFeelTuning）
+1) 一撃量: hitRadiusR=0.9 min=16 max=60
+2) 連鎖: chainChance=0.8 secondaryFrac=0.38 maxChain=30
+3) 塊感: slideSpeed=1.02 burstChunk=42 burstSpeed=2.3
++ jitter=0.032（軽いキューブ軽減）
+
+## 成功条件
+叩く場所で崩れ方が変わる
+うまく当てると大きく崩れる
+狙い撃ちの方が楽しい</pre>
+  <script>
+    function copyAll() {
+      const el = document.getElementById('content');
+      navigator.clipboard.writeText(el.textContent).then(() => alert('コピーしました'));
+    }
+  </script>
+</body>
+</html>

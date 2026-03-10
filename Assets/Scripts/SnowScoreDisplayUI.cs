@@ -49,20 +49,28 @@ public class SnowScoreDisplayUI : MonoBehaviour
             _text = go.AddComponent<Text>();
             var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             if (font != null) _text.font = font;
-            _text.fontSize = 36;
-            _text.color = new Color(1f, 1f, 1f, 1f);
+            _text.fontSize = 72;
+            _text.color = new Color(255f / 255f, 220f / 255f, 0f, 1f);
             _text.fontStyle = FontStyle.Bold;
+            var shadow = _text.gameObject.GetComponent<Shadow>();
+            if (shadow == null) shadow = _text.gameObject.AddComponent<Shadow>();
+            shadow.effectColor = Color.black;
+            shadow.effectDistance = new Vector2(3f, 3f);
+            var outline = _text.gameObject.GetComponent<Outline>();
+            if (outline == null) outline = _text.gameObject.AddComponent<Outline>();
+            outline.effectColor = Color.black;
+            outline.effectDistance = new Vector2(2f, 2f);
             var rt = _text.rectTransform;
             rt.anchorMin = new Vector2(0f, 1f);
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = new Vector2(10f, -10f);
-            rt.sizeDelta = new Vector2(300f, 48f);
+            rt.sizeDelta = new Vector2(420f, 96f);
             Debug.Log("[SnowScoreDisplayUI] Canvas created, ScoreText auto-created (fontSize=36 pos=10,-10)");
         }
         else
         {
-            _text.fontSize = Mathf.Max(_text.fontSize, 36);
+            _text.fontSize = Mathf.Max(_text.fontSize, 72);
             var rt = _text.rectTransform;
             rt.anchoredPosition = new Vector2(10f, -10f);
             Debug.Log("[SnowScoreDisplayUI] Canvas found, ScoreText found");

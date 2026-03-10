@@ -1,8 +1,8 @@
 # Snow Panic – Game Design Document
 
-Version: 2.0  
-Author: Ken & Noah  
-Date: 2026-03
+**Version:** 5.0  
+**Author:** Ken & Noah  
+**Date:** 2026-03
 
 ---
 
@@ -24,6 +24,8 @@ Snow Panic は、屋根に積もる雪を落として家を守る物理ベース
 
 ゲームの主な爽快感は「屋根の端から雪がドサッと落ちる瞬間」。
 
+Steam で 10 万本を目指す構造を持つ。
+
 ### English
 
 Snow Panic is a physics-based casual game about clearing snow from rooftops to protect houses.
@@ -32,371 +34,604 @@ Players observe the village from a god-like perspective and knock snow off the r
 
 The core satisfaction is the moment when snow slides off the roof edge.
 
+The design targets 100,000 copies sold on Steam.
+
 ---
 
-# 2. Core Gameplay
+# 2. Core Game Structure（ゲーム構造）
+
+### 日本語
+
+Snow Panic のゲーム構造を以下の式で定義する。
+
+```
+爽快な破壊
+＋
+タイミングのリスク
+＋
+短時間プレイ
+＝
+高いリプレイ性
+```
+
+つまり
+
+・**雪崩の気持ちよさ**  
+・**通行人回避の緊張**  
+・**短時間リプレイ**
+
+この 3 つでゲームを成立させる。
+
+### English
+
+Snow Panic's game structure is defined by:
+
+```
+Satisfying Destruction
+＋
+Timing Risk
+＋
+Short Sessions
+＝
+High Replayability
+```
+
+In other words:
+
+・**Avalanche satisfaction**  
+・**Tension from avoiding villagers**  
+・**Short-session replay**
+
+These three pillars make the game work.
+
+---
+
+# 3. Core Gameplay Loop（コアゲームループ）
+
+### 日本語
+
+1. 屋根に雪が積もる  
+2. プレイヤーが雪を叩く  
+3. 雪にヒビが入る  
+4. 雪崩が発生する  
+5. 雪崩が連鎖する  
+6. 通行人を避ける  
+7. スコアを獲得する  
+8. 次のチャンスが生まれる  
+
+**1 プレイ時間：30 秒〜2 分**
+
+### English
+
+1. Snow accumulates on roofs  
+2. Player hits the snow  
+3. Snow cracks  
+4. Avalanche begins  
+5. Chain collapse occurs  
+6. Player avoids villagers  
+7. Score is gained  
+8. A new opportunity appears  
+
+**Typical session length: 30 seconds to 2 minutes**
+
+---
+
+# 4. Avalanche Feel System（雪崩の気持ちよさシステム）
+
+### 日本語
+
+雪崩の快感は以下の 5 段階で設計する。
+
+| 段階 | 名称 | 内容 |
+|------|------|------|
+| ① | 予感（Anticipation） | 雪にヒビが入る・雪が少しズレる。プレイヤーが「大きい雪崩が来る」と感じる演出 |
+| ② | 崩壊（Collapse） | 雪崩開始時：強い効果音・軽いカメラシェイク・短いズーム |
+| ③ | 連鎖（Chain Reaction） | 雪は一度に落ちない。ドサ・ドサ・ドサと順番に落ちることで爽快感を作る |
+| ④ | 巨大雪崩（Mega Avalanche） | 一定数以上の雪が崩壊すると MEGA AVALANCHE 発生。短いスローモーション・巨大スコア表示 |
+| ⑤ | 余韻（Aftermath） | 崩壊後：雪煙・雪の音・スコア表示 |
+
+### English
+
+Avalanche satisfaction is designed in five stages:
+
+| Stage | Name | Content |
+|-------|------|---------|
+| ① | Anticipation | Crack in snow, slight shift. Player senses "big avalanche coming" |
+| ② | Collapse | When avalanche begins: strong impact sound, slight camera shake, quick zoom |
+| ③ | Chain Reaction | Snow should not fall all at once. Blocks collapse sequentially (Thud / Thud / Thud) to create satisfaction |
+| ④ | Mega Avalanche | Above threshold: MEGA AVALANCHE. Short slow motion, large score display |
+| ⑤ | Aftermath | After collapse: snow particles, snow sound, then score display |
+
+---
+
+# 5. Avalanche Size Design（雪崩サイズ設計）
+
+### 日本語
+
+| 規模 | ブロック数 |
+|------|------------|
+| 小雪崩 | 10〜20 ブロック |
+| 中雪崩 | 20〜50 ブロック |
+| 大雪崩 | 50〜80 ブロック |
+| 巨大雪崩 | 80〜150 ブロック |
+
+### English
+
+| Size | Blocks |
+|------|--------|
+| Small | 10–20 blocks |
+| Medium | 20–50 blocks |
+| Large | 50–80 blocks |
+| Mega | 80–150 blocks |
+
+---
+
+# 6. Avalanche Puzzle System（雪崩パズルシステム）
+
+### 日本語
+
+Snow Panic のゲーム性を強化するため「雪崩パズル」の要素を導入する。
+
+プレイヤーは単に雪を叩くのではなく
+
+**「どこを崩すと大きな雪崩になるか」**
+
+を考える必要がある。
+
+**雪の構造**
+
+雪は複数のブロックで構成されている。
+
+ブロックは以下の関係を持つ。
+
+・上の雪は下の雪に支えられている。
+
+**崩壊ルール**
+
+特定のブロックを崩すと周囲の雪が連鎖して崩れる。
+
+例：弱い支点を崩す → 上の雪が落ちる → 隣の雪が崩れる → 大きな雪崩になる
+
+**プレイヤーの戦略**
+
+プレイヤーは小さい崩壊を繰り返すのではなく **「巨大雪崩を作る」** ことを狙う。
+
+そのため
+
+・弱い支点を探す  
+・崩壊の方向を予測する  
+・通行人のタイミングを見る  
+
+という判断が必要になる。
+
+**雪崩パズルの目的**
+
+このシステムにより Snow Panic は単なるクリックゲームではなく **「物理パズルゲーム」** として成立する。
+
+**理想的なプレイヤー体験**
+
+プレイヤーは「ここを崩すと全部落ちるかもしれない」と予測する。
+
+叩く → 雪が崩れる → 連鎖が始まる → 巨大雪崩になる
+
+この瞬間がゲームの最大の快感になる。
+
+### English
+
+To deepen the gameplay of Snow Panic an additional system called **"Avalanche Puzzle System"** is introduced.
+
+Players do not simply hit snow. They must think about
+
+**"where to break the structure to create a large avalanche."**
+
+**Snow Structure**
+
+Snow is composed of multiple blocks. Each block supports other blocks.
+
+Upper snow is supported by lower snow.
+
+**Collapse Rule**
+
+Breaking a critical block can trigger a chain collapse.
+
+Example: Break a weak support → Upper snow falls → Neighboring blocks collapse → A large avalanche occurs
+
+**Player Strategy**
+
+Instead of triggering small collapses repeatedly players aim to create **Mega Avalanches**.
+
+Players must
+
+・find weak support points  
+・predict collapse direction  
+・watch villager timing  
+
+**Purpose of Avalanche Puzzle**
+
+This system ensures that Snow Panic becomes not just a click game but a **physics puzzle game**.
+
+**Target Player Experience**
+
+Players think "If I break this point, everything may fall."
+
+They hit the snow. The structure collapses. A chain reaction begins. A massive avalanche occurs.
+
+This moment becomes the core satisfaction of the game.
+
+---
+
+# 7. Villager Timing System（通行人タイミングシステム）
+
+### 日本語
+
+家の前の道を NPC が歩く。
+
+**NPC 種類**
+
+| 種類 | 特性 |
+|------|------|
+| 子供 | 歩行が速い |
+| おばあちゃん | 歩行が遅い |
+| 犬 | 突然走る |
+
+**ゲームルール**
+
+NPC に落雪が当たると
+・スコア減点  
+・コンボリセット  
+
+### English
+
+NPCs walk on the path in front of houses.
+
+**NPC Types**
+
+| Type | Behavior |
+|------|----------|
+| Child | Fast walking |
+| Elderly | Slow walking |
+| Dog | Sudden movement |
+
+**Game Rules**
+
+If villagers are hit by snow:
+・Score Penalty  
+・Combo Reset  
+
+---
+
+# 8. Timing Gameplay（タイミングゲームの定義）
+
+### 日本語
+
+Snow Panic は「叩くゲーム」ではなく **「落雪タイミングゲーム」** と定義する。
+
+プレイヤーは
+・雪崩を起こす  
+・通行人を避ける  
+
+この判断を行う。
+
+安全に落雪すると **SAFE CLEAR ボーナス**。
+
+### English
+
+Snow Panic is defined as **"Snowfall Timing Game"** not "Tap Game".
+
+The player decides:
+・When to trigger an avalanche  
+・When to avoid villagers  
+
+Safe snowfall clears award **SAFE CLEAR bonus**.
+
+---
+
+# 9. Combo System（コンボシステム）
+
+### 日本語
+
+連続雪崩でコンボ。
+
+**コンボ例**
+・Avalanche x3  
+・Avalanche x5  
+・Avalanche x10  
+
+**巨大雪崩発生時**：スローモーション演出
+
+### English
+
+Consecutive avalanches build combos.
+
+**Examples:** Avalanche x3 / x5 / x10
+
+**Mega Avalanche:** Slow motion effect
+
+---
+
+# 10. Score System（スコアシステム）
+
+### 日本語
+
+**加点**
+
+| イベント | スコア |
+|----------|--------|
+| 基本落雪 | +10 |
+| 中規模雪崩 | +50 |
+| 大雪崩 | +100 |
+| 巨大雪崩 | +300 |
+| 安全クリア | +300 |
+
+**ペナルティ**
+
+| イベント | スコア |
+|----------|--------|
+| 通行人直撃 | -200 |
+
+### English
+
+**Positive**
+
+| Event | Score |
+|-------|-------|
+| Basic Drop | +10 |
+| Medium Avalanche | +50 |
+| Large Avalanche | +100 |
+| Mega Avalanche | +300 |
+| Safe Clear | +300 |
+
+**Penalty**
+
+| Event | Score |
+|-------|-------|
+| Villager Hit | -200 |
+
+---
+
+# 11. Difficulty Curve（難易度カーブ）
+
+### 日本語
+
+| フェーズ | 家の数 | 追加要素 |
+|----------|--------|----------|
+| 序盤 | 1 軒 | — |
+| 中盤 | 3 軒 | 通行人増加、雪量増加 |
+| 後半 | 6 軒 | 通行人増加、雪量増加 |
+
+### English
+
+| Phase | Houses | Additional |
+|-------|--------|------------|
+| Early | 1 house | — |
+| Mid | 3 houses | More villagers, more snow accumulation |
+| Late | 6 houses | More villagers, more snow accumulation |
+
+---
+
+# 12. Viral Design（Steam バズ設計）
+
+### 日本語
+
+Snow Panic は **クリップ映えするゲーム** として設計する。
+
+**バズ要素**
+・巨大雪崩  
+・ギリギリ回避  
+・事故（犬ヒットなど）  
+・巨大コンボ  
+
+これらは **Stream Clip / YouTube Shorts / TikTok** 向けの瞬間。
+
+### English
+
+Snow Panic is designed as a **clip-worthy game**.
+
+**Moments that create viral clips:**
+・Mega avalanche  
+・Near miss  
+・Accidental dog hit  
+・Huge combos  
+
+Built for **Stream Clips / YouTube Shorts / TikTok**.
+
+---
+
+# 13. Steam Strategy（Steam 戦略）
+
+### 日本語
+
+| 項目 | 内容 |
+|------|------|
+| プラットフォーム | Steam |
+| 価格 | 500 円 |
+| 設計 | 衝動買い価格 |
+
+成功した場合スマホ版（iPhone など）へ展開。
+
+### English
+
+| Item | Value |
+|------|-------|
+| Platform | Steam |
+| Price | 500 yen |
+| Design | Impulse purchase pricing |
+
+Expand to mobile (iPhone etc.) on success.
+
+---
+
+# 14. Success Metrics（成功指標）
+
+### 日本語
+
+| 指標 | 目標 |
+|------|------|
+| Wishlist | 10,000 以上 |
+| 売上目標 | 100,000 本 |
+| レビュー目標 | 好評率 90% 以上 |
+
+### English
+
+| Metric | Target |
+|--------|--------|
+| Wishlist | 10,000+ |
+| Sales | 100,000 copies |
+| Reviews | 90% positive |
+
+---
+
+# 15. Core Gameplay（操作・雪表現）
 
 ### 日本語
 
 **操作**
-・プレイヤー操作はクリックのみ
-・クリック連打ゲームにはしない
-・クリック後はクールタイムを設ける
+・クリックのみ  
+・連打ゲームにしない  
+・クールタイムを設ける  
 
 **理由**
-・連打だと戦略性が消える
-・落雪の爽快感を見る時間を確保する
-・プレイヤーが次の一手を考えるゲームにする
+・連打だと戦略性が消える  
+・落雪の爽快感を見る時間を確保  
+・次の一手を考えるゲームにする  
 
 **ゲームの方向性**
-Snow Panic は
-「リアルシミュレーション」ではなく
-「爽快パズル」
-
-雪挙動はリアルより気持ちよさを優先する。
-
-**落雪タイプ**
-・小粒
-・中塊
-・大塊
-のバリエーションを持たせる。
+Snow Panic は「リアルシミュレーション」ではなく「爽快パズル」。  
+雪挙動はリアルより気持ちよさを優先。
 
 **雪表現の方針**
-・**見た目は粒っぽく、内部ロジックは軽量**
-・フル粒子シミュレーションは不要
-・屋根上の雪管理は軽い塊/セルベースを優先
-・**崩壊時と落下時だけ**粒っぽい演出を足す
-
----
-
-**フロー**
-
-屋根クリック
-↓
-道具表示
-↓
-屋根を叩く
-↓
-雪が崩れる
-↓
-雪が斜面を滑る
-↓
-屋根の端から落下
+・見た目は粒っぽく、内部ロジックは軽量  
+・屋根上の雪管理は軽い塊/セルベースを優先  
+・崩壊時と落下時だけ粒っぽい演出を足す  
 
 ### English
 
-**Operation**
-・Player input is click only
-・Not a click-spam game
-・Cooldown after each click
+**Operation:** Click only. No spam. Cooldown after each click.
 
-**Reason**
-・Rapid clicks remove strategy
-・Time to enjoy falling snow
-・Player plans each move
+**Reason:** Spam removes strategy. Time to enjoy falling snow. Player plans each move.
 
-**Game Direction**
-Snow Panic is
-"Refreshing Puzzle"
-not "Real Simulation"
+**Direction:** "Refreshing Puzzle" not "Real Simulation". Feel over realism.
 
-Snow behavior prioritizes feel over realism.
-
-**Fall Types**
-・Small particles
-・Medium chunks
-・Large blocks
-Provide variety.
-
-**Snow Representation Guidelines**
-・**Grainy look, lightweight logic inside**
-・No full particle simulation
-・Roof snow management: lightweight blocks/cell-based first
-・**Add particle-like effects only when collapsing and falling**
+**Snow:** Grainy look, lightweight logic. Roof management: blocks/cell-based. Particle effects only when collapsing and falling.
 
 ---
 
-**Flow**
-
-Click roof
-↓
-Tool appears
-↓
-Hit the roof
-↓
-Snow breaks
-↓
-Snow slides
-↓
-Snow falls from the edge
-
----
-
-# 3. Player Interaction
+# 16. Player Interaction
 
 ### 日本語
 
-プレイヤーは神視点。
-
-男の子を直接操作しない。
-
-屋根クリックで選択している道具を使用。
-
-例
-・スコップ
-・棒
+プレイヤーは神視点。男の子を直接操作しない。屋根クリックで選択している道具（スコップ、棒など）を使用。
 
 ### English
 
-The player controls the game from a god-like perspective.
-
-The boy character is not directly controlled.
-
-Clicking a roof uses the selected tool.
-
-Examples
-• shovel
-• stick
+God-view control. Boy not directly controlled. Click roof to use selected tool (shovel, stick, etc.).
 
 ---
 
-# 4. World & Perspective
+# 17. World & Perspective
 
 ### 日本語
 
-視点は「どうぶつの森型の斜め上視点」。
-
-村全体を見渡せる。
+視点は「どうぶつの森型の斜め上視点」。村全体を見渡せる。
 
 ### English
 
-The game uses an Animal Crossing–style isometric perspective.
-
-Players can view the whole village.
+Animal Crossing–style isometric perspective. View the whole village.
 
 ---
 
-# 5. Main Character
+# 18. Main Character
 
 ### 日本語
 
-主人公は留守番している男の子。
-
-男の子は家の前をうろうろ歩く。
-
-プレイヤーは男の子を助ける立場。
+主人公は留守番している男の子。家の前をうろうろ歩く。プレイヤーは男の子を助ける立場。
 
 ### English
 
-The protagonist is a boy who is staying home alone.
-
-The boy walks around in front of the house.
-
-The player protects the boy.
+Protagonist: boy staying home alone. Walks in front of house. Player protects the boy.
 
 ---
 
-# 6. Snow System
+# 19. Snow System
 
 ### 日本語
 
-降雪イベントにより屋根に雪が積もる。
-
-雪は斜面方向に滑る。
+降雪イベントにより屋根に雪が積もる。雪は斜面方向に滑る。
 
 ### English
 
-Snow accumulates on roofs during snowfall events.
-
-Snow slides along roof slopes.
+Snow accumulates on roofs during snowfall. Snow slides along slopes.
 
 ---
 
-# 7. House Damage System
+# 20. House Damage System
 
 ### 日本語
 
-積雪が増えると屋根にダメージが蓄積。
-
-一定量を超えると家が潰れる。
+積雪が増えると屋根にダメージが蓄積。一定量を超えると家が潰れる。
 
 ### English
 
-Accumulated snow increases roof stress.
-
-If snow weight exceeds a limit, the house collapses.
+Accumulated snow increases roof stress. House collapses if limit exceeded.
 
 ---
 
-# 8. Game Loop
+# 21. Events
 
 ### 日本語
 
-降雪
-↓
-積雪増加
-↓
-雪下ろし
-↓
-家を守る
-↓
-また降雪
+イベント例：吹雪、大量降雪、急激な積雪
 
 ### English
 
-Snowfall
-↓
-Snow accumulation
-↓
-Snow clearing
-↓
-House saved
-↓
-More snowfall
+Examples: blizzard, heavy snowfall, rapid accumulation
 
 ---
 
-# 9. Progression
+# 22. Tools
 
 ### 日本語
 
-序盤
-自分の家1軒
-
-中盤
-隣の家
-
-進行すると村6軒の雪下ろしを任される。
+使用可能な道具：スコップ、棒、その他の雪下ろし道具
 
 ### English
 
-Early game
-one house
-
-Mid game
-neighbor houses
-
-Later
-player is responsible for six houses in the village.
+Examples: shovel, stick, other snow tools
 
 ---
 
-# 10. Events
+# 23. Emotional Design
 
 ### 日本語
 
-イベント例
-
-・吹雪
-・大量降雪
-・急激な積雪
+男の子のワイプを画面に表示。表情が状況を表す。  
+安全 🙂 / 雪増加 😟 / 危険 😰 / 崩壊寸前 😱 / 成功 😄
 
 ### English
 
-Examples
-
-• blizzard
-• heavy snowfall
-• rapid accumulation
+Boy reaction window. Expressions indicate danger.  
+Safe 🙂 / Building 😟 / Danger 😰 / Collapse risk 😱 / Success 😄
 
 ---
 
-# 11. Tools
+# 24. Visual Direction
 
 ### 日本語
 
-使用可能な道具
-
-・スコップ
-・棒
-・その他の雪下ろし道具
+村の冬景色。雪が積もる屋根。雪が滑る物理表現。
 
 ### English
 
-Examples
-
-• shovel
-• stick
-• other snow tools
+Snow village. Winter atmosphere. Sliding snow physics.
 
 ---
 
-# 12. Emotional Design
+# 25. Audio Direction
 
 ### 日本語
 
-男の子のワイプを画面に表示。
-
-表情が状況を表す。
-
-安全 🙂  
-雪増加 😟  
-危険 😰  
-崩壊寸前 😱  
-成功 😄  
+雪が滑る音、雪が落ちる音、屋根がきしむ音
 
 ### English
 
-A boy reaction window appears on screen.
-
-Expressions indicate danger level.
-
-Safe 🙂  
-Snow building 😟  
-Danger 😰  
-Collapse risk 😱  
-Success 😄  
-
----
-
-# 13. Visual Direction
-
-### 日本語
-
-村の冬景色。
-
-雪が積もる屋根。
-
-雪が滑る物理表現。
-
-### English
-
-Snow village.
-
-Winter atmosphere.
-
-Sliding snow physics.
-
----
-
-# 14. Audio Direction
-
-### 日本語
-
-雪が滑る音
-雪が落ちる音
-屋根がきしむ音
-
-### English
-
-Snow sliding.
-
-Snow falling.
-
-Roof creaking.
-
----
-
-# 15. Platform Strategy
-
-### 日本語
-
-最初は Steam でリリース。
-
-成功した場合スマホ版（iPhoneなど）へ展開。
-
-### English
-
-Initial release on Steam.
-
-Later expansion to mobile platforms (iPhone etc).
+Snow sliding. Snow falling. Roof creaking.

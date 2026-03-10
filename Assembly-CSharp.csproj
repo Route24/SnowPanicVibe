@@ -81,6 +81,7 @@
     <Compile Include="Assets/Scripts/SnowMinReproBootstrap.cs" />
     <Compile Include="Assets/Scripts/CameraMatchAndSnowConfig.cs" />
     <Compile Include="Assets/Scripts/RollbackVerification.cs" />
+    <Compile Include="Assets/Scripts/SnowVisual.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/TapToSlideOnRoof.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyFixedScene.cs" />
@@ -134,6 +135,7 @@
     <None Include="Assets/TextMesh Pro/Resources/LineBreaking Leading Characters.txt" />
     <None Include="Assets/TextMesh Pro/Shaders/TMPro_Properties.cginc" />
     <None Include="Assets/TextMesh Pro/Shaders/TMPro_Surface.cginc" />
+    <None Include="Assets/Shaders/SnowVisual.shader" />
     <None Include="Assets/Logs/noa_report_previous_full.txt" />
     <None Include="Assets/TextMesh Pro/Resources/LineBreaking Following Characters.txt" />
     <None Include="Assets/TextMesh Pro/Shaders/TMP_SDF-Mobile Masking.shader" />

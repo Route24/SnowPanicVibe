@@ -122,18 +122,28 @@ public class UIBootstrap : MonoBehaviour
         Debug.Log("[UIBootstrap] ScoreText created (Legacy Text - TMP missing)");
     }
 
+    static readonly Color ScoreTextColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
+
     static void ApplyScoreTextLayout(Text t)
     {
         if (t == null) return;
-        t.fontSize = 36;
-        t.color = new Color(1f, 1f, 1f, 1f);
+        t.fontSize = 72;
+        t.color = ScoreTextColor;
         t.fontStyle = FontStyle.Bold;
+        var shadow = t.gameObject.GetComponent<UnityEngine.UI.Shadow>();
+        if (shadow == null) shadow = t.gameObject.AddComponent<UnityEngine.UI.Shadow>();
+        shadow.effectColor = Color.black;
+        shadow.effectDistance = new Vector2(3f, 3f);
+        var outline = t.gameObject.GetComponent<UnityEngine.UI.Outline>();
+        if (outline == null) outline = t.gameObject.AddComponent<UnityEngine.UI.Outline>();
+        outline.effectColor = Color.black;
+        outline.effectDistance = new Vector2(2f, 2f);
         var rt = t.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(10f, -10f);
-        rt.sizeDelta = new Vector2(320f, 48f);
+        rt.sizeDelta = new Vector2(420f, 96f);
     }
 
     static void ApplyScoreTextLayoutTMP(Component tmp)
@@ -146,12 +156,12 @@ public class UIBootstrap : MonoBehaviour
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = new Vector2(10f, -10f);
-            rt.sizeDelta = new Vector2(320f, 48f);
+            rt.sizeDelta = new Vector2(420f, 96f);
         }
         try
         {
-            tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 36);
-            tmp.GetType().GetProperty("color")?.SetValue(tmp, new Color(1f, 1f, 1f, 1f));
+            tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 72);
+            tmp.GetType().GetProperty("color")?.SetValue(tmp, ScoreTextColor);
         }
         catch { }
     }

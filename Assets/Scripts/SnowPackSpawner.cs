@@ -30,6 +30,8 @@ public class SnowPackSpawner : MonoBehaviour
 
     [Header("Target")]
     public Collider roofCollider;
+    [Tooltip("明示指定時: このRendererのboundsから雪サイズ取得。未指定時は自動検索。")]
+    public Renderer targetSnowRenderer;
     [Tooltip("複数家対応用。0=1軒目。RoofDefinitionProvider のインデックス。")]
     public int houseIndex = 0;
     [Tooltip("未指定時は茶色屋根メッシュ(bounds最大)を自動採用。雪の角度基準。")]
@@ -152,6 +154,7 @@ public class SnowPackSpawner : MonoBehaviour
     float _roofProjectedW, _roofProjectedL;
     float _roofCellSize;
     bool _builtFromRoofDefinition;
+    bool _useExactGrid;
     int _rebuildCount;
     int _addCount;
     int _removeCount;
@@ -526,7 +529,7 @@ public class SnowPackSpawner : MonoBehaviour
 
     void GridCellToUV(int ix, int iz, out float u, out float v)
     {
-        if (UseFullRoofCoverage && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
+        if ((UseFullRoofCoverage || _useExactGrid) && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
         {
             u = -0.5f + (_roofCellSize * 0.5f + ix * _cachedSpacingR) / _roofWidth;
             v = -0.5f + (_roofCellSize * 0.5f + iz * _cachedSpacingF) / _roofLength;
@@ -540,7 +543,7 @@ public class SnowPackSpawner : MonoBehaviour
 
     void UVToGridCell(float u, float v, out int cx, out int cz)
     {
-        if (UseFullRoofCoverage && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
+        if ((UseFullRoofCoverage || _useExactGrid) && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
         {
             cx = Mathf.RoundToInt(((u + 0.5f) * _roofWidth - _roofCellSize * 0.5f) / _cachedSpacingR);
             cz = Mathf.RoundToInt(((v + 0.5f) * _roofLength - _roofCellSize * 0.5f) / _cachedSpacingF);
@@ -593,13 +596,14 @@ public class SnowPackSpawner : MonoBehaviour
     {
         if (roofCollider == null) return;
 
-        if (RoofDefinitionProvider.TryGet(houseIndex, out var def, out bool fromResolver) && def.isValid)
+        if (targetSnowRenderer == null && RoofDefinitionProvider.TryGet(houseIndex, out var def, out bool fromResolver) && def.isValid)
         {
             ApplyRoofDefinition(def, fromResolver);
             return;
         }
 
         _builtFromRoofDefinition = false;
+        _useExactGrid = false;
         var angleT = GetRoofAngleTransform();
         if (angleT == null) angleT = roofCollider.transform;
         Vector3 rawN = angleT.up.normalized;
@@ -626,10 +630,38 @@ public class SnowPackSpawner : MonoBehaviour
         _roofF = f;
         _roofDownhill = downhill;
 
-        Bounds b = roofCollider.bounds;
-        _roofCenter = b.center;
         float projectedW, projectedL;
-        if (UseFullRoofCoverage && roofCollider is BoxCollider box)
+        bool fromMeshRenderer = false;
+        Renderer targetR = targetSnowRenderer;
+        if (targetR == null) targetR = roofCollider.GetComponent<MeshRenderer>();
+        if (targetR == null) targetR = roofCollider.GetComponentInParent<MeshRenderer>();
+        if (targetR == null) targetR = roofCollider.GetComponentInChildren<MeshRenderer>();
+        if (targetR != null)
+        {
+            Bounds meshBounds = targetR.bounds;
+            _roofCenter = meshBounds.center;
+            float minR = float.MaxValue, maxR = float.MinValue, minF = float.MaxValue, maxF = float.MinValue;
+            for (int i = 0; i < 8; i++)
+            {
+                Vector3 corner = meshBounds.center + new Vector3(
+                    (i & 1) != 0 ? meshBounds.extents.x : -meshBounds.extents.x,
+                    (i & 2) != 0 ? meshBounds.extents.y : -meshBounds.extents.y,
+                    (i & 4) != 0 ? meshBounds.extents.z : -meshBounds.extents.z);
+                float cr = Vector3.Dot(corner - _roofCenter, r);
+                float cf = Vector3.Dot(corner - _roofCenter, f);
+                if (cr < minR) minR = cr; if (cr > maxR) maxR = cr;
+                if (cf < minF) minF = cf; if (cf > maxF) maxF = cf;
+            }
+            projectedW = Mathf.Max(0.5f, maxR - minR);
+            projectedL = Mathf.Max(0.5f, maxF - minF);
+            fromMeshRenderer = true;
+            UnityEngine.Debug.Log($"[SNOW_TARGET] targetRendererName={targetR.gameObject.name} targetBoundsSize=({meshBounds.size.x:F4},{meshBounds.size.y:F4},{meshBounds.size.z:F4}) targetBoundsCenter=({meshBounds.center.x:F4},{meshBounds.center.y:F4},{meshBounds.center.z:F4})");
+        }
+        else
+        {
+            Bounds b = roofCollider.bounds;
+            _roofCenter = b.center;
+            if (UseFullRoofCoverage && roofCollider is BoxCollider box)
         {
             var t = roofCollider.transform;
             Vector3 c = box.center;
@@ -669,12 +701,19 @@ public class SnowPackSpawner : MonoBehaviour
             projectedW = Mathf.Max(0.5f, maxR - minR);
             projectedL = Mathf.Max(0.5f, maxF - minF);
         }
+        }
         _roofProjectedW = projectedW;
         _roofProjectedL = projectedL;
         if (UseFixedSizeForMinimalScene && FixedRoofWidthForMinimal > 0f && FixedRoofLengthForMinimal > 0f)
         {
             _roofWidth = Mathf.Min(FixedRoofWidthForMinimal, projectedW * 1.001f);
             _roofLength = Mathf.Min(FixedRoofLengthForMinimal, projectedL * 1.001f);
+        }
+        else if (fromMeshRenderer)
+        {
+            _roofWidth = projectedW;
+            _roofLength = projectedL;
+            _useExactGrid = true;
         }
         else
         {
@@ -684,22 +723,14 @@ public class SnowPackSpawner : MonoBehaviour
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
 
         float roofW = projectedW, roofL = projectedL;
-        float tol = 0.05f;
-        bool widthMatch = Mathf.Abs(roofW - _roofWidth) <= tol;
-        bool depthMatch = Mathf.Abs(roofL - _roofLength) <= tol;
-        bool matches = (widthMatch && depthMatch) || (Mathf.Abs(roofW - _roofLength) <= tol && Mathf.Abs(roofL - _roofWidth) <= tol);
-        float marginX = 0.5f * (roofW - _roofWidth);
-        float marginZ = 0.5f * (roofL - _roofLength);
-        UnityEngine.Debug.Log($"[SNOW_COVER] roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3} width_matches_roof={widthMatch.ToString().ToLower()} depth_matches_roof={depthMatch.ToString().ToLower()} adjusted_axis=x_only roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2}) current_snow_scale_multiplier_x={SnowCoverScaleMultiplierX:F2} current_snow_scale_multiplier_z={SnowCoverScaleMultiplierZ:F2} margin_x={marginX:F3} margin_z={marginZ:F3}");
-        SnowLoopLogCapture.AppendToAssiReport($"=== SNOW_COVER_WIDTH === roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3} width_matches_roof={widthMatch} depth_matches_roof={depthMatch} adjusted_axis=x_only");
 
-        float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
+        float inset = (UseFullRoofCoverage || _useExactGrid) ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
         float usableL = _roofLength - inset * 2f;
-        if (UseFullRoofCoverage)
+        if (UseFullRoofCoverage || _useExactGrid)
         {
-            _cachedNx = Mathf.Max(1, Mathf.FloorToInt((_roofWidth - _roofCellSize) / _roofCellSize) + 1);
-            _cachedNz = Mathf.Max(1, Mathf.FloorToInt((_roofLength - _roofCellSize) / _roofCellSize) + 1);
+            _cachedNx = Mathf.Max(1, Mathf.CeilToInt(_roofWidth / _roofCellSize));
+            _cachedNz = Mathf.Max(1, Mathf.CeilToInt(_roofLength / _roofCellSize));
             _cachedSpacingR = _cachedNx > 1 ? (_roofWidth - _roofCellSize) / (_cachedNx - 1) : 0f;
             _cachedSpacingF = _cachedNz > 1 ? (_roofLength - _roofCellSize) / (_cachedNz - 1) : 0f;
         }
@@ -710,6 +741,12 @@ public class SnowPackSpawner : MonoBehaviour
             _cachedSpacingR = _cachedSpacingF = 0f;
         }
         _cachedLayerStep = Mathf.Max(0.02f, _roofCellSize * pieceHeightScale);
+
+        float coveredWidth = _cachedNx > 1 ? (_cachedNx - 1) * _cachedSpacingR + _roofCellSize : _roofCellSize;
+        float coveredDepth = _cachedNz > 1 ? (_cachedNz - 1) * _cachedSpacingF + _roofCellSize : _roofCellSize;
+        float widthGapVsRoof = roofW - _roofWidth;
+        float depthGapVsRoof = roofL - _roofLength;
+        UnityEngine.Debug.Log($"[SNOW_GEN] generatedSnowWidth={_roofWidth:F4} generatedSnowDepth={_roofLength:F4} gridX={_cachedNx} gridZ={_cachedNz} pieceSize={_roofCellSize:F4} coveredWidth={coveredWidth:F4} coveredDepth={coveredDepth:F4} widthGapVsRoof={widthGapVsRoof:F4} depthGapVsRoof={depthGapVsRoof:F4}");
 
         float dotRN = Vector3.Dot(r, n);
         float dotFN = Vector3.Dot(f, n);
@@ -746,6 +783,11 @@ public class SnowPackSpawner : MonoBehaviour
             _roofWidth = Mathf.Min(FixedRoofWidthForMinimal, projectedW * 1.001f);
             _roofLength = Mathf.Min(FixedRoofLengthForMinimal, projectedL * 1.001f);
         }
+        else if (def.useExactRoofSize)
+        {
+            _roofWidth = projectedW;
+            _roofLength = projectedL;
+        }
         else
         {
             _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
@@ -765,10 +807,11 @@ public class SnowPackSpawner : MonoBehaviour
         float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
         float usableL = _roofLength - inset * 2f;
-        if (UseFullRoofCoverage)
+        _useExactGrid = def.useExactRoofSize;
+        if (UseFullRoofCoverage || def.useExactRoofSize)
         {
-            _cachedNx = Mathf.Max(1, Mathf.FloorToInt((_roofWidth - _roofCellSize) / _roofCellSize) + 1);
-            _cachedNz = Mathf.Max(1, Mathf.FloorToInt((_roofLength - _roofCellSize) / _roofCellSize) + 1);
+            _cachedNx = Mathf.Max(1, Mathf.CeilToInt(_roofWidth / _roofCellSize));
+            _cachedNz = Mathf.Max(1, Mathf.CeilToInt(_roofLength / _roofCellSize));
             _cachedSpacingR = _cachedNx > 1 ? (_roofWidth - _roofCellSize) / (_cachedNx - 1) : 0f;
             _cachedSpacingF = _cachedNz > 1 ? (_roofLength - _roofCellSize) / (_cachedNz - 1) : 0f;
         }
@@ -779,6 +822,13 @@ public class SnowPackSpawner : MonoBehaviour
             _cachedSpacingR = _cachedSpacingF = 0f;
         }
         _cachedLayerStep = Mathf.Max(0.02f, _roofCellSize * pieceHeightScale);
+
+        float coveredWidth = _cachedNx > 1 ? (_cachedNx - 1) * _cachedSpacingR + _roofCellSize : _roofCellSize;
+        float coveredDepth = _cachedNz > 1 ? (_cachedNz - 1) * _cachedSpacingF + _roofCellSize : _roofCellSize;
+        float widthGapVsRoof = projectedW - _roofWidth;
+        float depthGapVsRoof = projectedL - _roofLength;
+        UnityEngine.Debug.Log($"[SNOW_TARGET] targetRendererName=RoofDefinition targetBoundsSize=({projectedW:F4},{projectedL:F4},0) targetBoundsCenter=({_roofCenter.x:F4},{_roofCenter.y:F4},{_roofCenter.z:F4})");
+        UnityEngine.Debug.Log($"[SNOW_GEN] generatedSnowWidth={_roofWidth:F4} generatedSnowDepth={_roofLength:F4} gridX={_cachedNx} gridZ={_cachedNz} pieceSize={_roofCellSize:F4} coveredWidth={coveredWidth:F4} coveredDepth={coveredDepth:F4} widthGapVsRoof={widthGapVsRoof:F4} depthGapVsRoof={depthGapVsRoof:F4}");
 
         if (ForceDownhillTowardCamera && Camera.main != null)
         {
@@ -841,7 +891,7 @@ public class SnowPackSpawner : MonoBehaviour
             {
                 if (existing + list.Count >= maxPieces) break;
                 float u, v;
-                if (UseFullRoofCoverage && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
+                if ((UseFullRoofCoverage || _useExactGrid) && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
                 {
                     u = -0.5f + (_roofCellSize * 0.5f + ix * _cachedSpacingR) / _roofWidth;
                     v = -0.5f + (_roofCellSize * 0.5f + iz * _cachedSpacingF) / _roofLength;
@@ -1879,6 +1929,8 @@ public class SnowPackSpawner : MonoBehaviour
     void EnsureMaterial()
     {
         if (_snowMat != null) return;
+        _snowMat = SnowVisual.GetSnowMaterial(snowColor);
+        if (_snowMat != null) return;
         Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         if (sh == null) return;
         _snowMat = new Material(sh);
@@ -1899,12 +1951,14 @@ public class SnowPackSpawner : MonoBehaviour
 
     Mesh GetCurrentPieceMesh()
     {
-        EnsurePieceMesh();
         if (DebugSnowVisibility.DebugNonSymMesh)
         {
             EnsureNonSymMesh();
             return _pieceMeshNonSym;
         }
+        var mesh = SnowVisual.GetPieceMesh();
+        if (mesh != null) return mesh;
+        EnsurePieceMesh();
         return _pieceMesh;
     }
 

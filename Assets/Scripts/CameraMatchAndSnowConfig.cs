@@ -211,7 +211,7 @@ class CameraMatchAndSnowRunner : MonoBehaviour
             spawner.RebuildSnowPack("CameraMatchAndSnowConfig_thickness_up");
     }
 
-    /// <summary>1軒シーン用: 狙い撃ちが気持ちいい・連鎖で大きく崩れる・雪っぽい見た目に調整。</summary>
+    /// <summary>1軒本番シーン用: 一撃量・連鎖・塊感の3項目に絞った気持ちよさ調整。PhaseB2卒業→本番手触りへ。</summary>
     void ApplySnowFeelTuning()
     {
         string scene = SceneManager.GetActiveScene().name ?? "";
@@ -222,37 +222,30 @@ class CameraMatchAndSnowRunner : MonoBehaviour
         var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
         if (spawner == null || roofSys == null) return;
 
-        // 一撃で剥がれる量: やや狭め＝狙いが必要。うまく当てると適量剥がれる
-        roofSys.hitRadiusR = 0.88f;
-        spawner.localAvalancheMinDetach = 18;
-        spawner.localAvalancheMaxDetach = 65;
+        // 1) 一撃で剥がれる量: 叩く場所で変わる。狙いが必要。
+        roofSys.hitRadiusR = 0.9f;
+        spawner.localAvalancheMinDetach = 16;
+        spawner.localAvalancheMaxDetach = 60;
 
-        // 連鎖の起きやすさ: 条件が揃うと大きく連鎖
-        spawner.chainDetachChance = 0.82f;
-        spawner.secondaryDetachFraction = 0.4f;
-        spawner.maxSecondaryDetachPerHit = 32;
-        spawner.unstableRadiusScale = 1.5f;
-        spawner.secondaryDetachDelaySec = 0.32f;
-        spawner.unstableDurationSec = 1.5f;
+        // 2) 連鎖の起きやすさ: うまく当てると大きく連鎖
+        spawner.chainDetachChance = 0.8f;
+        spawner.secondaryDetachFraction = 0.38f;
+        spawner.maxSecondaryDetachPerHit = 30;
+        spawner.unstableRadiusScale = 1.45f;
+        spawner.secondaryDetachDelaySec = 0.33f;
+        spawner.unstableDurationSec = 1.4f;
 
-        // 塊で落ちる感じ
-        roofSys.localAvalancheSlideSpeed = 1.05f;
-        roofSys.burstChunkCount = 44;
-        roofSys.burstChunkSpeed = 2.4f;
+        // 3) 塊で落ちる気持ちよさ
+        roofSys.localAvalancheSlideSpeed = 1.02f;
+        roofSys.burstChunkCount = 42;
+        roofSys.burstChunkSpeed = 2.3f;
 
-        // 残雪の見え方
-        spawner.snowRenderThicknessScale = 0.78f;
-        spawner.pieceHeightScale = 0.88f;
-
-        // 雪っぽさ（キューブ感軽減）
-        spawner.pieceSize = 0.155f;
-        spawner.jitter = 0.038f;
-        spawner.normalInset = 0.014f;
-        spawner.snowColor = new Color(0.94f, 0.97f, 1f, 1f);
+        // キューブ感軽減は軽く（主目的は手触り）
+        spawner.jitter = 0.032f;
 
         if (spawner.rebuildOnPlay && spawner.isActiveAndEnabled)
             spawner.RebuildSnowPack("SnowFeelTuning");
-        Debug.Log("[SnowFeelTuning] oneHouse=true 狙い撃ち・連鎖・塊感・雪っぽさ 調整適用");
+        Debug.Log("[SnowFeelTuning] oneHouse=true 一撃量・連鎖・塊感 調整適用（PhaseB2卒業→本番手触り）");
     }
 
     void ApplyFallDirectionAndSnowOffset()
