@@ -91,8 +91,11 @@ public class UnifiedHUD : MonoBehaviour
         tmp.GetType().GetProperty("text")?.SetValue(tmp, "SCORE: 0");
         tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 72);
         SetTMPColorSafe(tmp, "color", new Color32(255, 220, 0, 255));
-        tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.2f);
+        tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.4f);
         SetTMPColorSafe(tmp, "outlineColor", new Color32(0, 0, 0, 255));
+        var outline = go.AddComponent<Outline>();
+        outline.effectColor = Color.black;
+        outline.effectDistance = new Vector2(2f, -2f);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(0f, 1f); rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(12f, -12f); rt.sizeDelta = new Vector2(400f, 90f);
@@ -111,7 +114,7 @@ public class UnifiedHUD : MonoBehaviour
         t.fontStyle = FontStyle.Bold;
         t.text = "SCORE: 0";
         var shadow = go.AddComponent<Shadow>(); shadow.effectColor = Color.black; shadow.effectDistance = new Vector2(2f, 2f);
-        var outline = go.AddComponent<Outline>(); outline.effectColor = Color.black; outline.effectDistance = new Vector2(2f, 2f);
+        var outline = go.AddComponent<Outline>(); outline.effectColor = Color.black; outline.effectDistance = new Vector2(2f, -2f);
         var rt = go.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f); rt.anchorMax = new Vector2(0f, 1f); rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(12f, -12f); rt.sizeDelta = new Vector2(400f, 90f);

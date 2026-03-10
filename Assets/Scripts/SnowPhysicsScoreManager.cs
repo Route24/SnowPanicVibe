@@ -1,6 +1,6 @@
 using UnityEngine;
 using System;
-using System.Diagnostics;
+using SD = System.Diagnostics;
 
 /// <summary>ASSI: 雪塊が着地→点滅→消滅したとき +1 スコア。プロトタイプ用（Debug.Log 可）</summary>
 public class SnowPhysicsScoreManager : MonoBehaviour
@@ -91,7 +91,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         string ownerClass = "unknown";
         try
         {
-            var st = new StackTrace(2, true);
+            var st = new SD.StackTrace(2, true);
             for (int i = 0; i < Math.Min(5, st.FrameCount); i++)
             {
                 var frame = st.GetFrame(i);
