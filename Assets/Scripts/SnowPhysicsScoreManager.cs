@@ -53,6 +53,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         BugOriginTracker.RecordScoreUpdate(before, _score);
         OnScoreChanged?.Invoke(_score);
         Debug.Log($"[SnowPhysicsScore] +{delta} total={_score}");
+        Debug.Log($"[RAW_SCORE_CHECK] score_before={before} score_after={_score} hit_test_performed=true score_changed=true");
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]

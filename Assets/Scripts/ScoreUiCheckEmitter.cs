@@ -14,8 +14,13 @@ public class ScoreUiCheckEmitter : MonoBehaviour
     void Start()
     {
         if (!VideoPipelineSelfTestMode.IsActive)
+        {
             Invoke(nameof(EmitHudTextInventoryInvoke), 0.5f);
+            Invoke(nameof(EmitScoreUiCheckInvoke), 0.6f);
+        }
     }
+
+    void EmitScoreUiCheckInvoke() { EmitScoreUiCheck(); }
 
     void EmitHudTextInventoryInvoke()
     {
