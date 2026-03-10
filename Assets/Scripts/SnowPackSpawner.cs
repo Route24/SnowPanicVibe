@@ -30,6 +30,8 @@ public class SnowPackSpawner : MonoBehaviour
 
     [Header("Target")]
     public Collider roofCollider;
+    [Tooltip("複数家対応用。0=1軒目。RoofDefinitionProvider のインデックス。")]
+    public int houseIndex = 0;
     [Tooltip("未指定時は茶色屋根メッシュ(bounds最大)を自動採用。雪の角度基準。")]
     public Transform roofAngleReferenceTransform;
     public RoofSnowSystem roofSnowSystem;
@@ -149,6 +151,7 @@ public class SnowPackSpawner : MonoBehaviour
     float _roofWidth, _roofLength;
     float _roofProjectedW, _roofProjectedL;
     float _roofCellSize;
+    bool _builtFromRoofDefinition;
     int _rebuildCount;
     int _addCount;
     int _removeCount;
@@ -249,6 +252,12 @@ public class SnowPackSpawner : MonoBehaviour
             return;
         }
 
+        if (!RoofDefinitionProvider.TryGet(houseIndex, out _, out _))
+        {
+            if (RoofDefinitionResolver.ResolveFromCollider(roofCollider, GetRoofAngleTransform(), out var def))
+                RoofDefinitionProvider.Set(houseIndex, def, fromResolver: true);
+        }
+
         EnsureRoot();
         PushLastEvent("Rebuild", $"{reason} fileLine={GetFileLineFromStack()}", GetRealStackTrace());
         LogSnowPackCall("REBUILD", reason);
@@ -269,27 +278,39 @@ public class SnowPackSpawner : MonoBehaviour
         float effectiveDepth = targetDepthMeters * snowDepthScale;
         int layersRaw = Mathf.Max(1, Mathf.CeilToInt(targetDepthMeters / Mathf.Max(0.02f, _cachedLayerStep)));
         int layers = Mathf.Max(1, Mathf.CeilToInt(effectiveDepth / Mathf.Max(0.02f, _cachedLayerStep)));
-        if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0)
-        {
-            int approxPerLayer = _cachedNx * _cachedNz;
-            layers = Mathf.Max(layers, Mathf.Max(1, (debugMinPackedPieces + approxPerLayer - 1) / Mathf.Max(1, approxPerLayer)));
-        }
         int spawned = 0;
-        for (int y = 0; y < layers; y++)
+        if (ForceMinimalSinglePiece && _roofWidth > 0f && _roofLength > 0f && _piecesRoot != null)
         {
-            var layerList = SpawnLayer(y);
-            _layerPieces.Add(layerList);
-            spawned += layerList.Count;
-            if (spawned >= maxPieces) break;
-            if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0 && spawned >= debugMinPackedPieces) break;
+            UnityEngine.Debug.Log("[SNOW_MINIMAL] snow_spawn_called=true ForceMinimalSinglePiece=true");
+            var singleList = SpawnMinimalSinglePiece();
+            _layerPieces.Add(singleList);
+            spawned = singleList.Count;
+            layers = spawned > 0 ? 1 : 0;
+            UnityEngine.Debug.Log($"[SNOW_MINIMAL] snow_spawn_success={(spawned > 0).ToString().ToLower()} activePieces={spawned} rootChildren={_piecesRoot.childCount}");
+        }
+        else
+        {
+            if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0)
+            {
+                int approxPerLayer = _cachedNx * _cachedNz;
+                layers = Mathf.Max(layers, Mathf.Max(1, (debugMinPackedPieces + approxPerLayer - 1) / Mathf.Max(1, approxPerLayer)));
+            }
+            for (int y = 0; y < layers; y++)
+            {
+                var layerList = SpawnLayer(y);
+                _layerPieces.Add(layerList);
+                spawned += layerList.Count;
+                if (spawned >= maxPieces) break;
+                if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0 && spawned >= debugMinPackedPieces) break;
+            }
         }
 
         _pieceToLayerType.Clear();
-        AssignLayerTypesToPieces(layers);
+        AssignLayerTypesToPieces(Mathf.Max(1, layers));
 
         _rebuildCount++;
         AuditSnowPackPhysics();
-        packDepthMeters = effectiveDepth;
+        packDepthMeters = (ForceMinimalSinglePiece && spawned > 0) ? 0.1f : effectiveDepth;
         float sampleH = Mathf.Max(0.03f, pieceSize * pieceHeightScale);
         float sampleHAfter = sampleH * snowPieceThicknessScale;
         Vector3 pieceScaleBefore = new Vector3(Mathf.Max(0.05f, pieceSize), sampleH, Mathf.Max(0.05f, pieceSize));
@@ -532,6 +553,14 @@ public class SnowPackSpawner : MonoBehaviour
     void BuildRoofBasis()
     {
         if (roofCollider == null) return;
+
+        if (RoofDefinitionProvider.TryGet(houseIndex, out var def, out bool fromResolver) && def.isValid)
+        {
+            ApplyRoofDefinition(def, fromResolver);
+            return;
+        }
+
+        _builtFromRoofDefinition = false;
         var angleT = GetRoofAngleTransform();
         if (angleT == null) angleT = roofCollider.transform;
         Vector3 rawN = angleT.up.normalized;
@@ -603,16 +632,27 @@ public class SnowPackSpawner : MonoBehaviour
         }
         _roofProjectedW = projectedW;
         _roofProjectedL = projectedL;
-        _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
-        _roofLength = Mathf.Min(projectedL * SnowCoverScaleMultiplierZ, projectedL * 1.001f);
+        if (UseFixedSizeForMinimalScene && FixedRoofWidthForMinimal > 0f && FixedRoofLengthForMinimal > 0f)
+        {
+            _roofWidth = Mathf.Min(FixedRoofWidthForMinimal, projectedW * 1.001f);
+            _roofLength = Mathf.Min(FixedRoofLengthForMinimal, projectedL * 1.001f);
+        }
+        else
+        {
+            _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
+            _roofLength = Mathf.Min(projectedL * SnowCoverScaleMultiplierZ, projectedL * 1.001f);
+        }
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
 
         float roofW = projectedW, roofL = projectedL;
         float tol = 0.05f;
-        bool matches = (Mathf.Abs(roofW - _roofWidth) <= tol && Mathf.Abs(roofL - _roofLength) <= tol) || (Mathf.Abs(roofW - _roofLength) <= tol && Mathf.Abs(roofL - _roofWidth) <= tol);
+        bool widthMatch = Mathf.Abs(roofW - _roofWidth) <= tol;
+        bool depthMatch = Mathf.Abs(roofL - _roofLength) <= tol;
+        bool matches = (widthMatch && depthMatch) || (Mathf.Abs(roofW - _roofLength) <= tol && Mathf.Abs(roofL - _roofWidth) <= tol);
         float marginX = 0.5f * (roofW - _roofWidth);
         float marginZ = 0.5f * (roofL - _roofLength);
-        UnityEngine.Debug.Log($"[SNOW_COVER] roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2}) clip_to_roof_bounds=true current_snow_scale_multiplier_x={SnowCoverScaleMultiplierX:F2} current_snow_scale_multiplier_z={SnowCoverScaleMultiplierZ:F2} margin_x={marginX:F3} margin_z={marginZ:F3} snow_cover_matches_roof={matches.ToString().ToLower()}");
+        UnityEngine.Debug.Log($"[SNOW_COVER] roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3} width_matches_roof={widthMatch.ToString().ToLower()} depth_matches_roof={depthMatch.ToString().ToLower()} adjusted_axis=x_only roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2}) current_snow_scale_multiplier_x={SnowCoverScaleMultiplierX:F2} current_snow_scale_multiplier_z={SnowCoverScaleMultiplierZ:F2} margin_x={marginX:F3} margin_z={marginZ:F3}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== SNOW_COVER_WIDTH === roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3} width_matches_roof={widthMatch} depth_matches_roof={depthMatch} adjusted_axis=x_only");
 
         float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
@@ -646,6 +686,105 @@ public class SnowPackSpawner : MonoBehaviour
         }
         UnityEngine.Debug.Log($"[RoofBasis] dot(r,n)={dotRN:F4} dot(f,n)={dotFN:F4} dot(r,f)={dotRF:F4} roofUp=({n.x:F3},{n.y:F3},{n.z:F3}) downhill=({_roofDownhill.x:F3},{_roofDownhill.y:F3},{_roofDownhill.z:F3})");
         UnityEngine.Debug.Log($"[RoofBasis] center=({_roofCenter.x:F2},{_roofCenter.y:F2},{_roofCenter.z:F2}) width={_roofWidth:F2} length={_roofLength:F2} cell={_roofCellSize:F2} nx={_cachedNx} nz={_cachedNz}");
+        LogRoofModuleStatus(roofDefinitionCreated: false, usesDefinition: false, assetDirect: true);
+    }
+
+    void ApplyRoofDefinition(RoofDefinition def, bool fromResolver)
+    {
+        _builtFromRoofDefinition = true;
+        _roofN = def.roofNormal;
+        _roofR = def.roofR;
+        _roofF = def.roofF;
+        _roofDownhill = def.roofDownhill;
+        _roofCenter = def.roofOrigin;
+        float projectedW = def.width;
+        float projectedL = def.depth;
+        _roofProjectedW = projectedW;
+        _roofProjectedL = projectedL;
+
+        if (UseFixedSizeForMinimalScene && FixedRoofWidthForMinimal > 0f && FixedRoofLengthForMinimal > 0f)
+        {
+            _roofWidth = Mathf.Min(FixedRoofWidthForMinimal, projectedW * 1.001f);
+            _roofLength = Mathf.Min(FixedRoofLengthForMinimal, projectedL * 1.001f);
+        }
+        else
+        {
+            _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
+            _roofLength = Mathf.Min(projectedL * SnowCoverScaleMultiplierZ, projectedL * 1.001f);
+        }
+        _roofCellSize = Mathf.Max(0.05f, pieceSize);
+
+        float roofW = projectedW, roofL = projectedL;
+        float tol = 0.05f;
+        bool widthMatch = Mathf.Abs(roofW - _roofWidth) <= tol;
+        bool depthMatch = Mathf.Abs(roofL - _roofLength) <= tol;
+        float marginX = 0.5f * (roofW - _roofWidth);
+        float marginZ = 0.5f * (roofL - _roofLength);
+        UnityEngine.Debug.Log($"[SNOW_COVER] roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3} width_matches_roof={widthMatch.ToString().ToLower()} depth_matches_roof={depthMatch.ToString().ToLower()} adjusted_axis=x_only roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2})");
+        SnowLoopLogCapture.AppendToAssiReport($"=== SNOW_COVER_WIDTH === roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3}");
+
+        float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
+        float usableW = _roofWidth - inset * 2f;
+        float usableL = _roofLength - inset * 2f;
+        if (UseFullRoofCoverage)
+        {
+            _cachedNx = Mathf.Max(1, Mathf.FloorToInt((_roofWidth - _roofCellSize) / _roofCellSize) + 1);
+            _cachedNz = Mathf.Max(1, Mathf.FloorToInt((_roofLength - _roofCellSize) / _roofCellSize) + 1);
+            _cachedSpacingR = _cachedNx > 1 ? (_roofWidth - _roofCellSize) / (_cachedNx - 1) : 0f;
+            _cachedSpacingF = _cachedNz > 1 ? (_roofLength - _roofCellSize) / (_cachedNz - 1) : 0f;
+        }
+        else
+        {
+            _cachedNx = Mathf.Max(1, Mathf.FloorToInt(usableW / _roofCellSize));
+            _cachedNz = Mathf.Max(1, Mathf.FloorToInt(usableL / _roofCellSize));
+            _cachedSpacingR = _cachedSpacingF = 0f;
+        }
+        _cachedLayerStep = Mathf.Max(0.02f, _roofCellSize * pieceHeightScale);
+
+        if (ForceDownhillTowardCamera && Camera.main != null)
+        {
+            Vector3 dirToCam = Vector3.ProjectOnPlane(Camera.main.transform.position - _roofCenter, _roofN).normalized;
+            if (dirToCam.sqrMagnitude > 0.001f && Vector3.Dot(_roofDownhill, dirToCam) < 0f)
+            {
+                _roofDownhill = -_roofDownhill;
+                UnityEngine.Debug.Log($"[RoofBasis] flipped downhill toward camera");
+            }
+        }
+        UnityEngine.Debug.Log($"[RoofBasis] center=({_roofCenter.x:F2},{_roofCenter.y:F2},{_roofCenter.z:F2}) width={_roofWidth:F2} length={_roofLength:F2} cell={_roofCellSize:F2} nx={_cachedNx} nz={_cachedNz}");
+        LogRoofModuleStatus(roofDefinitionCreated: true, usesDefinition: true, assetDirect: fromResolver);
+    }
+
+    void LogRoofModuleStatus(bool roofDefinitionCreated, bool usesDefinition, bool assetDirect)
+    {
+        float slopeAngle = float.NaN;
+        string slopeDir = "N/A";
+        if (RoofDefinitionProvider.TryGet(houseIndex, out var d, out _) && d.isValid)
+        {
+            slopeAngle = d.slopeAngle;
+            slopeDir = $"({d.slopeDirection.x:F2},{d.slopeDirection.y:F2},{d.slopeDirection.z:F2})";
+        }
+        string slopeStr = float.IsNaN(slopeAngle) ? "N/A" : slopeAngle.ToString("F1");
+        UnityEngine.Debug.Log($"[ROOF_MODULE] roof_definition_created={roofDefinitionCreated.ToString().ToLower()} roof_width={_roofWidth:F3} roof_depth={_roofLength:F3} roof_slope_angle={slopeStr} roof_slope_direction={slopeDir} snow_module_uses_roof_definition={usesDefinition.ToString().ToLower()} snow_module_asset_direct_dependency={assetDirect.ToString().ToLower()} multi_house_ready=true");
+        SnowLoopLogCapture.AppendToAssiReport($"=== ROOF_MODULE === roof_definition_created={roofDefinitionCreated} roof_width={_roofWidth:F3} roof_depth={_roofLength:F3} roof_slope_angle={slopeStr} roof_slope_direction={slopeDir} snow_module_uses_roof_definition={usesDefinition} snow_module_asset_direct_dependency={assetDirect} multi_house_ready=true");
+    }
+
+    List<Transform> SpawnMinimalSinglePiece()
+    {
+        var list = new List<Transform>();
+        if (roofCollider == null || _visualRoot == null || _piecesRoot == null) return list;
+        var angleT = GetRoofAngleTransform();
+        Quaternion rot = angleT != null ? angleT.rotation : roofCollider.transform.rotation;
+        float size = MinimalPieceSize > 0.01f ? MinimalPieceSize : 0.15f;
+        Vector3 p = _roofCenter + _roofN * RoofSurfaceOffset;
+        var t = GetOrSpawnPieceRoofBasis(p, rot, size, 0, 0, 0);
+        if (t != null)
+        {
+            list.Add(t);
+            var r = t.GetComponentInChildren<Renderer>(true);
+            if (r != null) { r.enabled = true; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows = true; }
+            if (t.gameObject.activeSelf == false) t.gameObject.SetActive(true);
+        }
+        return list;
     }
 
     List<Transform> SpawnLayer(int layerIndex)
@@ -677,7 +816,7 @@ public class SnowPackSpawner : MonoBehaviour
                 float jz = UnityEngine.Random.Range(-jitter, jitter);
                 float layerOffset = RoofSurfaceOffset + layerIndex * _cachedLayerStep;
                 Vector3 p = _roofCenter + _roofR * (u * _roofWidth + jx) + _roofF * (v * _roofLength + jz) + _roofN * layerOffset;
-                if (!UseFullRoofCoverage)
+                if (!UseFullRoofCoverage && !_builtFromRoofDefinition)
                 {
                     Vector3 cp = roofCollider.ClosestPoint(p + _roofN * 0.1f);
                     if ((cp - p).sqrMagnitude > 0.35f) continue;
@@ -743,10 +882,19 @@ public class SnowPackSpawner : MonoBehaviour
     public static bool ForceDownhillTowardCamera;
     /// <summary>OneHouse時: 積雪範囲を屋根全面に一致。inset=0, ClosestPoint閾値緩和。</summary>
     public static bool UseFullRoofCoverage;
-    /// <summary>積雪範囲の倍率(X=横幅)。1.0=屋根投影値そのまま。</summary>
-    public static float SnowCoverScaleMultiplierX = 1.2f;
+    /// <summary>積雪範囲の倍率(X=横幅)。1.0=屋根とピッタリ一致。昨日の終了時点に合わせて横幅のみ1.0に。</summary>
+    public static float SnowCoverScaleMultiplierX = 1.0f;
     /// <summary>積雪範囲の倍率(Z=縦幅/奥行き)。Z方向だけ調整用。</summary>
     public static float SnowCoverScaleMultiplierZ = 1.35f;
+
+    /// <summary>SnowVerify_Minimal用。true時は固定値で雪サイズを上書き。自動追従を止める。</summary>
+    public static bool UseFixedSizeForMinimalScene;
+    /// <summary>SnowVerify_Minimal用。true時は屋根中央に雪1つだけスポーン。activePieces>=1を保証。</summary>
+    public static bool ForceMinimalSinglePiece;
+    /// <summary>ForceMinimalSinglePiece時の雪ピースサイズ。0なら0.15を使用。</summary>
+    public static float MinimalPieceSize = 0.15f;
+    public static float FixedRoofWidthForMinimal = 1.7f;
+    public static float FixedRoofLengthForMinimal = 0.85f;
 
     /// <summary>Editor専用。ExitingPlayMode時にtrueにして、activePieces=0 FAILを抑止。</summary>
 #if UNITY_EDITOR
@@ -1917,6 +2065,11 @@ public class SnowPackSpawner : MonoBehaviour
     public int GetPackedCubeCountRealtime()
     {
         return _piecesRoot != null ? CountPiecesUnder(_piecesRoot) : 0;
+    }
+
+    public int GetPooledCount()
+    {
+        return _piecePool != null ? _piecePool.Count : 0;
     }
 
     /// <summary>DebugSnowVisibility用。全SnowPackPieceのRendererを返す。</summary>

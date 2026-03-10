@@ -57,11 +57,15 @@
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
     <Compile Include="Assets/Editor/SnowTestPrefabBuilder.cs" />
     <Compile Include="Assets/Editor/TMP_ImporterFix.cs" />
+    <Compile Include="Assets/Editor/SnowVerifyMinimalSceneCreator.cs" />
+    <Compile Include="Assets/Editor/SnowVerifyFixedSceneCreator.cs" />
     <Compile Include="Assets/Scripts/Editor/CorniceSceneSetup.cs" />
     <Compile Include="Assets/Editor/SnowPanicAutoRecord.cs" />
     <Compile Include="Assets/Editor/SnowPanicUploadTest.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowLoopNoaReportAutoCopy.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowMinReproSceneBuilder.cs" />
+    <Compile Include="Assets/Editor/SnowVerifyPhaseACreator.cs" />
+    <Compile Include="Assets/Editor/SnowVerifyPhaseBCreator.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">
