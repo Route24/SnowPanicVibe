@@ -32,4 +32,14 @@ public class ToolCooldownManager : MonoBehaviour
         _cooldownEndTime = Time.time + cooldownSec;
         Debug.Log($"[TempoDebug] cooldown started remaining={cooldownSec:F2}s");
     }
+
+    public static void EnsureBootstrapIfNeeded()
+    {
+        if (FindFirstObjectByType<ToolCooldownManager>() != null) return;
+        var go = new GameObject("ToolCooldownManager");
+        var c = go.AddComponent<ToolCooldownManager>();
+        c.cooldownSec = 1.0f;
+        DontDestroyOnLoad(go);
+        Debug.Log("[ToolCooldownManager] bootstrapped");
+    }
 }

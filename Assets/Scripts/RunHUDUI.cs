@@ -22,6 +22,7 @@ public class RunHUDUI : MonoBehaviour
     void Start()
     {
         if (VideoPipelineSelfTestMode.IsActive) return;
+        if (UnifiedHUD.IsActive) return; // UnifiedHUD shows Ready/Start
         EnsureHUD();
     }
 

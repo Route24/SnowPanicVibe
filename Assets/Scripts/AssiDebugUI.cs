@@ -44,8 +44,7 @@ public class AssiDebugUI : MonoBehaviour
 
     void OnGUI()
     {
-        var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>();
-        if (cooldownMgr != null) DrawCooldownRing(cooldownMgr);
+        if (!UnifiedHUD.IsActive) { var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>(); if (cooldownMgr != null) DrawCooldownRing(cooldownMgr); } // skip OnGUI cooldown when UnifiedHUD active
         if (!debugOverlayEnabled) return;
 
         float x = Pad;

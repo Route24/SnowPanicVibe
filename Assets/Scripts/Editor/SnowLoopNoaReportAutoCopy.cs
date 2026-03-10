@@ -110,6 +110,9 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("=== CAMERA LOCK CHECK ===");
             sb.AppendLine(BuildCameraLockCheckSection(lines));
             sb.AppendLine("");
+            sb.AppendLine("=== SCORE UI CHECK ===");
+            sb.AppendLine(BuildScoreUiCheckSection(lines));
+            sb.AppendLine("");
             sb.AppendLine("=== VIDEO FOR NOA ===");
             sb.AppendLine(BuildVideoForNoaSection());
             sb.AppendLine("");
@@ -118,6 +121,8 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("");
             sb.AppendLine("=== DRIVE STATUS ===");
             sb.AppendLine(BuildDriveStatusSection());
+            sb.AppendLine("");
+            sb.AppendLine(BuildCompileGateSection());
             sb.AppendLine("");
             sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
             sb.AppendLine(BuildVideoPipelineLogsSection());
@@ -185,6 +190,11 @@ public static class SnowLoopNoaReportAutoCopy
     {
         string prevFull = File.Exists(PreviousFullPath) ? File.ReadAllText(PreviousFullPath) : null;
         var sb = new StringBuilder();
+        sb.AppendLine(BuildCompileGateSection());
+        sb.AppendLine();
+        sb.AppendLine("=== SCORE UI CHECK ===");
+        sb.AppendLine(BuildScoreUiCheckSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== SNOW ROLLBACK CHECK ===");
         sb.AppendLine(BuildSnowRollbackCheckSection(lines));
         sb.AppendLine();
@@ -915,7 +925,7 @@ public static class SnowLoopNoaReportAutoCopy
                 }
             }
 
-            if (line.Contains("[ASSI]") || line.Contains("[RendererWatch]") || line.Contains("[RendererBlink]") || line.Contains("[TopBlueCandidates]") || line.Contains("[TopTransparentCandidates]") || line.Contains("=== ROOF PROXY ===") || line.Contains("=== SNOW DEPTH ===") || line.Contains("=== SNOWFALL STOP ===") || line.Contains("=== TAP AVALANCHE ===") || line.Contains("[AVALANCHE_BURST_LOG]") || line.Contains("DEACTIVATE BLOCKED") || line.Contains("[SnowPackEntityDump]") || line.Contains("[SnowPackEntity1s]") || line.Contains("[AUTO-REBUILD]") || line.Contains("[SnowPackLast20]") || line.Contains("[SnowPackTransition]") || line.Contains("[PoolReturnFirst]") || line.Contains("[ASSI_BOOT]") || line.Contains("[RUN_SNAPSHOT_FORCE]") || line.Contains("[LAST20_FORCE]") || line.Contains("[LAST20_EMPTY]") || line.Contains("[SNAPSHOT_INVALID]") || line.Contains("[SNAPSHOT_ROOT]") || line.Contains("[STACKTRACE_SELFTEST]") || line.Contains("[AvalancheReturn]") || line.Contains("[RoofVectors]") || line.Contains("[RoofBasis]") || line.Contains("[TapSlide]") || line.Contains("[TapHit]") || line.Contains("[TapMiss]") || line.Contains("[LocalAvalanche]") || line.Contains("[AvalancheBeforeAfter]") || line.Contains("[AvalanchePackedReduced]") || line.Contains("[PiecePoseSample]") || line.Contains("[RotationOverrideFound]") || line.Contains("[TapMarkerState]") || line.Contains("[AutoAvalancheState]") || line.Contains("[SceneCodePath]") || line.Contains("[CORNICE_SCENE_CHECK]") || line.Contains("[TAP_DEBUG]") || line.Contains("[TAP RAY]") || line.Contains("[SNOW_ROLLBACK_CHECK]") || line.Contains("[CAMERA_LOCK_CHECK]")) { result.Add(line); continue; }
+            if (line.Contains("[ASSI]") || line.Contains("[RendererWatch]") || line.Contains("[RendererBlink]") || line.Contains("[TopBlueCandidates]") || line.Contains("[TopTransparentCandidates]") || line.Contains("=== ROOF PROXY ===") || line.Contains("=== SNOW DEPTH ===") || line.Contains("=== SNOWFALL STOP ===") || line.Contains("=== TAP AVALANCHE ===") || line.Contains("[AVALANCHE_BURST_LOG]") || line.Contains("DEACTIVATE BLOCKED") || line.Contains("[SnowPackEntityDump]") || line.Contains("[SnowPackEntity1s]") || line.Contains("[AUTO-REBUILD]") || line.Contains("[SnowPackLast20]") || line.Contains("[SnowPackTransition]") || line.Contains("[PoolReturnFirst]") || line.Contains("[ASSI_BOOT]") || line.Contains("[RUN_SNAPSHOT_FORCE]") || line.Contains("[LAST20_FORCE]") || line.Contains("[LAST20_EMPTY]") || line.Contains("[SNAPSHOT_INVALID]") || line.Contains("[SNAPSHOT_ROOT]") || line.Contains("[STACKTRACE_SELFTEST]") || line.Contains("[AvalancheReturn]") || line.Contains("[RoofVectors]") || line.Contains("[RoofBasis]") || line.Contains("[TapSlide]") || line.Contains("[TapHit]") || line.Contains("[TapMiss]") || line.Contains("[LocalAvalanche]") || line.Contains("[AvalancheBeforeAfter]") || line.Contains("[AvalanchePackedReduced]") || line.Contains("[PiecePoseSample]") || line.Contains("[RotationOverrideFound]") || line.Contains("[TapMarkerState]") || line.Contains("[AutoAvalancheState]") || line.Contains("[SceneCodePath]") || line.Contains("[CORNICE_SCENE_CHECK]") || line.Contains("[TAP_DEBUG]") || line.Contains("[TAP RAY]") || line.Contains("[SNOW_ROLLBACK_CHECK]") || line.Contains("[CAMERA_LOCK_CHECK]") || line.Contains("[SCORE_UI_CHECK]")) { result.Add(line); continue; }
 
             // MVP + legacy tags (incl. [SnowPackSync] [SnowPackPoolReturn] [SnowPackDestroy] [SnowPackLast10] [SnowPackActiveZero])
             if (line.Contains("[SnowPack")
@@ -949,6 +959,11 @@ public static class SnowLoopNoaReportAutoCopy
         var sb = new StringBuilder();
         sb.AppendLine("【ASSI REPORT - FULL MODE】");
         sb.AppendLine();
+        sb.AppendLine(BuildCompileGateSection());
+        sb.AppendLine();
+        sb.AppendLine("=== SCORE UI CHECK ===");
+        sb.AppendLine(BuildScoreUiCheckSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== 次回レポート必須（4項目） ===");
         sb.AppendLine(BuildRequiredChecklist(lines));
         sb.AppendLine();
@@ -981,6 +996,31 @@ public static class SnowLoopNoaReportAutoCopy
         return sb.ToString();
     }
 
+    /// <summary>コンパイルゲート: Console エラー数・警告数・結果を ASSI Report に出力。</summary>
+    static string BuildCompileGateSection()
+    {
+        int errorCount = 0;
+        int warningCount = 0;
+        int logCount = 0;
+        try
+        {
+            ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out warningCount, out logCount);
+        }
+        catch (Exception ex)
+        {
+            return "=== COMPILE GATE ===\nconsole_error_count=-1\nconsole_warning_count=-1\ncompile_result=UNKNOWN\nblocking_errors=ConsoleWindowUtility_failed_" + (ex.Message ?? "unknown").Replace("\n", " ").Replace("\r", "");
+        }
+        string compileResult = errorCount == 0 ? "PASS" : "FAIL";
+        string blockingErrors = errorCount == 0 ? "none" : (errorCount + " errors (see Console)");
+        var sb = new StringBuilder();
+        sb.AppendLine("=== COMPILE GATE ===");
+        sb.AppendLine("console_error_count=" + errorCount);
+        sb.AppendLine("console_warning_count=" + warningCount);
+        sb.AppendLine("compile_result=" + compileResult);
+        sb.AppendLine("blocking_errors=" + blockingErrors);
+        return sb.ToString();
+    }
+
     const int MaxReportChars = 6000;
 
     static string TruncateReport(string s)
@@ -1003,6 +1043,21 @@ public static class SnowLoopNoaReportAutoCopy
             var key = match.Groups[1].Value;
             if (key == "scene" || key == "house_count" || key == "one_house_forced" || key == "rollback_applied" || key == "camera_position" || key == "camera_rotation" || key == "active_roof_target" || key == "test_roof_visible" || key == "roof_shape" || key == "roof_slope_direction" || key == "enabled_snow_systems" || key == "disabled_legacy_snow_systems" || key == "active_snow_visual" || key == "active_snow_break_logic" || key == "active_snow_spawn_logic" || key == "spawn_system" || key == "spawn_reason" || key == "is_expected")
                 sb.AppendLine($"{key}={match.Groups[2].Value}");
+        }
+        return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
+    }
+
+    /// <summary>SCORE UI CHECK: スコア UI の存在・表示・固定位置・更新を検証。</summary>
+    static string BuildScoreUiCheckSection(string[] lines)
+    {
+        var last = lines.LastOrDefault(l => l.Contains("[SCORE_UI_CHECK]"));
+        if (string.IsNullOrEmpty(last)) return "score_render_path=unknown cooldown_render_path=unknown score_ui_exists=false score_ui_visible=false score_ui_fixed_position=false score_text_value=none score_updates_on_play=false score_duplicate_ui_count=0 score_style=none cooldown_meter_exists=false cooldown_meter_visible=false score_null_error=no_log detection_matches_actual=false result=FAIL";
+        var sb = new StringBuilder();
+        foreach (var m in Regex.Matches(last, @"(score_render_path|cooldown_render_path|score_ui_exists|score_ui_visible|score_ui_fixed_position|score_text_value|score_updates_on_play|score_duplicate_ui_count|score_style|cooldown_meter_exists|cooldown_meter_visible|score_null_error|detection_matches_actual|result)=([^\s]+)"))
+        {
+            var match = m as Match;
+            if (match == null) continue;
+            sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
         }
         return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
     }
@@ -1198,10 +1253,10 @@ public static class SnowLoopNoaReportAutoCopy
             int eq = content.IndexOf('=');
             if (eq > 0) dict[content.Substring(0, eq).Trim()] = content.Substring(eq + 1).Trim();
         }
-        sb.AppendLine($"scene_name={dict.TryGetValue("scene_name", out var sn) ? sn : ""}");
-        sb.AppendLine($"root_object_count={dict.TryGetValue("root_object_count", out var rc) ? rc : "0"}");
-        sb.AppendLine($"active_snow_pieces={dict.TryGetValue("active_snow_pieces", out var asp) ? asp : "-1"}");
-        sb.AppendLine($"score_value={dict.TryGetValue("score_value", out var sv) ? sv : "0"}");
+        string sn; sb.AppendLine("scene_name=" + (dict.TryGetValue("scene_name", out sn) ? sn : ""));
+        string rc; sb.AppendLine("root_object_count=" + (dict.TryGetValue("root_object_count", out rc) ? rc : "0"));
+        string asp; sb.AppendLine("active_snow_pieces=" + (dict.TryGetValue("active_snow_pieces", out asp) ? asp : "-1"));
+        string sv; sb.AppendLine("score_value=" + (dict.TryGetValue("score_value", out sv) ? sv : "0"));
         return sb.ToString();
     }
 
@@ -1237,11 +1292,11 @@ public static class SnowLoopNoaReportAutoCopy
             int eq = c.IndexOf('=');
             if (eq > 0) dict[c.Substring(0, eq).Trim()] = c.Substring(eq + 1).Trim();
         }
-        sb.AppendLine($"scene={dict.TryGetValue("scene", out var sc) ? sc : ""}");
-        sb.AppendLine($"active_snow_pieces={dict.TryGetValue("active_snow_pieces", out var asp) ? asp : "-1"}");
-        sb.AppendLine($"snow_root_children={dict.TryGetValue("snow_root_children", out var src) ? src : "-1"}");
-        sb.AppendLine($"score={dict.TryGetValue("score", out var sc2) ? sc2 : "0"}");
-        sb.AppendLine($"cameraPos={dict.TryGetValue("cameraPos", out var cp) ? cp : "(0,0,0)"}");
+        string sc; sb.AppendLine("scene=" + (dict.TryGetValue("scene", out sc) ? sc : ""));
+        string asp; sb.AppendLine("active_snow_pieces=" + (dict.TryGetValue("active_snow_pieces", out asp) ? asp : "-1"));
+        string src; sb.AppendLine("snow_root_children=" + (dict.TryGetValue("snow_root_children", out src) ? src : "-1"));
+        string sc2; sb.AppendLine("score=" + (dict.TryGetValue("score", out sc2) ? sc2 : "0"));
+        string cp; sb.AppendLine("cameraPos=" + (dict.TryGetValue("cameraPos", out cp) ? cp : "(0,0,0)"));
         return sb.ToString();
     }
 
@@ -1280,9 +1335,9 @@ public static class SnowLoopNoaReportAutoCopy
             if (c.StartsWith("snow_root_children=") || c.StartsWith("snow_pieces_active=") || c.StartsWith("snow_pieces_destroyed="))
             { int eq = c.IndexOf('='); if (eq > 0) dict[c.Substring(0, eq).Trim()] = c.Substring(eq + 1).Trim(); }
         }
-        sb.AppendLine($"snow_root_children={dict.TryGetValue("snow_root_children", out var src) ? src : "-1"}");
-        sb.AppendLine($"snow_pieces_active={dict.TryGetValue("snow_pieces_active", out var spa) ? spa : "-1"}");
-        sb.AppendLine($"snow_pieces_destroyed={dict.TryGetValue("snow_pieces_destroyed", out var spd) ? spd : "0"}");
+        string src; sb.AppendLine("snow_root_children=" + (dict.TryGetValue("snow_root_children", out src) ? src : "-1"));
+        string spa; sb.AppendLine("snow_pieces_active=" + (dict.TryGetValue("snow_pieces_active", out spa) ? spa : "-1"));
+        string spd; sb.AppendLine("snow_pieces_destroyed=" + (dict.TryGetValue("snow_pieces_destroyed", out spd) ? spd : "0"));
         return sb.ToString();
     }
 
@@ -1346,9 +1401,9 @@ public static class SnowLoopNoaReportAutoCopy
             int eq = content.IndexOf('=');
             if (eq > 0) dict[content.Substring(0, eq).Trim()] = content.Substring(eq + 1).Trim();
         }
-        sb.AppendLine($"target_system={dict.TryGetValue("target_system", out var ts) ? ts : "AIPipelineBase"}");
-        sb.AppendLine($"allowed_files={dict.TryGetValue("allowed_files", out var af) ? af : ""}");
-        sb.AppendLine($"protected_systems={dict.TryGetValue("protected_systems", out var ps) ? ps : "SnowPhysics,SnowSpawner,SnowAvalanche,CameraController,ParticleSystem"}");
+        string ts; sb.AppendLine("target_system=" + (dict.TryGetValue("target_system", out ts) ? ts : "AIPipelineBase"));
+        string af; sb.AppendLine("allowed_files=" + (dict.TryGetValue("allowed_files", out af) ? af : ""));
+        string ps; sb.AppendLine("protected_systems=" + (dict.TryGetValue("protected_systems", out ps) ? ps : "SnowPhysics,SnowSpawner,SnowAvalanche,CameraController,ParticleSystem"));
         return sb.ToString();
     }
 

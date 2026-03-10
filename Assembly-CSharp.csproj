@@ -88,6 +88,7 @@
     <Compile Include="Assets/Scripts/CameraMatchAndSnowConfig.cs" />
     <Compile Include="Assets/Scripts/RollbackVerification.cs" />
     <Compile Include="Assets/Scripts/SnowVisual.cs" />
+    <Compile Include="Assets/Scripts/ScoreUiCheckEmitter.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/TapToSlideOnRoof.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyFixedScene.cs" />
@@ -95,6 +96,7 @@
     <Compile Include="Assets/Scripts/UIBootstrap.cs" />
     <Compile Include="Assets/Scripts/SnowClump.cs" />
     <Compile Include="Assets/Scripts/RoofSnowPlaceholder.cs" />
+    <Compile Include="Assets/Scripts/UnifiedHUD.cs" />
     <Compile Include="Assets/Scripts/RoofSnowSystem.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/RoofSnowMaskController.cs" />

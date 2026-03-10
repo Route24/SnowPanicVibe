@@ -94,16 +94,18 @@ public class UIBootstrap : MonoBehaviour
             if (text != null)
             {
                 ApplyScoreTextLayout(text);
-                text.text = "SCORE: 0";
-                Debug.Log("[UIBootstrap] ScoreText found (Legacy)");
+                SyncScoreToText(text);
+                EnsureWireOnScoreText(existing.gameObject, text: text, tmp: null);
+                Debug.Log("[UIBootstrap] ScoreText found (Legacy), wire ensured");
                 return;
             }
             var tmp = existing.GetComponent(System.Type.GetType("TMPro.TextMeshProUGUI, Unity.TextMeshPro"));
             if (tmp != null)
             {
                 ApplyScoreTextLayoutTMP(tmp);
-                tmp.GetType().GetProperty("text")?.SetValue(tmp, "SCORE: 0");
-                Debug.Log("[UIBootstrap] ScoreText found (TMP)");
+                SyncScoreToTMP(tmp);
+                EnsureWireOnScoreText(existing.gameObject, text: null, tmp: tmp);
+                Debug.Log("[UIBootstrap] ScoreText found (TMP), wire ensured");
                 return;
             }
         }
@@ -115,7 +117,7 @@ public class UIBootstrap : MonoBehaviour
         if (tmpText != null)
         {
             ApplyScoreTextLayoutTMP(tmpText);
-            tmpText.GetType().GetProperty("text")?.SetValue(tmpText, "SCORE: 0");
+            SyncScoreToTMP(tmpText);
             WireScoreToTMP(tmpText);
             Debug.Log("[UIBootstrap] ScoreText created (TextMeshProUGUI)");
             return;
@@ -125,9 +127,35 @@ public class UIBootstrap : MonoBehaviour
         var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         if (font != null) legText.font = font;
         ApplyScoreTextLayout(legText);
-        legText.text = "SCORE: 0";
+        SyncScoreToText(legText);
         WireScoreToText(legText);
         Debug.Log("[UIBootstrap] ScoreText created (Legacy Text - TMP missing)");
+    }
+
+    static void SyncScoreToText(Text t)
+    {
+        if (t == null) return;
+        int s = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        t.text = "SCORE: " + s;
+    }
+
+    static void SyncScoreToTMP(Component tmp)
+    {
+        if (tmp == null) return;
+        int s = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        tmp.GetType().GetProperty("text")?.SetValue(tmp, "SCORE: " + s);
+    }
+
+    static void EnsureWireOnScoreText(GameObject go, Text text, Component tmp)
+    {
+        if (go == null) return;
+        var wire = go.GetComponent<UIScoreWire>();
+        if (wire != null) return;
+        wire = go.AddComponent<UIScoreWire>();
+        if (text != null)
+            wire.InitLegacy(text);
+        else if (tmp != null)
+            wire.InitTMP(tmp);
     }
 
     static readonly Color ScoreTextColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
@@ -155,10 +183,14 @@ public class UIBootstrap : MonoBehaviour
         t.fontSize = 72;
         t.color = ScoreTextColor;
         t.fontStyle = FontStyle.Bold;
+        var shadow = t.gameObject.GetComponent<UnityEngine.UI.Shadow>();
+        if (shadow == null) shadow = t.gameObject.AddComponent<UnityEngine.UI.Shadow>();
+        shadow.effectColor = Color.black;
+        shadow.effectDistance = new Vector2(2f, 2f);
         var outline = t.gameObject.GetComponent<UnityEngine.UI.Outline>();
         if (outline == null) outline = t.gameObject.AddComponent<UnityEngine.UI.Outline>();
         outline.effectColor = Color.black;
-        outline.effectDistance = new Vector2(3f, 3f);
+        outline.effectDistance = new Vector2(2f, 2f);
         var rt = t.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(0f, 1f);

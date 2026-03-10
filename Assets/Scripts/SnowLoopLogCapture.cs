@@ -36,10 +36,12 @@ public class SnowLoopLogCapture : MonoBehaviour
         }
         var systems = new GameObject("Systems");
         DontDestroyOnLoad(systems);
+        UnifiedHUD.EnsureBootstrap();
         systems.AddComponent<UIBootstrap>();
         try { systems.AddComponent<DebugScreenshotCapture>(); } catch (System.Exception ex) { UnityEngine.Debug.LogWarning($"[SnowLoopLogCapture] DebugScreenshotCapture add failed: {ex.Message}"); }
         try { systems.AddComponent<AIPipelineTestCollector>(); } catch (System.Exception ex) { UnityEngine.Debug.LogWarning($"[SnowLoopLogCapture] AIPipelineTestCollector add failed: {ex.Message}"); }
         go.AddComponent<AssiDebugUI>();
+        try { systems.AddComponent<ScoreUiCheckEmitter>(); } catch (System.Exception ex) { UnityEngine.Debug.LogWarning($"[SnowLoopLogCapture] ScoreUiCheckEmitter add failed: {ex.Message}"); }
         go.AddComponent<DebugSnowVisibility>();
         go.AddComponent<GridVisualWatchdog>();
         go.AddComponent<CabinRoofForceHide>();
@@ -63,8 +65,9 @@ public class SnowLoopLogCapture : MonoBehaviour
             ModifyTargetDeclaration.EmitToReport();
         }
         SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
-        UIBootstrap.EnsureUIRootAndScoreText();
-        SnowScoreDisplayUI.EnsureBootstrap();
+        ToolCooldownManager.EnsureBootstrapIfNeeded();
+        UnifiedHUD.EnsureBootstrap();
+        if (!UnifiedHUD.IsActive) { UIBootstrap.EnsureUIRootAndScoreText(); SnowScoreDisplayUI.EnsureBootstrap(); }
         DisableDebugGridVisuals();
         Invoke(nameof(InvokeEmitRenderVisibilitySnapshot), 0.02f);
     }
