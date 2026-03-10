@@ -53,6 +53,11 @@ public class RunHUDUI : MonoBehaviour
     void EnsureHUD()
     {
         var canvas = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
+        if (canvas == null)
+        {
+            UIBootstrap.EnsureUIRootAndScoreText();
+            canvas = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
+        }
         if (canvas == null) return;
         var existing = canvas.transform.Find("RunHUD");
         if (existing != null) { _hudRoot = existing.gameObject; _centerText = existing.Find("CenterText")?.GetComponent<Text>(); _timerText = existing.Find("TimerText")?.GetComponent<Text>(); return; }

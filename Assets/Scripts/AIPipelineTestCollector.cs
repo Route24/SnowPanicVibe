@@ -76,6 +76,8 @@ public class AIPipelineTestCollector : MonoBehaviour
             AvalanchePhysicsSystem.EmitAvalancheTestToReport();
 
             RunStructureManager.EmitRunStructureTestToReport();
+
+            DevelopmentStepTracker.EmitToReport();
         }
         catch (Exception ex) { Debug.LogWarning($"[AIPipelineTestCollector] EmitFinalReport: {ex.Message}"); }
     }

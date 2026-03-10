@@ -1384,25 +1384,35 @@ public static class SnowLoopNoaReportAutoCopy
 
         foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
         {
-            sb.AppendLine($"{k}_local_path={dict.TryGetValue(k + "_local_path", out var v) ? v : ""}");
+            string v;
+            string txt = dict.TryGetValue(k + "_local_path", out v) ? v : "";
+            sb.AppendLine(k + "_local_path=" + txt);
         }
         sb.AppendLine();
         foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
         {
-            sb.AppendLine($"{k}_exists={dict.TryGetValue(k + "_exists", out var v) ? v : "false"}");
+            string v;
+            string txt = dict.TryGetValue(k + "_exists", out v) ? v : "false";
+            sb.AppendLine(k + "_exists=" + txt);
         }
         sb.AppendLine();
         foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
         {
-            sb.AppendLine($"{k}_size_bytes={dict.TryGetValue(k + "_size_bytes", out var v) ? v : "0"}");
+            string v;
+            string txt = dict.TryGetValue(k + "_size_bytes", out v) ? v : "0";
+            sb.AppendLine(k + "_size_bytes=" + txt);
         }
         sb.AppendLine();
         foreach (var k in new[] { "gameview", "sceneview", "console", "inspector" })
         {
-            sb.AppendLine($"{k}_drive_link={dict.TryGetValue(k + "_drive_link", out var v) ? v : ""}");
+            string v;
+            string txt = dict.TryGetValue(k + "_drive_link", out v) ? v : "";
+            sb.AppendLine(k + "_drive_link=" + txt);
         }
         sb.AppendLine();
-        sb.AppendLine($"drive_upload_success={dict.TryGetValue("gameview_drive_upload_success", out var du) ? du : "false"}");
+        string du;
+        string driveSuccess = dict.TryGetValue("gameview_drive_upload_success", out du) ? du : "false";
+        sb.AppendLine("drive_upload_success=" + driveSuccess);
         sb.AppendLine($"error={summaryError}");
         return sb.ToString();
     }

@@ -19,28 +19,39 @@ public class RunResultUI : MonoBehaviour
     Button _retryButton;
     Button _titleButton;
 
+    bool _subscribed;
+
     void Start()
     {
         if (VideoPipelineSelfTestMode.IsActive) return;
-        if (RunStructureManager.Instance == null) return;
+        TrySubscribeAndEnsurePanel();
+    }
+
+    void TrySubscribeAndEnsurePanel()
+    {
+        if (RunStructureManager.Instance == null || _subscribed) return;
         EnsurePanel();
         RunStructureManager.Instance.OnStateChanged += OnStateChanged;
         RunStructureManager.Instance.OnRunEnded += OnRunEnded;
-        _panel.SetActive(false);
+        _subscribed = true;
+        if (_panel != null) _panel.SetActive(false);
     }
 
     void OnDestroy()
     {
-        if (RunStructureManager.Instance != null)
+        if (_subscribed && RunStructureManager.Instance != null)
         {
             RunStructureManager.Instance.OnStateChanged -= OnStateChanged;
             RunStructureManager.Instance.OnRunEnded -= OnRunEnded;
+            _subscribed = false;
         }
     }
 
     void Update()
     {
-        if (RunStructureManager.Instance != null && RunStructureManager.Instance.State == RunStructureManager.RunState.ShowingResult && _panel != null && !_panel.activeSelf)
+        if (RunStructureManager.Instance == null) return;
+        TrySubscribeAndEnsurePanel();
+        if (RunStructureManager.Instance.State == RunStructureManager.RunState.ShowingResult && _panel != null && !_panel.activeSelf)
             _panel.SetActive(true);
     }
 
@@ -62,6 +73,11 @@ public class RunResultUI : MonoBehaviour
     void EnsurePanel()
     {
         var canvas = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
+        if (canvas == null)
+        {
+            UIBootstrap.EnsureUIRootAndScoreText();
+            canvas = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
+        }
         if (canvas == null) return;
         var existing = canvas.transform.Find("RunResultPanel");
         if (existing != null) { _panel = existing.gameObject; return; }

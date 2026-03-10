@@ -254,14 +254,23 @@ public class RunStructureManager : MonoBehaviour
     public static void EmitRunStructureTestToReport()
     {
         var m = Instance;
+        bool runStarted = m != null && m.RunStarted;
+        bool runFinished = m != null && m.RunFinished;
+        float runTimeLimit = m != null ? m.runTimeLimit : 90f;
+        int finalScore = m != null ? m.FinalScore : 0;
+        int maxCombo = m != null ? m.MaxCombo : 0;
+        int villagerHits = m != null ? m.VillagerHits : 0;
+        string resultRank = (m != null && !string.IsNullOrEmpty(m.ResultRank)) ? m.ResultRank : "N/A";
+        bool retryAvailable = m != null && m.RetryAvailable;
+
         SnowLoopLogCapture.AppendToAssiReport("=== RUN STRUCTURE TEST ===");
-        SnowLoopLogCapture.AppendToAssiReport($"run_started={(m != null && m.RunStarted).ToString().ToLower()}");
-        SnowLoopLogCapture.AppendToAssiReport($"run_finished={(m != null && m.RunFinished).ToString().ToLower()}");
-        SnowLoopLogCapture.AppendToAssiReport($"run_time_limit={m != null ? m.runTimeLimit : 90}");
-        SnowLoopLogCapture.AppendToAssiReport($"final_score={m != null ? m.FinalScore : 0}");
-        SnowLoopLogCapture.AppendToAssiReport($"max_combo={m != null ? m.MaxCombo : 0}");
-        SnowLoopLogCapture.AppendToAssiReport($"villager_hits={m != null ? m.VillagerHits : 0}");
-        SnowLoopLogCapture.AppendToAssiReport($"result_rank={m != null ? m.ResultRank : "N/A"}");
-        SnowLoopLogCapture.AppendToAssiReport($"retry_available={(m != null && m.RetryAvailable).ToString().ToLower()}");
+        SnowLoopLogCapture.AppendToAssiReport("run_started=" + runStarted.ToString().ToLower());
+        SnowLoopLogCapture.AppendToAssiReport("run_finished=" + runFinished.ToString().ToLower());
+        SnowLoopLogCapture.AppendToAssiReport("run_time_limit=" + runTimeLimit);
+        SnowLoopLogCapture.AppendToAssiReport("final_score=" + finalScore);
+        SnowLoopLogCapture.AppendToAssiReport("max_combo=" + maxCombo);
+        SnowLoopLogCapture.AppendToAssiReport("villager_hits=" + villagerHits);
+        SnowLoopLogCapture.AppendToAssiReport("result_rank=" + resultRank);
+        SnowLoopLogCapture.AppendToAssiReport("retry_available=" + retryAvailable.ToString().ToLower());
     }
 }
