@@ -520,9 +520,10 @@ public class RoofSnow : MonoBehaviour
         var velocity = ps.velocityOverLifetime;
         velocity.enabled = true;
         velocity.space = ParticleSystemSimulationSpace.World;
-        velocity.x = new ParticleSystem.MinMaxCurve(0f);
-        velocity.y = new ParticleSystem.MinMaxCurve(0.12f);
-        velocity.z = new ParticleSystem.MinMaxCurve(0f);
+        velocity.x = new ParticleSystem.MinMaxCurve(0f, 0f);
+        velocity.y = new ParticleSystem.MinMaxCurve(0.12f, 0.12f);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f, 0f);
+        UnityEngine.Debug.Log("[RoofSnow] particle_error_source=AvalanchePowderPuff particle_velocity_mode_fixed=true");
 
         var color = ps.colorOverLifetime;
         color.enabled = true;

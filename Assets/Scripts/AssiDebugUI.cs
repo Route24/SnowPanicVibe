@@ -44,6 +44,7 @@ public class AssiDebugUI : MonoBehaviour
 
     void OnGUI()
     {
+        DrawScoreWithOutline();
         var cooldownMgr = Object.FindFirstObjectByType<ToolCooldownManager>();
         if (cooldownMgr != null) DrawCooldownRing(cooldownMgr);
         if (!debugOverlayEnabled) return;
@@ -187,9 +188,9 @@ public class AssiDebugUI : MonoBehaviour
         var scoreMgr = Object.FindFirstObjectByType<SnowPhysicsScoreManager>();
         if (scoreMgr != null)
         {
-            var style = new GUIStyle(GUI.skin.label) { fontSize = 24, fontStyle = FontStyle.Bold };
+            var style = new GUIStyle(GUI.skin.label) { fontSize = 48, fontStyle = FontStyle.Bold };
             style.normal.textColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
-            DrawLabelWithOutline(new Rect(HudX, 8f, 400, 40), $"Score: {scoreMgr.Score}", style);
+            DrawLabelWithOutline(new Rect(HudX, 8f, 800, 80), $"Score: {scoreMgr.Score}", style);
         }
 
         // Core gameplay debug: Money, Roof weight
@@ -239,13 +240,13 @@ public class AssiDebugUI : MonoBehaviour
         float total = cooldown.cooldownSec;
         float fill01 = total > 0.001f ? Mathf.Clamp01(rem / total) : 0f;
         float cx = Screen.width * 0.5f;
-        float cy = Screen.height - 80f;
-        float r = 52f;
+        float cy = Screen.height - 100f;
+        float r = 104f;
         int segments = 36;
         Color fillColor = new Color(255f/255f, 220f/255f, 0f, 0.95f);
         Color emptyColor = new Color(0.5f, 0.5f, 0.5f, 0.5f);
-        float segW = 8f;
-        float segH = 12f;
+        float segW = 16f;
+        float segH = 24f;
         for (int i = 0; i < segments; i++)
         {
             float segEnd = (i + 1f) / segments;
@@ -260,20 +261,81 @@ public class AssiDebugUI : MonoBehaviour
         }
         if (rem > 0.01f)
         {
-            var lbl = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 20, fontStyle = FontStyle.Bold };
+            var lbl = new GUIStyle(GUI.skin.label) { alignment = TextAnchor.MiddleCenter, fontSize = 40, fontStyle = FontStyle.Bold };
             lbl.normal.textColor = new Color(255f/255f, 220f/255f, 0f, 1f);
-            DrawLabelWithOutline(new Rect(cx - 40f, cy - 14f, 80f, 32f), $"{rem:F1}s", lbl);
+            DrawLabelWithOutline(new Rect(cx - 60f, cy - 24f, 120f, 56f), $"{rem:F1}s", lbl);
+            if (!_coolTimeVisualLogged) { LogCoolTimeVisual(lbl.normal.textColor, true, Color.black, 40); _coolTimeVisualLogged = true; }
+        }
+        else
+        {
+            if (!_coolTimeVisualLogged) { LogCoolTimeVisual(new Color(255f/255f, 220f/255f, 0f, 1f), true, Color.black, 40); _coolTimeVisualLogged = true; }
+        }
+    }
+    static bool _coolTimeVisualLogged;
+    static void LogCoolTimeVisual(Color textColor, bool outlineEnabled, Color outlineColor, int fontSize)
+    {
+        UnityEngine.Debug.Log($"[CoolTimeVisual] cooltime_text_color={textColor} cooltime_outline_enabled={outlineEnabled.ToString().ToLower()} cooltime_outline_color={outlineColor} cooltime_font_size={fontSize} cooltime_visual_pass={outlineEnabled.ToString().ToLower()}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== CoolTimeVisual === cooltime_text_color={textColor} cooltime_outline_enabled={outlineEnabled} cooltime_outline_color={outlineColor} cooltime_font_size={fontSize} cooltime_visual_pass={outlineEnabled}");
+    }
+
+    static bool _scoreOutlineApplied;
+
+    /// <summary>Cool Time と同じ DrawLabelWithOutline 方式で Score を描画。Canvas ScoreText は非表示にする。</summary>
+    void DrawScoreWithOutline()
+    {
+        var mgr = Object.FindFirstObjectByType<SnowPhysicsScoreManager>();
+        int score = mgr != null ? mgr.Score : 0;
+        string text = "SCORE: " + score;
+
+        var root = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
+        var scoreObj = root != null ? root.transform.Find("ScoreText") : null;
+        if (scoreObj != null)
+        {
+            if (scoreObj.gameObject.activeSelf) scoreObj.gameObject.SetActive(false);
+        }
+
+        const int outlinePx = 3;
+        const float x = 20f;
+        float y = Screen.height - 200f;
+        var rect = new Rect(x, y, 600f, 180f);
+        var style = new GUIStyle(GUI.skin.label) { fontSize = 144, fontStyle = FontStyle.Bold };
+        style.normal.textColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
+
+        var prev = style.normal.textColor;
+        style.normal.textColor = Color.black;
+        GUI.Label(new Rect(rect.x - outlinePx, rect.y - outlinePx, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x - outlinePx, rect.y + outlinePx, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + outlinePx, rect.y - outlinePx, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + outlinePx, rect.y + outlinePx, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x - outlinePx, rect.y, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + outlinePx, rect.y, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x, rect.y - outlinePx, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x, rect.y + outlinePx, rect.width, rect.height), text, style);
+        style.normal.textColor = prev;
+        GUI.Label(rect, text, style);
+
+        if (!_scoreOutlineApplied)
+        {
+            _scoreOutlineApplied = true;
+            Debug.Log("[ScoreOutline] score_text_object=ScoreText(OnGUI_overlay) score_outline_enabled=true score_outline_color=#000000 score_outline_width=3 cooltime_outline_reference=DrawLabelWithOutline");
+            SnowLoopLogCapture.AppendToAssiReport("=== ScoreOutline === score_text_object=ScoreText(OnGUI_overlay) score_outline_enabled=true score_outline_color=#000000 score_outline_width=3 cooltime_outline_reference=DrawLabelWithOutline");
         }
     }
 
+    static readonly int _outlinePx = 5;
     static void DrawLabelWithOutline(Rect rect, string text, GUIStyle style)
     {
         var prev = style.normal.textColor;
         style.normal.textColor = Color.black;
-        GUI.Label(new Rect(rect.x - 2, rect.y - 2, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x - 2, rect.y + 2, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x + 2, rect.y - 2, rect.width, rect.height), text, style);
-        GUI.Label(new Rect(rect.x + 2, rect.y + 2, rect.width, rect.height), text, style);
+        int px = _outlinePx;
+        GUI.Label(new Rect(rect.x - px, rect.y - px, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x - px, rect.y + px, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + px, rect.y - px, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + px, rect.y + px, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x - px, rect.y, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x + px, rect.y, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x, rect.y - px, rect.width, rect.height), text, style);
+        GUI.Label(new Rect(rect.x, rect.y + px, rect.width, rect.height), text, style);
         style.normal.textColor = prev;
         GUI.Label(rect, text, style);
     }

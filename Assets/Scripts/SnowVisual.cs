@@ -168,7 +168,10 @@ public class SnowVisual : MonoBehaviour
         var vel = ps.velocityOverLifetime;
         vel.enabled = true;
         vel.space = ParticleSystemSimulationSpace.World;
+        vel.x = new ParticleSystem.MinMaxCurve(0f, 0f);
         vel.y = new ParticleSystem.MinMaxCurve(0.08f, 0.2f);
+        vel.z = new ParticleSystem.MinMaxCurve(0f, 0f);
+        UnityEngine.Debug.Log("[SnowVisual] particle_error_source=SnowVisualPowder particle_velocity_mode_fixed=true");
 
         var col = ps.colorOverLifetime;
         col.enabled = true;

@@ -2,6 +2,52 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+/// <summary>タップエラー診断用。雪叩き時のエラーを捕捉・ログ。</summary>
+public static class TapErrorDiagnostics
+{
+    public static int TapTestCount;
+    public static string LastTapErrorBefore = "none";
+    public static string LastTapErrorAfter = "none";
+    public static string TapErrorSourceFile = "";
+    public static int TapErrorSourceLine;
+    public static bool TapErrorFixApplied;
+
+    public static void OnTapStart()
+    {
+        TapTestCount++;
+        LastTapErrorBefore = "none";
+        LastTapErrorAfter = "none";
+    }
+    public static void OnTapError(System.Exception ex)
+    {
+        LastTapErrorBefore = ex != null ? ex.Message : "null";
+        var st = ex != null ? ex.StackTrace : "";
+        if (!string.IsNullOrEmpty(st))
+        {
+            var lines = st.Split('\n');
+            foreach (var line in lines)
+            {
+                if (line.Contains("UnityEngine.") || line.Contains("Assets/")) continue;
+                if (line.TrimStart().StartsWith("at "))
+                {
+                    var at = line.TrimStart().Substring(3).Trim();
+                    if (at.Contains("("))
+                    {
+                        var paren = at.IndexOf('(');
+                        TapErrorSourceFile = at.Substring(0, paren).Trim();
+                        var inner = at.Substring(paren);
+                        var numIdx = inner.IndexOf(':');
+                        if (numIdx >= 0) int.TryParse(inner.Substring(numIdx + 1).Replace(")", ""), out TapErrorSourceLine);
+                    }
+                    break;
+                }
+            }
+        }
+        Debug.LogError($"[TapErrorDiagnostics] tap_error_before={LastTapErrorBefore} tap_error_source_file={TapErrorSourceFile} tap_error_source_line={TapErrorSourceLine} tap_test_count={TapTestCount}");
+    }
+    public static void OnTapSuccess() { LastTapErrorAfter = "none"; }
+}
+
 /// <summary>屋根1枚プロトタイプ用。タップで屋根面に沿って雪を滑らせる。</summary>
 [RequireComponent(typeof(Camera))]
 public class TapToSlideOnRoof : MonoBehaviour
@@ -29,6 +75,22 @@ public class TapToSlideOnRoof : MonoBehaviour
         }
         if (!pressed) return;
 
+        TapErrorDiagnostics.OnTapStart();
+        try
+        {
+            HandleTapInternal(screenPos);
+        }
+        catch (System.Exception ex)
+        {
+            TapErrorDiagnostics.OnTapError(ex);
+            TapErrorDiagnostics.TapErrorFixApplied = false;
+            Debug.LogError($"[TapToSlideOnRoof] tap_error_before={ex.Message} tap_error_source_file={TapErrorDiagnostics.TapErrorSourceFile} tap_error_source_line={TapErrorDiagnostics.TapErrorSourceLine} tap_error_fix_applied={TapErrorDiagnostics.TapErrorFixApplied} tap_error_after={ex.Message} tap_test_count={TapErrorDiagnostics.TapTestCount}\n{ex.StackTrace}");
+            SnowLoopLogCapture.AppendToAssiReport($"=== TAP_ERROR === tap_error_before={ex.Message} tap_error_source_file={TapErrorDiagnostics.TapErrorSourceFile} tap_error_source_line={TapErrorDiagnostics.TapErrorSourceLine} tap_error_fix_applied=false tap_error_after={ex.Message} tap_test_count={TapErrorDiagnostics.TapTestCount}");
+        }
+    }
+
+    void HandleTapInternal(Vector2 screenPos)
+    {
         var cooldown = Object.FindFirstObjectByType<ToolCooldownManager>();
         if (cooldown != null && !cooldown.CanHit) return;
 
@@ -130,6 +192,9 @@ public class TapToSlideOnRoof : MonoBehaviour
         {
             Debug.Log($"[TapMiss] rayOrig=({ray.origin.x:F2},{ray.origin.y:F2},{ray.origin.z:F2}) noHit screen=({screenPos.x:F0},{screenPos.y:F0})");
         }
+        TapErrorDiagnostics.OnTapSuccess();
+        TapErrorDiagnostics.TapErrorFixApplied = true;
+        Debug.Log($"[TapErrorDiagnostics] tap_error_after=none tap_error_fix_applied={TapErrorDiagnostics.TapErrorFixApplied} tap_test_count={TapErrorDiagnostics.TapTestCount}");
     }
 
     static string GetTransformPath(Transform t)
@@ -144,15 +209,28 @@ public class TapToSlideOnRoof : MonoBehaviour
 
     IEnumerator ShowHitGizmo(Vector3 worldPos)
     {
-        var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-        go.name = "TapHitGizmo";
-        var col = go.GetComponent<Collider>();
-        if (col != null) col.enabled = false;
-        go.transform.position = worldPos;
-        go.transform.localScale = Vector3.one * (hitGizmoRadius * 2f);
-        var r = go.GetComponent<Renderer>();
-        if (r != null && r.sharedMaterial != null) MaterialColorHelper.SetColorSafe(r.sharedMaterial, Color.red);
+        GameObject go = null;
+        try
+        {
+            go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            if (go == null) yield break;
+            go.name = "TapHitGizmo";
+            var col = go.GetComponent<Collider>();
+            if (col != null) col.enabled = false;
+            go.transform.position = worldPos;
+            go.transform.localScale = Vector3.one * (hitGizmoRadius * 2f);
+            var r = go.GetComponent<Renderer>();
+            if (r != null)
+            {
+                var mat = r.material;
+                if (mat != null) MaterialColorHelper.SetColorSafe(mat, Color.red);
+            }
+        }
+        catch (System.Exception ex)
+        {
+            Debug.LogWarning($"[ShowHitGizmo] gizmo color failed (non-fatal): {ex.Message}");
+        }
         yield return new WaitForSeconds(hitGizmoDuration);
-        Object.Destroy(go);
+        if (go != null) Object.Destroy(go);
     }
 }

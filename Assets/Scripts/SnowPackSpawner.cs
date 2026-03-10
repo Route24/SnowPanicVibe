@@ -353,9 +353,64 @@ public class SnowPackSpawner : MonoBehaviour
         LogPiecePoseSampleFirst3();
         LogRotationOverrideSuspectedLocations();
         LogSnowLayerMix();
+        LogVisualSizeMatch();
 
         if (SnowVerifyB2Debug.Enabled)
             LogB2PieceStatesRightAfterGeneration(spawned);
+    }
+
+    void LogVisualSizeMatch()
+    {
+        float roofVisualW = _roofProjectedW > 0f ? _roofProjectedW : _roofWidth;
+        float roofVisualD = _roofProjectedL > 0f ? _roofProjectedL : _roofLength;
+        if (roofCollider != null && roofVisualW < 0.01f)
+        {
+            var b = roofCollider.bounds;
+            roofVisualW = Mathf.Max(b.size.x, b.size.z);
+            roofVisualD = Mathf.Min(b.size.x, b.size.z);
+        }
+        float snowVisualW = _roofWidth;
+        float snowVisualD = _roofLength;
+        if (_piecesRoot != null && _piecesRoot.childCount > 0 && (_roofR.sqrMagnitude > 0.001f && _roofF.sqrMagnitude > 0.001f))
+        {
+            Bounds snowBounds = default;
+            int count = 0;
+            for (int i = 0; i < _piecesRoot.childCount; i++)
+            {
+                var tr = _piecesRoot.GetChild(i);
+                if (tr == null || !tr.gameObject.activeSelf) continue;
+                var r = tr.GetComponentInChildren<Renderer>(true);
+                if (r != null && r.enabled)
+                {
+                    if (count == 0) snowBounds = r.bounds;
+                    else snowBounds.Encapsulate(r.bounds);
+                    count++;
+                }
+            }
+            if (count > 0)
+            {
+                Vector3 d = snowBounds.max - snowBounds.min;
+                snowVisualW = Mathf.Abs(Vector3.Dot(d, _roofR.normalized));
+                snowVisualD = Mathf.Abs(Vector3.Dot(d, _roofF.normalized));
+            }
+        }
+        float widthGap = roofVisualW - snowVisualW;
+        float depthGap = roofVisualD - snowVisualD;
+        bool visualMatch = Mathf.Abs(widthGap) <= 0.1f && Mathf.Abs(depthGap) <= 0.1f;
+        UnityEngine.Debug.Log($"[VISUAL_SIZE] roof_visual_width={roofVisualW:F3} roof_visual_depth={roofVisualD:F3} snow_visual_width={snowVisualW:F3} snow_visual_depth={snowVisualD:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3} visual_match_pass={visualMatch.ToString().ToLower()}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== VISUAL_SIZE === roof_visual_width={roofVisualW:F3} roof_visual_depth={roofVisualD:F3} snow_visual_width={snowVisualW:F3} snow_visual_depth={snowVisualD:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3} visual_match_pass={visualMatch}");
+    }
+
+    /// <summary>SnowSizeDiagnostics 用。原因切り分けのため bounds 計算に必要な値のみ公開。</summary>
+    public struct SnowSizeDiagnosticData
+    {
+        public Vector3 roofCenter, roofR, roofF, roofN;
+        public float roofWidth, roofLength;
+        public Transform piecesRoot;
+    }
+    public SnowSizeDiagnosticData GetSnowSizeDiagnosticData()
+    {
+        return new SnowSizeDiagnosticData { roofCenter = _roofCenter, roofR = _roofR, roofF = _roofF, roofN = _roofN, roofWidth = _roofWidth, roofLength = _roofLength, piecesRoot = _piecesRoot };
     }
 
     void LogB2PieceStatesRightAfterGeneration(int generatedTotal)
@@ -717,12 +772,16 @@ public class SnowPackSpawner : MonoBehaviour
         }
         else
         {
-            _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
-            _roofLength = Mathf.Min(projectedL * SnowCoverScaleMultiplierZ, projectedL * 1.001f);
+            _roofWidth = projectedW;
+            _roofLength = projectedL;
+            _useExactGrid = true;
         }
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
 
         float roofW = projectedW, roofL = projectedL;
+        float widthGap = roofW - _roofWidth;
+        float depthGap = roofL - _roofLength;
+        UnityEngine.Debug.Log($"[SNOW_COVER] roof_width={roofW:F3} roof_depth={roofL:F3} snow_width={_roofWidth:F3} snow_depth={_roofLength:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3}");
 
         float inset = (UseFullRoofCoverage || _useExactGrid) ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
@@ -790,25 +849,22 @@ public class SnowPackSpawner : MonoBehaviour
         }
         else
         {
-            _roofWidth = Mathf.Min(projectedW * SnowCoverScaleMultiplierX, projectedW * 1.001f);
-            _roofLength = Mathf.Min(projectedL * SnowCoverScaleMultiplierZ, projectedL * 1.001f);
+            _roofWidth = projectedW;
+            _roofLength = projectedL;
         }
         _roofCellSize = Mathf.Max(0.05f, pieceSize);
+        _useExactGrid = true;
 
         float roofW = projectedW, roofL = projectedL;
-        float tol = 0.05f;
-        bool widthMatch = Mathf.Abs(roofW - _roofWidth) <= tol;
-        bool depthMatch = Mathf.Abs(roofL - _roofLength) <= tol;
-        float marginX = 0.5f * (roofW - _roofWidth);
-        float marginZ = 0.5f * (roofL - _roofLength);
-        UnityEngine.Debug.Log($"[SNOW_COVER] roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3} width_matches_roof={widthMatch.ToString().ToLower()} depth_matches_roof={depthMatch.ToString().ToLower()} adjusted_axis=x_only roof_surface_size=({roofW:F2},{roofL:F2}) snow_cover_size=({_roofWidth:F2},{_roofLength:F2})");
-        SnowLoopLogCapture.AppendToAssiReport($"=== SNOW_COVER_WIDTH === roof_width={roofW:F3} snow_width={_roofWidth:F3} roof_depth={roofL:F3} snow_depth={_roofLength:F3}");
+        float widthGap = roofW - _roofWidth;
+        float depthGap = roofL - _roofLength;
+        UnityEngine.Debug.Log($"[SNOW_COVER] roof_width={roofW:F3} roof_depth={roofL:F3} snow_width={_roofWidth:F3} snow_depth={_roofLength:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== SNOW_COVER_WIDTH === roof_width={roofW:F3} roof_depth={roofL:F3} snow_width={_roofWidth:F3} snow_depth={_roofLength:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3}");
 
         float inset = UseFullRoofCoverage ? 0f : (_roofCellSize * 0.5f);
         float usableW = _roofWidth - inset * 2f;
         float usableL = _roofLength - inset * 2f;
-        _useExactGrid = def.useExactRoofSize;
-        if (UseFullRoofCoverage || def.useExactRoofSize)
+        if (UseFullRoofCoverage || _useExactGrid)
         {
             _cachedNx = Mathf.Max(1, Mathf.CeilToInt(_roofWidth / _roofCellSize));
             _cachedNz = Mathf.Max(1, Mathf.CeilToInt(_roofLength / _roofCellSize));

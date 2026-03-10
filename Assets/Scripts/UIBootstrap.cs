@@ -124,26 +124,53 @@ public class UIBootstrap : MonoBehaviour
 
     static readonly Color ScoreTextColor = new Color(255f / 255f, 220f / 255f, 0f, 1f);
 
+    static void LogScoreVisual(Component tmp)
+    {
+        try
+        {
+            var color = tmp.GetType().GetProperty("color")?.GetValue(tmp);
+            var outlineW = tmp.GetType().GetProperty("outlineWidth")?.GetValue(tmp);
+            var outlineC = tmp.GetType().GetProperty("outlineColor")?.GetValue(tmp);
+            int fs = 0;
+            var fsVal = tmp.GetType().GetProperty("fontSize")?.GetValue(tmp);
+            if (fsVal != null) fs = (int)(float)fsVal;
+            bool outlineOn = outlineW != null && ((float)outlineW) > 0.001f;
+            UnityEngine.Debug.Log($"[ScoreVisual] score_text_color={color} score_outline_enabled={outlineOn.ToString().ToLower()} score_outline_color={outlineC} score_font_size={fs} score_visual_pass={outlineOn.ToString().ToLower()}");
+            SnowLoopLogCapture.AppendToAssiReport($"=== ScoreVisual === score_text_color={color} score_outline_enabled={outlineOn} score_outline_color={outlineC} score_font_size={fs} score_visual_pass={outlineOn}");
+        }
+        catch { }
+    }
+
     static void ApplyScoreTextLayout(Text t)
     {
         if (t == null) return;
-        t.fontSize = 72;
+        t.fontSize = 144;
         t.color = ScoreTextColor;
         t.fontStyle = FontStyle.Bold;
         var shadow = t.gameObject.GetComponent<UnityEngine.UI.Shadow>();
         if (shadow == null) shadow = t.gameObject.AddComponent<UnityEngine.UI.Shadow>();
         shadow.effectColor = Color.black;
-        shadow.effectDistance = new Vector2(3f, 3f);
+        shadow.effectDistance = new Vector2(4f, 4f);
         var outline = t.gameObject.GetComponent<UnityEngine.UI.Outline>();
         if (outline == null) outline = t.gameObject.AddComponent<UnityEngine.UI.Outline>();
         outline.effectColor = Color.black;
-        outline.effectDistance = new Vector2(2f, 2f);
+        outline.effectDistance = new Vector2(3f, 3f);
         var rt = t.rectTransform;
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(0f, 1f);
         rt.pivot = new Vector2(0f, 1f);
         rt.anchoredPosition = new Vector2(10f, -10f);
-        rt.sizeDelta = new Vector2(420f, 96f);
+        rt.sizeDelta = new Vector2(840f, 192f);
+        LogScoreVisualLegacy(t);
+    }
+
+    static void LogScoreVisualLegacy(Text t)
+    {
+        if (t == null) return;
+        var ol = t.gameObject.GetComponent<UnityEngine.UI.Outline>();
+        bool outlineOn = ol != null;
+        UnityEngine.Debug.Log($"[ScoreVisual] score_text_color={t.color} score_outline_enabled={outlineOn.ToString().ToLower()} score_outline_color={(ol != null ? ol.effectColor.ToString() : "n/a")} score_font_size={t.fontSize} score_visual_pass={outlineOn.ToString().ToLower()}");
+        SnowLoopLogCapture.AppendToAssiReport($"=== ScoreVisual === score_text_color={t.color} score_outline_enabled={outlineOn} score_outline_color={(ol != null ? ol.effectColor.ToString() : "n/a")} score_font_size={t.fontSize} score_visual_pass={outlineOn}");
     }
 
     static void ApplyScoreTextLayoutTMP(Component tmp)
@@ -156,12 +183,22 @@ public class UIBootstrap : MonoBehaviour
             rt.anchorMax = new Vector2(0f, 1f);
             rt.pivot = new Vector2(0f, 1f);
             rt.anchoredPosition = new Vector2(10f, -10f);
-            rt.sizeDelta = new Vector2(420f, 96f);
+            rt.sizeDelta = new Vector2(840f, 192f);
         }
         try
         {
-            tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 72);
+            tmp.GetType().GetProperty("fontSize")?.SetValue(tmp, 144);
             tmp.GetType().GetProperty("color")?.SetValue(tmp, ScoreTextColor);
+            tmp.GetType().GetProperty("outlineWidth")?.SetValue(tmp, 0.35f);
+            tmp.GetType().GetProperty("outlineColor")?.SetValue(tmp, Color.black);
+            var go = (tmp as MonoBehaviour)?.gameObject;
+            if (go != null)
+            {
+                var ol = go.GetComponent<UnityEngine.UI.Outline>();
+                if (ol == null) ol = go.AddComponent<UnityEngine.UI.Outline>();
+                if (ol != null) { ol.effectColor = Color.black; ol.effectDistance = new Vector2(4f, 4f); }
+            }
+            LogScoreVisual(tmp);
         }
         catch { }
     }
