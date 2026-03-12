@@ -70,6 +70,7 @@
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
     <Compile Include="Assets/Scripts/RoofDebugGizmo.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB2.cs" />
+    <Compile Include="Assets/Scripts/Debug/SnowDebugOverlay.cs" />
     <Compile Include="Assets/Scripts/RunResultUI.cs" />
     <Compile Include="Assets/Scripts/RoofAlignToSnow.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestor.cs" />
@@ -138,8 +139,10 @@
     <None Include="Assets/Logs/noa_report_latest.txt" />
     <None Include="Assets/TextMesh Pro/Shaders/TMPro_Mobile.cginc" />
     <None Include="Assets/TextMesh Pro/Shaders/TMP_SDF SSD.shader" />
+    <None Include="Assets/test.txt" />
     <None Include="Assets/TextMesh Pro/Shaders/TMP_SDF-Surface-Mobile.shader" />
     <None Include="Assets/TextMesh Pro/Shaders/SDFFunctions.hlsl" />
+    <None Include="Assets/TEST_ASSI_WRITE.txt" />
     <None Include="Assets/Shaders/RoofSnowMask.shader" />
     <None Include="Assets/TextMesh Pro/Shaders/TMP_SDF-Surface.shader" />
     <None Include="Assets/TextMesh Pro/Sprites/EmojiOne Attribution.txt" />
