@@ -265,29 +265,51 @@ public class RoofSnowSystem : MonoBehaviour
     /// <summary>タップ時に呼ぶ。局所雪崩: hit中心半径内のグリッドセルを削り、Burstを斜面方向に流す。</summary>
     public void RequestTapSlide(Vector3 tapWorldPoint)
     {
-        if (roofSlideCollider == null || snowPackSpawner == null) return;
-        int scoreNow = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+        Debug.Log("[SNOW_TAP_PATH] step=enter");
+        if (roofSlideCollider == null || snowPackSpawner == null)
+{
+    Debug.Log("[SNOW_TAP_PATH] step=return reason=null_ref");
+    Debug.Log($"[SNOW_HIT_PIPE] hit=false reason=null_ref object=tap_point time={Time.time:F2}");
+    return;
+}
+Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        int scoreNow = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
         Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object_name=tap_point script_source=RoofSnowSystem.cs time={Time.time:F2} current_score={scoreNow}");
         BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowHit, "RoofTap", "RoofSnowSystem.cs", tapWorldPoint);
         if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.RecordTapForTestB(Time.time);
         snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
         _nextAvalancheTime = Time.time + 0.3f;
 
+        Debug.Log($"[SNOW_DETACH_PIPE] requested=true weakpoint=unknown pieces=-1");
         var avalanchePhys = FindFirstObjectByType<AvalanchePhysicsSystem>();
+        bool useAvalanche = avalanchePhys != null && avalanchePhys.useAvalanchePhysics;
+        Debug.Log($"[SNOW_TAP_PATH] step=weakpoint_check result={(useAvalanche ? "avalanche" : "local")}");
         if (avalanchePhys != null && avalanchePhys.useAvalanchePhysics)
         {
+            int sourceCount = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+            Debug.Log("[SNOW_TAP_PATH] step=detach_execute");
             avalanchePhys.OnSnowHit(tapWorldPoint);
             SnowPackSpawner.LastRemovedCount = AvalanchePhysicsSystem.LastTapRemovedTotal;
+            int clustersTotal = AvalanchePhysicsSystem.ClustersTotal;
+            int clustersDetached = AvalanchePhysicsSystem.ClustersDetached;
+            string returnReason = clustersTotal <= 0 ? "clusters_zero" : (clustersDetached <= 0 ? "no_cluster_in_radius_or_not_critical" : "detached_ok");
+            Debug.Log($"[SNOW_PIECE_MAP] weakpoint_name=tap");
+            Debug.Log($"[SNOW_PIECE_MAP] source_collection_count={sourceCount}");
+            Debug.Log($"[SNOW_PIECE_MAP] matched_piece_count={SnowPackSpawner.LastRemovedCount}");
+            Debug.Log($"[SNOW_PIECE_MAP] return reason={returnReason}");
         }
         else
         {
+            Debug.Log("[SNOW_TAP_PATH] step=detach_execute");
             snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
         }
         int removed = SnowPackSpawner.LastRemovedCount;
+        Debug.Log($"[SNOW_TAP_PATH] step=piece_lookup count={removed}");
         BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowAvalanche, "TapSlide", "RoofSnowSystem.cs", tapWorldPoint);
         if (removed > 0)
         {
+            Debug.Log("[SNOW_TAP_PATH] step=slide_execute");
             SnowPhysicsScoreManager.Instance?.Add(1);
+            Debug.Log("[SNOW_TAP_PATH] step=score_execute add=1");
             SnowVisual.SpawnPowderAt(tapWorldPoint);
             Vector3 roofUp = roofSlideCollider.transform.up.normalized;
             Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
