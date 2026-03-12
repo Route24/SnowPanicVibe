@@ -569,7 +569,8 @@ public class SnowPackSpawner : MonoBehaviour
                 else
                     verdict = "CASE C: 親chainで相殺回転の疑い";
 
-                UnityEngine.Debug.Log($"[PiecePoseSample] pieceId={pieceId} pieceTransform.name={pieceT.name} pieceT.worldEuler=({we.x:F1},{we.y:F1},{we.z:F1}) pieceT.up=({pieceUp.x:F3},{pieceUp.y:F3},{pieceUp.z:F3}) dotUpN={dotUpN:F3} childRendererT.name={(childRendererT != null ? childRendererT.name : "null")} childRendererT.worldEuler=({childWe.x:F1},{childWe.y:F1},{childWe.z:F1}) childRendererT.up=({childUp.x:F3},{childUp.y:F3},{childUp.z:F3}) dotChildUpN={dotChildUpN:F3} parentChain=[{parentChain}] 判定={verdict}");
+                string childName = childRendererT != null ? childRendererT.name : "null";
+                UnityEngine.Debug.Log($"[PiecePoseSample] pieceId={pieceId} pieceTransform.name={pieceT.name} pieceT.worldEuler=({we.x:F1},{we.y:F1},{we.z:F1}) pieceT.up=({pieceUp.x:F3},{pieceUp.y:F3},{pieceUp.z:F3}) dotUpN={dotUpN:F3} childRendererT.name={childName} childRendererT.worldEuler=({childWe.x:F1},{childWe.y:F1},{childWe.z:F1}) childRendererT.up=({childUp.x:F3},{childUp.y:F3},{childUp.z:F3}) dotChildUpN={dotChildUpN:F3} parentChain=[{parentChain}] 判定={verdict}");
                 logged++;
                 if (logged >= 3) break;
             }
@@ -1497,7 +1498,7 @@ public class SnowPackSpawner : MonoBehaviour
             renBefore = r != null && r.enabled;
         }
         Vector3 initialVelocity = slopeDir.normalized * slideSpeed;
-        UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] tapped_piece_id={tappedPieceId} detach_requested=true source_renderer_enabled_before={renBefore} source_active_before={goActiveBefore} initial_position=({worldPosBefore.x:F2},{worldPosBefore.y:F2},{worldPosBefore.z:F2}) initial_velocity=({initialVelocity.x:F2},{initialVelocity.y:F2},{initialVelocity.z:F2}) pieces_count={pieces.Count}");
+        UnityEngine.Debug.Log(string.Format("[SNOW_DETACH_CHECK] tapped_piece_id={0} detach_requested=true source_renderer_enabled_before={1} source_active_before={2} initial_position=({3},{4},{5}) initial_velocity=({6},{7},{8}) pieces_count={9}", tappedPieceId, renBefore, goActiveBefore, worldPosBefore.x.ToString("F2"), worldPosBefore.y.ToString("F2"), worldPosBefore.z.ToString("F2"), initialVelocity.x.ToString("F2"), initialVelocity.y.ToString("F2"), initialVelocity.z.ToString("F2"), pieces.Count));
 
         // Roof edge params (Step1)
         Bounds roofBounds = roofCollider.bounds;
@@ -1550,9 +1551,14 @@ public class SnowPackSpawner : MonoBehaviour
         float duration = 0.8f;
         float elapsed = 0f;
         Vector3 startPos = slideRoot.transform.position;
-        Vector3 slideOffset = slopeDir * slideSpeed * duration;
+        float tValStart = Vector3.Dot(avgPos - roofCenter, downhill);
+        float distToEdge = (tEnd + RoofEdgeMargin) - tValStart + 0.2f;
+        float minSlideDist = Mathf.Max(distToEdge, 0.6f);
+        float baseSlideDist = slideSpeed * duration;
+        float actualSlideDist = Mathf.Max(baseSlideDist, minSlideDist);
+        Vector3 slideOffset = downhill * actualSlideDist;
         LayerMask groundMask = (roofSnowSystem != null && roofSnowSystem.groundMask.value != 0) ? roofSnowSystem.groundMask : ~0;
-        Vector3 slideVelocity = slopeDir.normalized * slideSpeed;
+        Vector3 slideVelocity = downhill * Mathf.Max(slideSpeed, actualSlideDist / duration);
 
         while (elapsed < duration)
         {
@@ -2541,7 +2547,10 @@ public class SnowPackSpawner : MonoBehaviour
             string fn = frame.GetFileName();
             int line = frame.GetFileLineNumber();
             if (!string.IsNullOrEmpty(fn))
-                sb.AppendLine($"  at {method?.DeclaringType?.FullName}.{method?.Name} in {System.IO.Path.GetFileName(fn)}:{line}");
+            {
+                string fileColonLine = System.IO.Path.GetFileName(fn) + ":" + line;
+                sb.AppendLine($"  at {method?.DeclaringType?.FullName}.{method?.Name} in {fileColonLine}");
+            }
             else
                 sb.AppendLine($"  at {method?.DeclaringType?.FullName}.{method?.Name}");
         }
@@ -2987,8 +2996,9 @@ public class SnowPackSpawner : MonoBehaviour
                 break;
             }
             bool ok = fileLine != "unknown" && fileLine.Contains(":");
+            string okStr = ok ? "Yes" : "No";
             string selftestReason = ok ? "" : " reason=fileLineNotResolved";
-            UnityEngine.Debug.Log($"[STACKTRACE_SELFTEST] ok={(ok ? "Yes" : "No")} fileLine={fileLine} method={method}{selftestReason}");
+            UnityEngine.Debug.Log($"[STACKTRACE_SELFTEST] ok={okStr} fileLine={fileLine} method={method}{selftestReason}");
         }
         catch (System.Exception ex)
         {
@@ -3010,9 +3020,11 @@ public class SnowPackSpawner : MonoBehaviour
         LogPiecePoseSampleFirst3();
         LogRotationOverrideSuspectedLocations(force: true);
         bool avOff = AssiDebugUI.AutoAvalancheOff;
-        UnityEngine.Debug.Log($"[AutoAvalancheState] default=OFF current={(avOff ? "OFF" : "ON")}");
+        string avStr = avOff ? "OFF" : "ON";
+        UnityEngine.Debug.Log($"[AutoAvalancheState] default=OFF current={avStr}");
         bool lastTapValid = LastTapTime > 0f && LastRemovedCount > 0;
-        UnityEngine.Debug.Log($"[TapMarkerState] atStart visible=No lastTapValid={(lastTapValid ? "Yes" : "No")} LastTapTime={LastTapTime:F1} LastRemovedCount={LastRemovedCount} (2s診断補完)");
+        string lastTapStr = lastTapValid ? "Yes" : "No";
+        UnityEngine.Debug.Log($"[TapMarkerState] atStart visible=No lastTapValid={lastTapStr} LastTapTime={LastTapTime:F1} LastRemovedCount={LastRemovedCount} (2s診断補完)");
         LogSceneCodePath();
         DebugSnowVisibility.LogSceneObjectsVisible();
         DebugSnowVisibility.EmitRotationOverridesExecutedIfNone();
@@ -3567,7 +3579,8 @@ public class SnowPackSpawner : MonoBehaviour
                 Vector3 packFwd = _visualRoot.forward.normalized;
                 float dotUp = Vector3.Dot(roofUp, packUp);
                 float dotFwd = Vector3.Dot(roofFwd, packFwd);
-                UnityEngine.Debug.Log($"[SnowPackBasisAudit1s] dotUp={dotUp:F3} dotFwd={dotFwd:F3} usingLocal={UsingLocalPosition} ok={(dotUp >= 0.98f ? "true" : "FAIL")}");
+                string okBasisStr = dotUp >= 0.98f ? "true" : "FAIL";
+                UnityEngine.Debug.Log($"[SnowPackBasisAudit1s] dotUp={dotUp:F3} dotFwd={dotFwd:F3} usingLocal={UsingLocalPosition} ok={okBasisStr}");
             }
             _packDepthMin1s = float.MaxValue;
             _packDepthMax1s = float.MinValue;

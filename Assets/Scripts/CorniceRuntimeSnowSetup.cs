@@ -148,8 +148,8 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
             var mainCam = Camera.main;
             if (mainCam != null)
             {
-                // 屋根がプレイフィールド・主役。地面ほぼ見えない低い俯瞰。少し奥行き。試作カメラ基準。
-                var targetPos = new Vector3(0f, 5.2f, -5.8f);
+                // 屋根がプレイフィールド・主役。軒下・地面視認用にカメラを少し引く。(CAMERA ADJUST)
+                var targetPos = new Vector3(0f, 5.6f, -7.5f);
                 var targetRot = Quaternion.Euler(36f, 0f, 0f);
                 float posTol = 0.5f;
                 bool posMatch = Vector3.Distance(mainCam.transform.position, targetPos) < posTol;
@@ -164,7 +164,7 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
                     {
                         orbit._yaw = 180f;
                         orbit._pitch = 36f;
-                        orbit.distance = 6.6f;
+                        orbit.distance = 9.2f;
                         orbit.yMin = 4f;
                         orbit.yMax = 8f;
                     }
@@ -218,6 +218,22 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
                     float snowThick = 1.7f;
                     float thickScale = snowThick / panelH;
 
+                    // 屋根端から外側へオフセット。30〜60% はみ出す（軒先方向へシフト）
+                    const float OverhangRatio = 0.45f; // 45% はみ出し
+                    bool useZ = Mathf.Abs(slideDir.z) >= Mathf.Abs(slideDir.x);
+                    float overhangDistance = useZ ? OverhangRatio : OverhangRatio; // スケール1の軸でオフセット
+                    Vector3 roofEdgeOffset = useZ
+                        ? new Vector3(0f, 0f, slideDir.z < 0 ? -overhangDistance : overhangDistance)
+                        : new Vector3(slideDir.x < 0 ? -overhangDistance : overhangDistance, 0f, 0f);
+
+                    // support_count 減少: オーバーハングで屋根上サポートが減る想定
+                    const float SupportReduceRatio = 0.7f;
+                    int maxParticles = Mathf.RoundToInt(28000 * SupportReduceRatio);
+                    int burstCount = Mathf.RoundToInt(26000 * SupportReduceRatio);
+
+                    Debug.Log($"[SNOW_CORNICE_SETUP] overhang_distance={overhangDistance:F2}");
+                    Debug.Log($"[SNOW_CORNICE_SETUP] roof_edge=({roofEdgeOffset.x:F2},{roofEdgeOffset.y:F2},{roofEdgeOffset.z:F2})");
+
                     var ps = go.AddComponent<ParticleSystem>();
                     var main = ps.main;
                     main.loop = false;
@@ -227,17 +243,18 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
                     main.startColor = new ParticleSystem.MinMaxGradient(
                         new Color(0.72f, 0.76f, 0.82f, 0.97f),
                         new Color(0.82f, 0.86f, 0.9f, 0.98f));
-                    main.maxParticles = 28000;
+                    main.maxParticles = maxParticles;
                     main.simulationSpace = ParticleSystemSimulationSpace.Local;
                     main.scalingMode = ParticleSystemScalingMode.Hierarchy;
                     main.playOnAwake = true;
                     var em = ps.emission;
                     em.enabled = true;
                     em.rateOverTime = 0f;
-                    em.SetBursts(new[] { new ParticleSystem.Burst(0f, 26000) });
+                    em.SetBursts(new[] { new ParticleSystem.Burst(0f, burstCount) });
                     var shape = ps.shape;
                     shape.shapeType = ParticleSystemShapeType.Box;
                     shape.scale = new Vector3(1.25f, thickScale * 0.6f, 1f);
+                    shape.position = roofEdgeOffset; // 屋根端から外側へオフセット
 
                     var rend = ps.GetComponent<ParticleSystemRenderer>();
                     if (rend != null)
@@ -253,7 +270,7 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
 
                     var col = go.AddComponent<BoxCollider>();
                     col.size = new Vector3(1.25f, thickScale * 0.5f, 1f); // 薄くして水平板のように見えないように
-                    col.center = Vector3.zero;
+                    col.center = roofEdgeOffset; // shape と同期（屋根端オフセット）
                     col.isTrigger = false;
 
                     var comp = go.AddComponent<RoofSnow>();
@@ -293,7 +310,7 @@ public class CorniceRuntimeSnowSetup : MonoBehaviour
 
         Debug.Log($"[CORNICE_SCENE_CHECK] scene={sceneName} house_count={houseCount} one_house_forced={oneHouseForced.ToString().ToLower()} rollback_applied={rollbackApplied.ToString().ToLower()} camera_position={camPosStr} camera_rotation={camRotStr} active_roof_target={activeRoofTarget} test_roof_visible={testRoofVisible.ToString().ToLower()} roof_shape={roofShape} roof_slope_direction={roofSlopeDirection} enabled_snow_systems={enabledSnowSystems} disabled_legacy_snow_systems={disabledLegacySnowSystems} active_snow_visual={activeSnowVisual} active_snow_break_logic={activeSnowBreakLogic} active_snow_spawn_logic={activeSnowSpawnLogic} spawn_system=CorniceRuntime is_expected={isExpected}");
         if (cam != null)
-            Debug.Log($"[CAMERA_LOCK_CHECK] camPos={camPosStr} camEuler={camRotStr} result={(rollbackApplied ? "ROLLBACK_APPLIED" : "UNCHANGED")} target=(0,5.2,-5.8)(36,0,0)_roof_playfield");
+            Debug.Log($"[CAMERA_LOCK_CHECK] camPos={camPosStr} camEuler={camRotStr} result={(rollbackApplied ? "ROLLBACK_APPLIED" : "UNCHANGED")} target=(0,5.6,-7.5)(36,0,0)_eaves_ground_visible");
         Debug.Log("[SNOW_ROLLBACK_CHECK] rollback_target=pre_camera_change_good_state house_count=" + houseCount + " camera_rotation=" + camRotStr + " rollback_applied=" + rollbackApplied.ToString().ToLower() + " active_roof_target=" + activeRoofTarget + " test_roof_visible=" + testRoofVisible.ToString().ToLower() + " roof_shape=" + roofShape + " roof_slope_direction=" + roofSlopeDirection + " enabled_snow_systems=" + enabledSnowSystems + " disabled_legacy_snow_systems=" + disabledLegacySnowSystems + " ground_snow=disabled result=OK comment=" + (oneHouseForced ? "mono_slope_SnowPack_only" : "multi_house_RoofSnow+SnowPack"));
     }
 

@@ -2,7 +2,7 @@ using UnityEngine;
 using System;
 using SD = System.Diagnostics;
 
-/// <summary>ASSI: 雪塊が着地→点滅→消滅したとき +1 スコア。プロトタイプ用（Debug.Log 可）</summary>
+/// <summary>ASSI: 雪塊が着地→点滅→消滅したとき +1 スコア。プロトタイプ用（UnityEngine.Debug.Log 可）</summary>
 public class SnowPhysicsScoreManager : MonoBehaviour
 {
     public static SnowPhysicsScoreManager Instance { get; private set; }
@@ -29,16 +29,16 @@ public class SnowPhysicsScoreManager : MonoBehaviour
 
     void Start()
     {
-        Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=false");
-        Debug.Log("[HIT_REGISTRATION_CHECK] reason=session_start");
-        Debug.Log("[HIT_REGISTRATION_CHECK] owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
-        Debug.Log("[HIT_REGISTRATION_CHECK] owner_class=SnowPhysicsScoreManager");
-        Debug.Log("[RAW_SCORE_CHECK] score_before=0");
-        Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=false");
-        Debug.Log("[RAW_SCORE_CHECK] score_after=0");
-        Debug.Log("[RAW_SCORE_CHECK] score_changed=false");
-        Debug.Log("[RAW_SCORE_CHECK] increment_owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
-        Debug.Log("[RAW_SCORE_CHECK] increment_owner_class=SnowPhysicsScoreManager");
+        UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=false");
+        UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] reason=session_start");
+        UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
+        UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] owner_class=SnowPhysicsScoreManager");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_before=0");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=false");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_after=0");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_changed=false");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] increment_owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] increment_owner_class=SnowPhysicsScoreManager");
     }
 
     void OnDestroy()
@@ -47,16 +47,16 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         {
             if (!_addEverCalledThisSession)
             {
-                Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=false");
-                Debug.Log("[HIT_REGISTRATION_CHECK] reason=Add() never invoked during session");
-                Debug.Log("[HIT_REGISTRATION_CHECK] owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
-                Debug.Log("[HIT_REGISTRATION_CHECK] owner_class=SnowPhysicsScoreManager");
-                Debug.Log("[RAW_SCORE_CHECK] score_before=0");
-                Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=false");
-                Debug.Log("[RAW_SCORE_CHECK] score_after=0");
-                Debug.Log("[RAW_SCORE_CHECK] score_changed=false");
-                Debug.Log("[RAW_SCORE_CHECK] increment_owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
-                Debug.Log("[RAW_SCORE_CHECK] increment_owner_class=SnowPhysicsScoreManager");
+                UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=false");
+                UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] reason=Add() never invoked during session");
+                UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
+                UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] owner_class=SnowPhysicsScoreManager");
+                UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_before=0");
+                UnityEngine.Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=false");
+                UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_after=0");
+                UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_changed=false");
+                UnityEngine.Debug.Log("[RAW_SCORE_CHECK] increment_owner_file=AvalanchePhysicsSystem.cs SnowPackFallingPiece.cs SnowClump.cs SnowTestSlideAssist.cs");
+                UnityEngine.Debug.Log("[RAW_SCORE_CHECK] increment_owner_class=SnowPhysicsScoreManager");
             }
             Instance = null;
         }
@@ -74,7 +74,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         if (Instance == null) return;
         Instance._score = 0;
         Instance.OnScoreChanged?.Invoke(0);
-        Debug.Log("[SnowPhysicsScore] ResetForNewRun");
+        UnityEngine.Debug.Log("[SnowPhysicsScore] ResetForNewRun");
     }
 
     /// <summary>スコア加算。ScoreText は変化時のみ更新。</summary>
@@ -86,7 +86,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         _addEverCalledThisSession = true;
         BugOriginTracker.RecordScoreUpdate(before, _score);
         OnScoreChanged?.Invoke(_score);
-        Debug.Log($"[SnowPhysicsScore] +{delta} total={_score}");
+        UnityEngine.Debug.Log($"[SnowPhysicsScore] +{delta} total={_score}");
         string ownerFile = "unknown";
         string ownerClass = "unknown";
         try
@@ -105,16 +105,16 @@ public class SnowPhysicsScoreManager : MonoBehaviour
             }
         }
         catch { }
-        Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=true");
-        Debug.Log($"[HIT_REGISTRATION_CHECK] reason=Add(delta={delta}) invoked");
-        Debug.Log($"[HIT_REGISTRATION_CHECK] owner_file={ownerFile}");
-        Debug.Log($"[HIT_REGISTRATION_CHECK] owner_class={ownerClass}");
-        Debug.Log($"[RAW_SCORE_CHECK] score_before={before}");
-        Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=true");
-        Debug.Log($"[RAW_SCORE_CHECK] score_after={_score}");
-        Debug.Log("[RAW_SCORE_CHECK] score_changed=true");
-        Debug.Log($"[RAW_SCORE_CHECK] increment_owner_file={ownerFile}");
-        Debug.Log($"[RAW_SCORE_CHECK] increment_owner_class={ownerClass}");
+        UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=true");
+        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] reason=Add(delta={delta}) invoked");
+        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] owner_file={ownerFile}");
+        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] owner_class={ownerClass}");
+        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] score_before={before}");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=true");
+        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] score_after={_score}");
+        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_changed=true");
+        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] increment_owner_file={ownerFile}");
+        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] increment_owner_class={ownerClass}");
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -129,7 +129,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
         var go = new GameObject("SnowPhysicsScoreManager");
         go.AddComponent<SnowPhysicsScoreManager>();    
         UnityEngine.Object.DontDestroyOnLoad(go);     
-        Debug.Log("[SnowPhysicsScoreManager] bootstrapped");
+        UnityEngine.Debug.Log("[SnowPhysicsScoreManager] bootstrapped");
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]

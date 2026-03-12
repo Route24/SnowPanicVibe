@@ -13,6 +13,8 @@ public class SnowPackFallingPiece : MonoBehaviour
     public float roofStuckSpeedThreshold = 0.05f;
     [Tooltip("屋根上でほぼ停止がこの秒数続いたらDespawn。止まり雪対策で3秒（再タップ猶予あり）。")]
     public float roofStuckDespawnSeconds = 3f;
+    /// <summary>軒先越え直後は屋根上と誤判定されやすいので、この秒数は roof stuck チェックをスキップ。</summary>
+    const float RoofStuckGraceSeconds = 0.6f;
 
     const float GroundedWaitSeconds = 4.0f;
     const float BlinkDuration = 1.0f;
@@ -89,6 +91,8 @@ public class SnowPackFallingPiece : MonoBehaviour
                 ReturnFromFall("Timeout");
                 return;
             }
+            float age = Time.time - _startTime;
+            if (age < 0.5f) { _roofStuckTimer = 0f; _roofStuckLogged = false; return; }
             if (IsOnRoof() && _rb != null)
             {
                 float speed = _rb.linearVelocity.magnitude;

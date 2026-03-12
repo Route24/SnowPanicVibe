@@ -101,6 +101,13 @@ public class AvalanchePhysicsSystem : MonoBehaviour
     public static int WeakPointHits { get; private set; }
     public static bool WeakPointMegaTriggered { get; private set; }
 
+    /// <summary>観測用: 直近タップ位置から全クラスターへの最短距離。</summary>
+    public static float LastTapNearestClusterDistance { get; private set; }
+    /// <summary>観測用: 直近タップで半径内にヒットしたクラスター数。</summary>
+    public static int LastTapHitClustersCount { get; private set; }
+    /// <summary>観測用: 直近タップでいずれかのクラスターが Critical になったか。</summary>
+    public static bool LastTapAnyClusterCritical { get; private set; }
+
     void Start()
     {
         if (snowPackSpawner == null) snowPackSpawner = FindFirstObjectByType<SnowPackSpawner>();
@@ -132,6 +139,15 @@ public class AvalanchePhysicsSystem : MonoBehaviour
         _weakPointHitThisTap = false;
 
         var hitClusters = GetClustersInRadius(worldPoint, hitRadius);
+        float nearest = float.MaxValue;
+        foreach (var c in _clusters)
+        {
+            if (c.ActivePieceCount == 0) continue;
+            float d = Vector3.Distance(c.Center, worldPoint);
+            if (d < nearest) nearest = d;
+        }
+        LastTapNearestClusterDistance = nearest < float.MaxValue ? nearest : -1f;
+        LastTapHitClustersCount = hitClusters.Count;
         bool anyWeakPointHit = false;
         foreach (var c in hitClusters)
         {
@@ -139,7 +155,10 @@ public class AvalanchePhysicsSystem : MonoBehaviour
             float damage = hitDamage * (c.isWeakPoint ? weakPointDamageMultiplier : 1f);
             c.support_value -= damage;
             c.UpdateState(thresholdStable, thresholdWeak);
-            if (c.weak_state == SnowCluster.ClusterState.Critical && !_detachedThisHit.Contains(c))
+            bool isCrit = c.weak_state == SnowCluster.ClusterState.Critical;
+            string reason = isCrit ? "support_value<=thresholdWeak" : (c.support_value > thresholdStable ? "support_value>thresholdStable" : "support_value>thresholdWeak");
+            UnityEngine.Debug.Log($"[SNOW_CRITICAL_CHECK] cluster_id={c.cluster_id} cluster_size={c.ActivePieceCount} support_count={c.support_value:F2} edge_contact={c.edge_contact:F2} is_critical={isCrit.ToString().ToLower()} reason={reason}");
+            if (isCrit && !_detachedThisHit.Contains(c))
                 DetachCluster(c, 0, c.isWeakPoint);
         }
 
@@ -149,6 +168,7 @@ public class AvalanchePhysicsSystem : MonoBehaviour
         if (anyWeakPointHit) WeakPointHits++;
 
         ProcessChainQueue();
+        LastTapAnyClusterCritical = ClustersDetached > 0;
     }
 
     void RebuildClusters()
@@ -200,6 +220,7 @@ public class AvalanchePhysicsSystem : MonoBehaviour
                 if (p.iz > 0) below += 1f;
             }
             int n = pieces.Count;
+            cluster.edge_contact = side;
             float baseSupport = Mathf.Max(0.5f, below / n + side / n - slopeEscape) * n * 0.5f + 1f;
             cluster.support_value = Mathf.Clamp(baseSupport, 1.5f, 6f);
             cluster.UpdateState(thresholdStable, thresholdWeak);
@@ -310,6 +331,7 @@ public class AvalanchePhysicsSystem : MonoBehaviour
         }
         float spd = _megaAvalancheTriggered ? slideSpeed * 1.5f : slideSpeed;
 
+        UnityEngine.Debug.Log($"[SNOW_DETACH_PIPE] requested=true piece_count={toDetach.Count} fromTap=true weakpoint={fromWeakPoint}");
         snowPackSpawner.DetachPiecesDirect(toDetach, slideDir, spd);
         LastTapRemovedTotal += toDetach.Count;
 

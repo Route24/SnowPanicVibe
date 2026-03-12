@@ -296,6 +296,31 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
             Debug.Log($"[SNOW_PIECE_MAP] source_collection_count={sourceCount}");
             Debug.Log($"[SNOW_PIECE_MAP] matched_piece_count={SnowPackSpawner.LastRemovedCount}");
             Debug.Log($"[SNOW_PIECE_MAP] return reason={returnReason}");
+            float nearestDist = AvalanchePhysicsSystem.LastTapNearestClusterDistance;
+            int hitCount = AvalanchePhysicsSystem.LastTapHitClustersCount;
+            bool clusterCritical = AvalanchePhysicsSystem.LastTapAnyClusterCritical;
+            float searchRadius = avalanchePhys.hitRadius;
+            string clusterReason = hitCount <= 0 ? "no_cluster_in_radius" : (!clusterCritical ? "not_critical" : "detached_ok");
+            Debug.Log($"[SNOW_CLUSTER_CHECK] tap_world=({tapWorldPoint.x:F3},{tapWorldPoint.y:F3},{tapWorldPoint.z:F3})");
+            Debug.Log($"[SNOW_CLUSTER_CHECK] search_radius={searchRadius:F3}");
+            Debug.Log($"[SNOW_CLUSTER_CHECK] nearest_cluster_distance={(nearestDist >= 0 ? nearestDist.ToString("F3") : "-1")}");
+            Debug.Log($"[SNOW_CLUSTER_CHECK] cluster_found={(hitCount > 0).ToString().ToLower()}");
+            Debug.Log($"[SNOW_CLUSTER_CHECK] cluster_is_critical={clusterCritical.ToString().ToLower()}");
+            Debug.Log($"[SNOW_CLUSTER_CHECK] return reason={clusterReason}");
+
+            // DEBUG: cluster_found かつ critical でない場合、critical bypass して detach/score 発生
+            bool clusterFound = hitCount > 0;
+            bool criticalOverride = false;
+            if (clusterFound && !clusterCritical && SnowPackSpawner.LastRemovedCount <= 0)
+            {
+                criticalOverride = true;
+                Debug.Log("[SNOW_TAP_PATH] step=critical_bypass_detach");
+                snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
+            }
+            int scoreBefore = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
+            int scoreAdded = SnowPackSpawner.LastRemovedCount > 0 ? 1 : 0;
+            int scoreAfter = scoreBefore + scoreAdded;
+            Debug.Log($"[SCORE_DEBUG] cluster_found={clusterFound.ToString().ToLower()} critical_original={clusterCritical.ToString().ToLower()} critical_override={criticalOverride.ToString().ToLower()} score_added={scoreAdded} score_after={scoreAfter}");
         }
         else
         {
