@@ -195,6 +195,9 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine("=== SCORE UI CHECK ===");
         sb.AppendLine(BuildScoreUiCheckSection(lines));
         sb.AppendLine();
+        sb.AppendLine("=== CONSOLE LOG PRESENCE ===");
+        sb.AppendLine(BuildConsoleLogPresenceSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== SNOW ROLLBACK CHECK ===");
         sb.AppendLine(BuildSnowRollbackCheckSection(lines));
         sb.AppendLine();
@@ -1051,8 +1054,13 @@ public static class SnowLoopNoaReportAutoCopy
     static string BuildScoreUiCheckSection(string[] lines)
     {
         var last = lines.LastOrDefault(l => l.Contains("[SCORE_UI_CHECK]"));
-        if (string.IsNullOrEmpty(last)) return "score_render_path=unknown cooldown_render_path=unknown score_ui_exists=false score_ui_visible=false score_ui_fixed_position=false score_text_value=none score_updates_on_play=false score_duplicate_ui_count=0 score_style=none cooldown_meter_exists=false cooldown_meter_visible=false score_null_error=no_log detection_matches_actual=false result=FAIL";
         var sb = new StringBuilder();
+        sb.AppendLine("score_ui_check_log_found=" + (string.IsNullOrEmpty(last) ? "false" : "true"));
+        if (string.IsNullOrEmpty(last))
+        {
+            sb.AppendLine("score_render_path=unknown cooldown_render_path=unknown score_ui_exists=false score_ui_visible=false score_ui_fixed_position=false score_text_value=none score_updates_on_play=false score_duplicate_ui_count=0 score_style=none cooldown_meter_exists=false cooldown_meter_visible=false score_null_error=no_log detection_matches_actual=false result=FAIL");
+            return sb.ToString().TrimEnd();
+        }
         foreach (var m in Regex.Matches(last, @"(score_render_path|cooldown_render_path|score_ui_exists|score_ui_visible|score_ui_fixed_position|score_text_value|score_updates_on_play|score_duplicate_ui_count|score_style|cooldown_meter_exists|cooldown_meter_visible|score_null_error|detection_matches_actual|result)=([^\s]+)"))
         {
             var match = m as Match;
@@ -1060,6 +1068,15 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
         }
         return sb.Length > 0 ? sb.ToString().TrimEnd() : last;
+    }
+
+    /// <summary>Console ログのキャプチャ有無。レポートで一覧確認可能。</summary>
+    static string BuildConsoleLogPresenceSection(string[] lines)
+    {
+        bool scoreUi = lines != null && lines.Any(l => l.Contains("[SCORE_UI_CHECK]"));
+        bool snowHit = lines != null && lines.Any(l => l.Contains("[SNOW_HIT_CHECK]"));
+        bool assiBoot = lines != null && lines.Any(l => l.Contains("[ASSI_BOOT]"));
+        return $"score_ui_check_log_found={scoreUi}\nsnow_hit_check_log_found={snowHit}\nassi_boot_log_found={assiBoot}";
     }
 
     /// <summary>SNOW ROLLBACK CHECK: 塊感復旧の確認。</summary>

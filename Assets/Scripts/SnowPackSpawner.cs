@@ -1487,6 +1487,18 @@ public class SnowPackSpawner : MonoBehaviour
         var parent = _visualRoot != null ? _visualRoot : (roofCollider != null ? roofCollider.transform : null);
         if (parent == null) { _inAvalancheSlide = false; yield break; }
 
+        var first = pieces[0];
+        bool renBefore = false, goActiveBefore = first != null && first.gameObject != null && first.gameObject.activeInHierarchy;
+        Vector3 worldPosBefore = first != null ? first.position : Vector3.zero;
+        int tappedPieceId = first != null ? first.GetInstanceID() : 0;
+        if (first != null)
+        {
+            var r = first.GetComponentInChildren<Renderer>();
+            renBefore = r != null && r.enabled;
+        }
+        Vector3 initialVelocity = slopeDir.normalized * slideSpeed;
+        UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] tapped_piece_id={tappedPieceId} detach_requested=true source_renderer_enabled_before={renBefore} source_active_before={goActiveBefore} initial_position=({worldPosBefore.x:F2},{worldPosBefore.y:F2},{worldPosBefore.z:F2}) initial_velocity=({initialVelocity.x:F2},{initialVelocity.y:F2},{initialVelocity.z:F2}) pieces_count={pieces.Count}");
+
         // Roof edge params (Step1)
         Bounds roofBounds = roofCollider.bounds;
         Vector3 roofCenter = roofBounds.center;
@@ -1508,11 +1520,20 @@ public class SnowPackSpawner : MonoBehaviour
         if (posCount > 0) avgPos /= posCount;
         slideRoot.transform.position = avgPos;
 
+        int fallingCount = 0;
         foreach (var t in pieces)
         {
             if (t != null)
             {
                 SetPieceVisualState(t, PieceVisualState.Sliding, false);
+                if (t == first)
+                {
+                    bool renAfter = false;
+                    var rr = t.GetComponentInChildren<Renderer>();
+                    if (rr != null) renAfter = rr.enabled;
+                    bool goActiveAfter = t.gameObject != null && t.gameObject.activeInHierarchy;
+                    UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] source_renderer_enabled_after={renAfter} source_active_after={goActiveAfter} showSnowGridDebug={GridVisualWatchdog.showSnowGridDebug}");
+                }
                 var mr = t.GetComponentInChildren<Renderer>();
                 if (mr != null && mr.sharedMaterial != null)
                 {
@@ -1556,6 +1577,12 @@ public class SnowPackSpawner : MonoBehaviour
                     falling.spawner = this;
                     falling.groundMask = groundMask;
                     falling.ActivateFalling(slideVelocity);
+                    var rb = t.GetComponent<Rigidbody>();
+                    fallingCount++;
+                    bool rbPresent = rb != null;
+                    bool spawnedActive = t != null && t.gameObject != null && t.gameObject.activeInHierarchy;
+                    string spawnedName = t != null && t.gameObject != null ? t.gameObject.name : "null";
+                    UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] detach_requested=true falling_piece_spawned=true spawned_object_name={spawnedName} spawned_object_active={spawnedActive} rigidbody_present={rbPresent} initial_velocity=({slideVelocity.x:F2},{slideVelocity.y:F2},{slideVelocity.z:F2}) initial_position=({piecePos.x:F2},{piecePos.y:F2},{piecePos.z:F2})");
 
                     SnowLoopLogCapture.AppendToAssiReport($"=== PieceState === pieceId={t.GetInstanceID()} mode=Falling t={Time.time:F2} pos=({piecePos.x:F3},{piecePos.y:F3},{piecePos.z:F3}) vel=({slideVelocity.x:F3},{slideVelocity.y:F3},{slideVelocity.z:F3})");
                 }
@@ -1588,6 +1615,15 @@ public class SnowPackSpawner : MonoBehaviour
         }
         _pendingSlideRootToDestroy = slideRoot;
         _inAvalancheSlide = false;
+        string failureMode = "unknown";
+        bool rendererDisabled = !GridVisualWatchdog.showSnowGridDebug;
+        if (rendererDisabled)
+            failureMode = "hidden_only";
+        else if (returnedCount == pieces.Count && fallingCount == 0)
+            failureMode = "detach_not_spawned";
+        else if (fallingCount > 0)
+            failureMode = "spawned_falling";
+        UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] failure_mode={failureMode} owner_file=SnowPackSpawner.cs owner_method=LocalAvalancheSlideRoutine detach_requested=true falling_piece_spawned={(fallingCount > 0)} rigidbody_present=(per_piece) initial_velocity=({slideVelocity.x:F2},{slideVelocity.y:F2},{slideVelocity.z:F2}) falling_count={fallingCount} returned_count={returnedCount} reason=slide_done");
         UnityEngine.Debug.Log($"[LocalAvalanche] slideDone returned={returnedCount} falling=(detached)");
     }
 

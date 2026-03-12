@@ -287,6 +287,7 @@ public class RoofSnowSystem : MonoBehaviour
         BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowAvalanche, "TapSlide", "RoofSnowSystem.cs", tapWorldPoint);
         if (removed > 0)
         {
+            SnowPhysicsScoreManager.Instance?.Add(1);
             SnowVisual.SpawnPowderAt(tapWorldPoint);
             Vector3 roofUp = roofSlideCollider.transform.up.normalized;
             Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
