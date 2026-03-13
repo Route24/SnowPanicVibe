@@ -495,6 +495,19 @@ Expand to mobile (iPhone etc.) on success.
 ・落雪の爽快感を見る時間を確保  
 ・次の一手を考えるゲームにする  
 
+**クールダウンシステム（Cooldown System）**
+
+Snow Panic は連打ゲームではない。
+
+各クリック後にウェイトタイマー（クールダウン）が発生する。
+
+**目的**
+・連打を防ぐ  
+・戦略的な叩き位置を考えさせる  
+・雪崩の物理挙動を観察する時間を作る  
+
+ウェイト状態はUIメーターとして表示する。
+
 **ゲームの方向性**
 Snow Panic は「リアルシミュレーション」ではなく「爽快パズル」。  
 雪挙動はリアルより気持ちよさを優先。
@@ -510,21 +523,66 @@ Snow Panic は「リアルシミュレーション」ではなく「爽快パズ
 
 **Reason:** Spam removes strategy. Time to enjoy falling snow. Player plans each move.
 
+**Cooldown System**
+
+Snow Panic is not a rapid tapping game.
+
+After each hit, a cooldown timer is triggered.
+
+**Purpose**
+・Prevent spam clicking  
+・Encourage strategic hits  
+・Allow players to observe avalanche physics  
+
+The cooldown is displayed visually as a UI meter.
+
 **Direction:** "Refreshing Puzzle" not "Real Simulation". Feel over realism.
 
 **Snow:** Grainy look, lightweight logic. Roof management: blocks/cell-based. Particle effects only when collapsing and falling.
 
 ---
 
-# 16. Player Interaction
+# 16. Player Interaction（操作・入力システム）
 
 ### 日本語
 
-プレイヤーは神視点。男の子を直接操作しない。屋根クリックで選択している道具（スコップ、棒など）を使用。
+プレイヤーは神視点。男の子を直接操作しない。
+
+**入力システム（Input System）**
+
+プレイヤーはキャラクターを操作しない。
+
+**操作方法**
+マウスで屋根をクリックする。
+
+クリックされた位置に対して「雪を叩く」アクションが発生する。
+
+この操作により
+・雪が崩れる  
+・雪の塊が落下する  
+・連鎖雪崩が発生する
+
+屋根クリックで選択している道具（スコップ、棒など）を使用する。
 
 ### English
 
-God-view control. Boy not directly controlled. Click roof to use selected tool (shovel, stick, etc.).
+God-view control. Boy not directly controlled.
+
+**Input System**
+
+The player does not control a character.
+
+**Interaction method**  
+Click directly on the roof using the mouse.
+
+The clicked position becomes the impact point where the player hits the snow.
+
+This action can trigger
+・Snow detachment  
+・Falling snow chunks  
+・Chain avalanche events
+
+Click roof to use selected tool (shovel, stick, etc.).
 
 ---
 
@@ -540,15 +598,61 @@ Animal Crossing–style isometric perspective. View the whole village.
 
 ---
 
-# 18. Main Character
+# 18. Main Character（主人公・プレイヤー表現）
 
 ### 日本語
 
-主人公は留守番している男の子。家の前をうろうろ歩く。プレイヤーは男の子を助ける立場。
+主人公は留守番している男の子。プレイヤーは男の子を助ける立場。
+
+**プレイヤー表現（Player Representation）**
+
+本ゲームでは、子供キャラクターはゲームフィールド上に存在しない。
+
+代わりに、画面左上に表示される「リアクションウィンドウ（ワイプ）」として登場する。
+
+このウィンドウはゲーム状況に応じて子供の表情が変化し、プレイヤーに感情的フィードバックを提供する。
+
+**表示位置**  
+画面左上
+
+**役割**
+・ゲーム状況の感情表現  
+・危険状態の警告  
+・成功時の喜び演出
+
+**表情例**
+🙂 安全  
+😟 雪が増えている  
+😰 危険状態  
+😱 崩壊寸前  
+😄 雪下ろし成功
 
 ### English
 
-Protagonist: boy staying home alone. Walks in front of house. Player protects the boy.
+Protagonist: boy staying home alone. Player protects the boy.
+
+**Player Representation**
+
+The boy character does not exist in the game world.
+
+Instead, the boy appears in a reaction window (wipe window) located at the top-left corner of the screen.
+
+This window visually expresses the emotional state of the situation and provides feedback to the player through facial expressions.
+
+**Location**  
+Top-left corner of the screen
+
+**Purpose**
+・Emotional feedback  
+・Danger warning  
+・Celebration on success
+
+**Example expressions**  
+🙂 Safe  
+😟 Snow increasing  
+😰 Danger  
+😱 Collapse imminent  
+😄 Success
 
 ---
 
@@ -588,15 +692,45 @@ Examples: blizzard, heavy snowfall, rapid accumulation
 
 ---
 
-# 22. Tools
+# 22. Tools（道具・アップグレードシステム）
 
 ### 日本語
 
 使用可能な道具：スコップ、棒、その他の雪下ろし道具
 
+**道具アップグレードシステム（Tool Upgrade System）**
+
+プレイヤーは雪下ろしで得たお小遣い（スコア通貨）を使って道具をアップグレードできる。
+
+**道具例**
+・棒  
+・スコップ  
+・雪かきレーキ  
+・プロ用除雪ツール  
+
+**道具によって変化する要素**
+・叩き範囲  
+・破壊力  
+・雪崩発生確率  
+
 ### English
 
 Examples: shovel, stick, other snow tools
+
+**Tool Upgrade System**
+
+Players can upgrade tools using allowance money (score currency) earned from snow removal.
+
+**Example tools**
+・Stick  
+・Shovel  
+・Snow rake  
+・Professional snow tool  
+
+**Tools affect**
+・Hit area  
+・Impact power  
+・Avalanche probability  
 
 ---
 
@@ -635,3 +769,237 @@ Snow village. Winter atmosphere. Sliding snow physics.
 ### English
 
 Snow sliding. Snow falling. Roof creaking.
+
+---
+
+# 26. Player Representation（プレイヤー表現・リアクションウィンドウ）
+
+### 日本語
+
+本ゲームでは、子供キャラクターはゲームフィールド上に存在しない。
+
+代わりに、画面左上に表示される「リアクションウィンドウ（ワイプ）」として登場する。
+
+このウィンドウはゲーム状況に応じて子供の表情が変化し、プレイヤーに感情的フィードバックを提供する。
+
+**表示位置**  
+画面左上
+
+**役割**
+・ゲーム状況の感情表現  
+・危険状態の警告  
+・成功時の喜び演出
+
+**表情例**
+| 状態 | 表情 |
+|------|------|
+| 安全 | 🙂 |
+| 雪が増えている | 😟 |
+| 危険状態 | 😰 |
+| 崩壊寸前 | 😱 |
+| 雪下ろし成功 | 😄 |
+
+### English
+
+The boy character does not exist in the game world.
+
+Instead, the boy appears in a reaction window (wipe window) located at the top-left corner of the screen.
+
+This window visually expresses the emotional state of the situation and provides feedback to the player through facial expressions.
+
+**Location**  
+Top-left corner of the screen
+
+**Purpose**
+・Emotional feedback  
+・Danger warning  
+・Celebration on success
+
+**Example expressions**
+| State | Expression |
+|-------|------------|
+| Safe | 🙂 |
+| Snow increasing | 😟 |
+| Danger | 😰 |
+| Collapse imminent | 😱 |
+| Success | 😄 |
+
+---
+
+# 27. Input System（入力システム）
+
+### 日本語
+
+プレイヤーはキャラクターを操作しない。
+
+**操作方法**
+
+マウスで屋根をクリックする。
+
+クリックされた位置に対して「雪を叩く」アクションが発生する。
+
+この操作により
+・雪が崩れる  
+・雪の塊が落下する  
+・連鎖雪崩が発生する
+
+### English
+
+The player does not control a character.
+
+**Interaction method**
+
+Click directly on the roof using the mouse.
+
+The clicked position becomes the impact point where the player hits the snow.
+
+This action can trigger
+・Snow detachment  
+・Falling snow chunks  
+・Chain avalanche events
+
+---
+
+# 28. Cooldown System（クールダウンシステム）
+
+### 日本語
+
+Snow Panic は連打ゲームではない。
+
+各クリック後にウェイトタイマー（クールダウン）が発生する。
+
+**目的**
+・連打を防ぐ  
+・戦略的な叩き位置を考えさせる  
+・雪崩の物理挙動を観察する時間を作る
+
+ウェイト状態は UI メーターとして表示する。
+
+### English
+
+Snow Panic is not a rapid tapping game.
+
+After each hit, a cooldown timer is triggered.
+
+**Purpose**
+・Prevent spam clicking  
+・Encourage strategic hits  
+・Allow players to observe avalanche physics
+
+The cooldown is displayed visually as a UI meter.
+
+---
+
+# 29. Tool Upgrade System（道具アップグレードシステム）
+
+### 日本語
+
+プレイヤーは雪下ろしで得たお小遣い（スコア通貨）を使って道具をアップグレードできる。
+
+**道具例**
+・棒  
+・スコップ  
+・雪かきレーキ  
+・プロ用除雪ツール
+
+**道具によって変化する要素**
+・叩き範囲  
+・破壊力  
+・雪崩発生確率
+
+### English
+
+Players can upgrade tools using allowance money (score currency) earned from snow removal.
+
+**Example tools**
+・Stick  
+・Shovel  
+・Snow rake  
+・Professional snow tool
+
+**Tools affect**
+・Hit area  
+・Impact power  
+・Avalanche probability
+
+---
+
+# 30. UI Layout（UI レイアウト）
+
+### 日本語
+
+**画面 UI 構成**
+
+| 位置 | 要素 |
+|------|------|
+| 左上 | 子供リアクションウィンドウ |
+| 中央上 | スコア |
+| 右上 | コンボ表示 |
+| 画面下 | 道具切り替え UI、ウェイトタイマー |
+
+### English
+
+**UI Layout**
+
+| Position | Element |
+|----------|---------|
+| Top-left | Boy reaction window |
+| Top-center | Score |
+| Top-right | Combo indicator |
+| Bottom area | Tool selection UI, Cooldown meter |
+
+---
+
+# 31. Snow Accumulation Meter（積雪メーター）
+
+### 日本語
+
+**概念**
+
+積雪メーターは円グラフ（パイチャート）ではない。
+
+雪の結晶（スノーフレーク）型の透明な容器である。
+
+雪の結晶の形をした空の瓶を想像する。屋根に雪が積もるにつれ、その雪が容器の下から徐々に満たされていく。砂時計の下半分に砂が溜まるように、雪が容器内でゆっくり下方向に沈む。雪が一瞬で現れるのではなく、自然に沈みながら溜まる。目的は「雪が積もっている」ことを視覚的に強調すること。
+
+**設計ルール**
+
+| 状態 | 見た目 |
+|------|--------|
+| 初期 | 雪の結晶のアウトラインのみ表示。内部は空・透明 |
+| 積雪増加 | 白い雪が下から上へ満たされる。雪の高さが自然に上昇 |
+| 満タン | 雪の結晶容器が満杯 |
+| 最大レベル | 赤色に変色し、パルス警告アニメーション開始 |
+| 警告5秒継続 | 雪の重さで家が崩壊 |
+
+**目的**
+
+・積雪を直感的に把握  
+・雪テーマとの一貫性  
+・一般的なバー / 円グラフ風 UI の代わり
+
+### English
+
+**Concept**
+
+The accumulation meter is NOT a pie chart.
+
+It is a transparent container shaped like a snowflake.
+
+Imagine an empty bottle shaped like a snowflake. As snow accumulates on the roof, snow gradually fills this snowflake-shaped container from the bottom upward. Similar to how sand fills the bottom half of an hourglass. Snow should slowly settle downward inside the container rather than appearing instantly. The purpose is to visually emphasize that snow is accumulating.
+
+**Design Rules**
+
+| State | Appearance |
+|-------|------------|
+| Initial | Only the snowflake outline is visible; inside is empty / transparent |
+| Accumulation increasing | White snow fills from bottom to top. Snow level rises naturally |
+| Full capacity | Snowflake container becomes full |
+| Max level | Turns red and starts a pulsing warning animation |
+| Warning 5 seconds | House collapses due to snow weight |
+
+**Purpose**
+
+・Make accumulation visually intuitive  
+・Match the snow theme  
+・Replace generic bar / pie-chart style UI
