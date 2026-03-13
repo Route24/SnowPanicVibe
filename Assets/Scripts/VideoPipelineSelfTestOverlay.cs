@@ -14,6 +14,7 @@ public static class VideoPipelineSelfTestOverlay
     static void OnLoad()
     {
         if (!ShouldShow) return;
+        if (!VideoPipelineSelfTestMode.IsActive) return; // 通常Playでは表示しない。Editorが明示的にSelfTest/AutoRecord開始時のみ。
         ShouldShow = false;
 
         var go = new GameObject("VideoPipelineSelfTestOverlay");

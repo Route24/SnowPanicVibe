@@ -157,10 +157,10 @@ public static class SnowPanicVideoPipelineSelfTest
     }
 
     const string PrefAutoRecordOnPlay = "SnowPanic.AutoRecordOnPlay";
-    /// <summary>通常Playでも自動録画するか。 true=Play押下で10秒録画→mp4保存→レポート。</summary>
+    /// <summary>通常Playでも自動録画するか。false=通常Playはゲーム画面のみ。true=Play押下で録画→mp4→レポート（オーバーレイ表示）。</summary>
     public static bool AutoRecordOnPlay
     {
-        get { return EditorPrefs.GetBool(PrefAutoRecordOnPlay, true); }
+        get { return EditorPrefs.GetBool(PrefAutoRecordOnPlay, false); }
         set { EditorPrefs.SetBool(PrefAutoRecordOnPlay, value); }
     }
 
@@ -1653,6 +1653,15 @@ public static class SnowPanicVideoPipelineSelfTest
         StartRecordingThisSession();
     }
 
+    /// <summary>黒画面ブロック解除。Auto-record OFF + マーカー削除。次回 Play で通常画面に戻る。</summary>
+    [MenuItem("SnowPanic/VideoPipeline/Force Normal Play (fix black screen)", false, 148)]
+    static void ForceNormalPlay()
+    {
+        AutoRecordOnPlay = false;
+        VideoPipelineSelfTestMode.SetActive(false);
+        UnityEngine.Debug.Log("[VideoPipeline] Force Normal Play: Auto-record OFF, marker cleared. Play again.");
+    }
+
     [MenuItem("SnowPanic/VideoPipeline/Auto-record on Play", false, 149)]
     static void ToggleAutoRecordOnPlay()
     {
@@ -1872,6 +1881,11 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
+        // 通常Play: ExitingEditMode(Play開始直前)でマーカー削除。SELFTEST黒画面・drive_verify防止。
+        if (state == PlayModeStateChange.ExitingEditMode && !AutoRecordOnPlay)
+        {
+            VideoPipelineSelfTestMode.SetActive(false);
+        }
         if (state == PlayModeStateChange.ExitingPlayMode)
         {
             SnowPackSpawner.EditorExitingPlayMode = true;
@@ -1942,6 +1956,11 @@ public static class SnowPanicVideoPipelineSelfTest
             {
                 StartAutoRecordSession();
                 return;
+            }
+            // 通常Play（AutoRecordOff）: 残留マーカーを必ずクリア。SELFTEST黒画面防止。
+            if (_state == State.Idle && !AutoRecordOnPlay)
+            {
+                VideoPipelineSelfTestMode.SetActive(false);
             }
             if (_state != State.Recording) return;
             StartRecordingThisSession();
