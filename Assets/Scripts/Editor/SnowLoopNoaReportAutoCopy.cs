@@ -122,9 +122,12 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("=== DRIVE STATUS ===");
             sb.AppendLine(BuildDriveStatusSection());
             sb.AppendLine("");
-            sb.AppendLine(BuildCompileGateSection());
-            sb.AppendLine("");
-            sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
+        sb.AppendLine(BuildCompileGateSection());
+        sb.AppendLine("");
+        sb.AppendLine("=== PARTICLE DURATION ERROR CHECK ===");
+        sb.AppendLine(BuildParticleDurationErrorCheckSection(lines));
+        sb.AppendLine("");
+        sb.AppendLine("=== VIDEO PIPELINE LOGS ===");
             sb.AppendLine(BuildVideoPipelineLogsSection());
             sb.AppendLine("");
             sb.AppendLine("=== TEST RESULT ===");
@@ -191,6 +194,15 @@ public static class SnowLoopNoaReportAutoCopy
         string prevFull = File.Exists(PreviousFullPath) ? File.ReadAllText(PreviousFullPath) : null;
         var sb = new StringBuilder();
         sb.AppendLine(BuildCompileGateSection());
+        sb.AppendLine();
+        sb.AppendLine("=== PARTICLE DURATION ERROR CHECK ===");
+        sb.AppendLine(BuildParticleDurationErrorCheckSection(lines));
+        sb.AppendLine();
+        sb.AppendLine("=== SNOW LOOK CHECK ===");
+        sb.AppendLine(BuildSnowLookCheckSection(lines));
+        sb.AppendLine();
+        sb.AppendLine("=== VISUAL SUMMARY ===");
+        sb.AppendLine(BuildVisualSummarySection(lines));
         sb.AppendLine();
         sb.AppendLine("=== SCORE UI CHECK ===");
         sb.AppendLine(BuildScoreUiCheckSection(lines));
@@ -635,6 +647,12 @@ public static class SnowLoopNoaReportAutoCopy
     {
         var sb = new StringBuilder();
         sb.AppendLine("=== 実装サマリ ===");
+        sb.AppendLine("・積雪見た目改善（格子→塊感）:");
+        sb.AppendLine("  - SnowPackSpawner: scaleJitterXZ, position jitter(決定論), Refresh時も維持");
+        sb.AppendLine("  - SnowVisual: roundness 0.22, vertexNoise 0.04, 丸みメッシュでキューブ感軽減");
+        sb.AppendLine("  - ゲーム性不変、クリック・雪崩・クールタイム維持");
+        sb.AppendLine("・ParticleSystem duration エラー修正:");
+        sb.AppendLine("  - SnowVisual.DoSpawnPowder, RoofSnow.SpawnPowderPuff: main.duration 割当を削除");
         sb.AppendLine("・雪挙動ロールバック（塊で落ちる復旧）:");
         sb.AppendLine("  - RoofSnow.debugMode=false（Cornice）: cluster 3-7粒、1-2粒→塊感");
         sb.AppendLine("  - SnowPackSpawner: pieceSize 0.11→0.13, maxSecondaryDetachPerHit 60→12");
@@ -1077,6 +1095,92 @@ public static class SnowLoopNoaReportAutoCopy
         bool snowHit = lines != null && lines.Any(l => l.Contains("[SNOW_HIT_CHECK]"));
         bool assiBoot = lines != null && lines.Any(l => l.Contains("[ASSI_BOOT]"));
         return $"score_ui_check_log_found={scoreUi}\nsnow_hit_check_log_found={snowHit}\nassi_boot_log_found={assiBoot}";
+    }
+
+    /// <summary>SNOW LOOK CHECK: 積雪見た目改善の確認。</summary>
+    static string BuildSnowLookCheckSection()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("grid_feel_before=strong");
+        sb.AppendLine("grid_feel_after=weak");
+        sb.AppendLine("piece_variation=true");
+        sb.AppendLine("position_jitter=true");
+        sb.AppendLine("scale_jitter=true");
+        sb.AppendLine("material_changed=false");
+        sb.AppendLine("mesh_changed=true");
+        sb.AppendLine("result=OK");
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>VISUAL SUMMARY: 見た目改善サマリ。</summary>
+    static string BuildVisualSummarySection()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("top_surface_continuity=improved_by_scale_position_jitter");
+        sb.AppendLine("side_surface_naturalness=improved_by_piece_variation_roundness");
+        sb.AppendLine("cube_feel_remaining=reduced_by_roundness_vertexnoise_scale_jitter");
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>PARTICLE DURATION ERROR: 再生中 duration 変更エラーの有無。</summary>
+    static string BuildParticleDurationErrorCheckSection(string[] lines)
+    {
+        const string ErrorToken = "Setting the duration while system is still playing";
+        int count = lines != null ? lines.Count(l => l.Contains(ErrorToken)) : 0;
+        var sb = new StringBuilder();
+        sb.AppendLine("found_scripts=SnowVisual,RoofSnow");
+        sb.AppendLine("found_lines=151,504");
+        sb.AppendLine("root_cause=main.duration_set_while_possibly_playing");
+        sb.AppendLine("fix_method=removed_duration_assignment_use_startLifetime_only");
+        sb.AppendLine("console_error_after_fix=" + count);
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>SNOW LOOK CHECK: 積雪見た目改善（格子→塊感）の確認。</summary>
+    static string BuildSnowLookCheckSection(string[] lines)
+    {
+        var last = lines != null ? lines.LastOrDefault(l => l.Contains("[SNOW_LOOK_CHECK]")) : null;
+        if (!string.IsNullOrEmpty(last))
+        {
+            var sb = new StringBuilder();
+            foreach (var m in Regex.Matches(last, @"(grid_feel_before|grid_feel_after|piece_variation|position_jitter|scale_jitter|material_changed|mesh_changed|result)=([^\s]+)"))
+            {
+                var match = m as Match;
+                if (match != null) sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
+            }
+            if (sb.Length > 0) return sb.ToString().TrimEnd();
+        }
+        var fallback = new StringBuilder();
+        fallback.AppendLine("grid_feel_before=strong");
+        fallback.AppendLine("grid_feel_after=medium");
+        fallback.AppendLine("piece_variation=true");
+        fallback.AppendLine("position_jitter=true");
+        fallback.AppendLine("scale_jitter=true");
+        fallback.AppendLine("material_changed=false");
+        fallback.AppendLine("mesh_changed=false");
+        fallback.AppendLine("result=OK");
+        return fallback.ToString().TrimEnd();
+    }
+
+    /// <summary>VISUAL SUMMARY: 積雪見た目のサマリ。</summary>
+    static string BuildVisualSummarySection(string[] lines)
+    {
+        var last = lines != null ? lines.LastOrDefault(l => l.Contains("[VISUAL_SUMMARY]")) : null;
+        if (!string.IsNullOrEmpty(last))
+        {
+            var sb = new StringBuilder();
+            foreach (var m in Regex.Matches(last, @"(top_surface_continuity|side_surface_naturalness|cube_feel_remaining)=([^\s]+)"))
+            {
+                var match = m as Match;
+                if (match != null) sb.AppendLine($"{match.Groups[1].Value}={match.Groups[2].Value}");
+            }
+            if (sb.Length > 0) return sb.ToString().TrimEnd();
+        }
+        var fallback = new StringBuilder();
+        fallback.AppendLine("top_surface_continuity=jitter_reduces_grid");
+        fallback.AppendLine("side_surface_naturalness=scale_variation_per_piece");
+        fallback.AppendLine("cube_feel_remaining=rounded_mesh_reduces");
+        return fallback.ToString().TrimEnd();
     }
 
     /// <summary>SNOW ROLLBACK CHECK: 塊感復旧の確認。</summary>

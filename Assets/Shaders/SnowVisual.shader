@@ -47,6 +47,7 @@ Shader "SnowVisual/SoftSnow"
                 float4 positionCS : SV_POSITION;
                 float3 positionWS : TEXCOORD0;
                 float3 normalWS : TEXCOORD1;
+                float3 viewDirWS : TEXCOORD2;
             };
 
             Varyings vert(Attributes input)
@@ -55,12 +56,14 @@ Shader "SnowVisual/SoftSnow"
                 output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.positionCS = TransformWorldToHClip(output.positionWS);
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                output.viewDirWS = GetCameraPositionWS() - output.positionWS;
                 return output;
             }
 
             half4 frag(Varyings input) : SV_Target
             {
                 float3 N = normalize(input.normalWS);
+                float3 V = normalize(input.viewDirWS);
                 Light mainLight = GetMainLight(TransformWorldToShadowCoord(input.positionWS));
                 float3 L = mainLight.direction;
                 float NdotL = saturate(dot(N, L));
@@ -68,6 +71,10 @@ Shader "SnowVisual/SoftSnow"
                 float3 ambient = half3(0.4, 0.45, 0.55);
                 float3 diffuse = mainLight.color * mainLight.shadowAttenuation * soft;
                 float3 finalLight = saturate(ambient + diffuse);
+                // 上面連続感: 上向き面をわずかに明るく、境界を暗くしてタイル感を減らす
+                float topBoost = saturate(dot(N, float3(0, 1, 0))) * 0.04;
+                float edgeDarken = 1.0 - (1.0 - saturate(dot(N, V))) * 0.12;
+                finalLight = saturate(finalLight * edgeDarken + topBoost);
                 float3 snowColor = _BaseColor.rgb + float3(0, 0, _BlueTint);
                 return half4(snowColor * finalLight, 1);
             }

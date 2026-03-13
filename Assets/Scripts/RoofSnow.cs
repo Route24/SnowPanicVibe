@@ -501,7 +501,8 @@ public class RoofSnow : MonoBehaviour
         var ps = go.AddComponent<ParticleSystem>();
         var main = ps.main;
         main.loop = false;
-        main.duration = 0.15f;
+        main.playOnAwake = false; // 明示 Play まで待機（duration 再生中変更エラー回避）
+        // duration は変更しない（再生中変更で Unity エラー回避）。ワンショットバーストは startLifetime で制御
         main.startLifetime = new ParticleSystem.MinMaxCurve(0.08f, 0.15f);
         main.startSpeed = new ParticleSystem.MinMaxCurve(0.2f, 0.35f);
         main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.09f);

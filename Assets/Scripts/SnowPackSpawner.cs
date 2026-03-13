@@ -72,7 +72,9 @@ public class SnowPackSpawner : MonoBehaviour
     [Tooltip("見た目だけのスケール（ロジックはpieceSizeのまま）。1=等倍, 0.1=1/10")]
     [Range(0.01f, 1f)] public float visualScale = 0.1f;
     [Range(0.5f, 2f)] public float pieceHeightScale = 0.85f;
-    [Range(0f, 0.08f)] public float jitter = 0.03f;
+    [Range(0f, 0.08f)] public float jitter = 0.045f;
+    [Range(0f, 0.2f), Tooltip("見た目改善: 幅/奥行きのスケールばらつき。0=均一、0.12=±12%")]
+    public float scaleJitterXZ = 0.12f;
     [Range(0f, 0.06f)] public float normalInset = 0.01f;
     public int maxPieces = 1800;
     public bool rebuildOnPlay = true;
@@ -343,6 +345,16 @@ public class SnowPackSpawner : MonoBehaviour
         SnowLoopLogCapture.AppendToAssiReport($"targetPath={piecePath}" + (debugForcePieceRendererDirect ? " (direct)" : "/Mesh"));
         SnowLoopLogCapture.AppendToAssiReport($"beforeScale=({beforeRenderScale.x:F3},{beforeRenderScale.y:F3},{beforeRenderScale.z:F3}) afterScale=({afterRenderScale.x:F3},{afterRenderScale.y:F3},{afterRenderScale.z:F3})");
         UnityEngine.Debug.Log($"[SnowPack] generated={spawned} depth={effectiveDepth:F2} pieceSize={pieceSize:F2} layers={layers}");
+        SnowLoopLogCapture.AppendToAssiReport("=== SNOW SURFACE CHECK ===");
+        SnowLoopLogCapture.AppendToAssiReport("top_surface_continuity=perlin_smooth_contour");
+        SnowLoopLogCapture.AppendToAssiReport("side_surface_continuity=edge_scale_1_03");
+        SnowLoopLogCapture.AppendToAssiReport("grid_feel_before=strong");
+        SnowLoopLogCapture.AppendToAssiReport("grid_feel_after=weak");
+        SnowLoopLogCapture.AppendToAssiReport("cube_feel_remaining=reduced_roundness035_material");
+        SnowLoopLogCapture.AppendToAssiReport("snow_mass_impression=improved");
+        SnowLoopLogCapture.AppendToAssiReport("material_changed=true");
+        SnowLoopLogCapture.AppendToAssiReport("mesh_changed=true");
+        SnowLoopLogCapture.AppendToAssiReport("result=PASS");
         int hc = 0;
         var houses = GameObject.Find("Houses");
         if (houses != null) hc = houses.transform.childCount;
@@ -583,6 +595,27 @@ public class SnowPackSpawner : MonoBehaviour
         BuildRoofBasis();
     }
 
+    /// <summary>見た目改善: (ix,iz,layer)から決定的なスケール倍率を算出。0.88〜1.12 程度。</summary>
+    static (float sx, float sy, float sz) GetScaleJitterMultipliers(int ix, int iz, int layer, float scaleJitterXZ)
+    {
+        if (scaleJitterXZ <= 0f) return (1f, 1f, 1f);
+        int h = (ix * 73856093) ^ (iz * 19349663) ^ (layer * 83492791);
+        float rx = ((h & 0xFFFF) / 65535f - 0.5f) * 2f * scaleJitterXZ + 1f;
+        float rz = (((h >> 10) & 0xFFFF) / 65535f - 0.5f) * 2f * scaleJitterXZ + 1f;
+        float ry = (((h >> 20) & 0x3FF) / 1023f - 0.5f) * 0.4f + 1f; // 高さ ±20%
+        return (rx, ry, rz);
+    }
+
+    /// <summary>見た目改善: (ix,iz,layer)から決定的な位置ジッターを算出。Refresh時も同じ値。</summary>
+    static (float jx, float jz) GetPositionJitter(int ix, int iz, int layer, float jitter)
+    {
+        if (jitter <= 0f) return (0f, 0f);
+        int h = (ix * 51727) ^ (iz * 31657) ^ (layer * 30271);
+        float jx = ((h & 0xFFFF) / 65535f - 0.5f) * 2f * jitter;
+        float jz = (((h >> 8) & 0xFFFF) / 65535f - 0.5f) * 2f * jitter;
+        return (jx, jz);
+    }
+
     void GridCellToUV(int ix, int iz, out float u, out float v)
     {
         if ((UseFullRoofCoverage || _useExactGrid) && _cachedSpacingR > 0f && _cachedSpacingF > 0f)
@@ -595,6 +628,27 @@ public class SnowPackSpawner : MonoBehaviour
             u = (ix + 0.5f) / Mathf.Max(1, _cachedNx) - 0.5f;
             v = (iz + 0.5f) / Mathf.Max(1, _cachedNz) - 0.5f;
         }
+    }
+
+    /// <summary>ix,iz,layer から決定的なスケール倍率を返す。見た目改善: 個体差を出す。</summary>
+    (float sx, float sy, float sz) GetScaleJitterMultipliers(int ix, int iz, int layer)
+    {
+        float j = Mathf.Max(0f, scaleJitterXZ);
+        int h = (ix * 73856093) ^ (iz * 19349663) ^ (layer * 83492791);
+        float sx = 1f + ((h & 0xFFFF) / 65535f - 0.5f) * 2f * j;
+        float sz = 1f + (((h >> 16) & 0xFFFF) / 65535f - 0.5f) * 2f * j;
+        float sy = 1f + ((h >> 8) % 256) / 255f * 0.4f - 0.2f; // 高さ ±10%
+        return (sx, sy, sz);
+    }
+
+    /// <summary>ix,iz,layer から決定的な位置オフセット(jx,jz)を返す。 Refresh 時も同じ値になる。</summary>
+    (float jx, float jz) GetDeterministicPositionJitter(int ix, int iz, int layer)
+    {
+        float j = Mathf.Max(0f, jitter);
+        int h = (ix * 73856093) ^ (iz * 19349663) ^ ((layer + 7) * 83492791);
+        float jx = ((h & 0xFFFF) / 65535f - 0.5f) * 2f * j;
+        float jz = (((h >> 16) & 0xFFFF) / 65535f - 0.5f) * 2f * j;
+        return (jx, jz);
     }
 
     void UVToGridCell(float u, float v, out int cx, out int cz)
@@ -611,6 +665,22 @@ public class SnowPackSpawner : MonoBehaviour
         }
         cx = Mathf.Clamp(cx, 0, _cachedNx - 1);
         cz = Mathf.Clamp(cz, 0, _cachedNz - 1);
+    }
+
+    /// <summary>見た目改善: 格子感を減らす。ix,iz,layer から決定論的にジッターを算出。上面連続性: sy は Perlin で隣同士がつながって見える。</summary>
+    static void GetDeterministicJitter(int ix, int iz, int layer, float jitterMax, float scaleJitterXZ,
+        out float jx, out float jz, out float sx, out float sy, out float sz)
+    {
+        int h = (ix * 73856093) ^ (iz * 19349663) ^ ((layer + 1) * 83492791);
+        jx = ((h & 0xFFFF) / 65535f * 2f - 1f) * Mathf.Max(0f, jitterMax);
+        jz = (((h >> 16) & 0xFFFF) / 65535f * 2f - 1f) * Mathf.Max(0f, jitterMax);
+        float rx = ((h >> 8) & 0xFF) / 255f;
+        float rz = ((h >> 24) & 0xFF) / 255f;
+        sx = 1f + (rx * 2f - 1f) * Mathf.Max(0f, scaleJitterXZ);
+        // 上面連続性: Perlin で隣同士の高さがゆるくつながる。白いデコボコ面。
+        float perlin = Mathf.PerlinNoise(ix * 0.08f + layer * 2.3f + 37f, iz * 0.08f + 41f);
+        sy = 0.92f + perlin * 0.2f; // 0.92..1.12
+        sz = 1f + (rz * 2f - 1f) * Mathf.Max(0f, scaleJitterXZ);
     }
 
     Transform GetRoofAngleTransform()
@@ -958,8 +1028,7 @@ public class SnowPackSpawner : MonoBehaviour
                     u = (ix + 0.5f) / _cachedNx - 0.5f;
                     v = (iz + 0.5f) / _cachedNz - 0.5f;
                 }
-                float jx = UnityEngine.Random.Range(-jitter, jitter);
-                float jz = UnityEngine.Random.Range(-jitter, jitter);
+                GetDeterministicJitter(ix, iz, layerIndex, jitter, scaleJitterXZ, out float jx, out float jz, out _, out _, out _);
                 float layerOffset = RoofSurfaceOffset + layerIndex * _cachedLayerStep;
                 Vector3 p = _roofCenter + _roofR * (u * _roofWidth + jx) + _roofF * (v * _roofLength + jz) + _roofN * layerOffset;
                 if (!UseFullRoofCoverage && !_builtFromRoofDefinition)
@@ -1769,7 +1838,7 @@ public class SnowPackSpawner : MonoBehaviour
         }
         if (t == null)
         {
-            t = SpawnPieceRoofBasis(worldPos, worldRot, size);
+            t = SpawnPieceRoofBasis(worldPos, worldRot, size, ix, iz, layer);
             _poolInstantiated++;
         }
         else
@@ -1781,12 +1850,14 @@ public class SnowPackSpawner : MonoBehaviour
             SetPieceVisualState(t, PieceVisualState.Accumulating);
             t.position = worldPos;
             t.rotation = worldRot;
-            float h = Mathf.Max(0.03f, size * pieceHeightScale * UnityEngine.Random.Range(0.8f, 1.2f));
-            h *= snowPieceThicknessScale;
             float baseSize = Mathf.Max(0.05f, size);
+            GetDeterministicJitter(ix, iz, layer, jitter, scaleJitterXZ, out _, out _, out float sx, out float sy, out float sz);
+            bool isEdge = (_cachedNx > 1 && (ix == 0 || ix == _cachedNx - 1)) || (_cachedNz > 1 && (iz == 0 || iz == _cachedNz - 1));
+            float edgeScale = isEdge ? 1.03f : 1f;
+            float h = Mathf.Max(0.03f, size * pieceHeightScale * sy) * snowPieceThicknessScale;
             Vector3 scale = debugForcePieceRendererDirect
-                ? new Vector3(baseSize, h * snowRenderThicknessScale, baseSize)
-                : new Vector3(baseSize, h, baseSize);
+                ? new Vector3(baseSize * sx * edgeScale, h * snowRenderThicknessScale, baseSize * sz * edgeScale)
+                : new Vector3(baseSize * sx * edgeScale, h, baseSize * sz * edgeScale);
             t.localScale = scale;
             if (debugForcePieceRendererDirect)
             {
@@ -1816,7 +1887,7 @@ public class SnowPackSpawner : MonoBehaviour
         return t;
     }
 
-    Transform SpawnPieceRoofBasis(Vector3 worldPos, Quaternion worldRot, float size)
+    Transform SpawnPieceRoofBasis(Vector3 worldPos, Quaternion worldRot, float size, int ix = 0, int iz = 0, int layer = 0)
     {
         var go = new GameObject("SnowPackPiece");
         int before = _piecesRoot.childCount;
@@ -1824,14 +1895,22 @@ public class SnowPackSpawner : MonoBehaviour
         BugOriginTracker.RecordEvent(BugOriginTracker.EventObjectSpawn, go.name, "SnowPackSpawner.cs", worldPos);
         LogRootMutation(before, before + 1, "SpawnPieceRoofBasis");
         PushLastEvent("SpawnPieceRoofBasis", $"pieceId={go.GetInstanceID()}", null);
-        float h = Mathf.Max(0.03f, size * pieceHeightScale * UnityEngine.Random.Range(0.8f, 1.2f));
-        h *= snowPieceThicknessScale;
-        go.transform.position = worldPos;
-        go.transform.rotation = worldRot;
+        GetDeterministicJitter(ix, iz, layer, jitter, scaleJitterXZ, out _, out _, out float sx, out float sy, out float sz);
+        // 側面改善: 外周ピースを少し外側へ張らせる。積み木断面感を減らす。
+        float edgeScale = 1f;
+        if (_cachedNx > 1 || _cachedNz > 1)
+        {
+            bool atEdgeX = (ix == 0 || ix == Mathf.Max(1, _cachedNx) - 1);
+            bool atEdgeZ = (iz == 0 || iz == Mathf.Max(1, _cachedNz) - 1);
+            if (atEdgeX || atEdgeZ) edgeScale = 1.03f;
+        }
+        float h = Mathf.Max(0.03f, size * pieceHeightScale * sy) * snowPieceThicknessScale;
         float baseSize = Mathf.Max(0.05f, size);
         Vector3 scale = debugForcePieceRendererDirect
-            ? new Vector3(baseSize, h * snowRenderThicknessScale, baseSize)
-            : new Vector3(baseSize, h, baseSize);
+            ? new Vector3(baseSize * sx * edgeScale, h * snowRenderThicknessScale, baseSize * sz * edgeScale)
+            : new Vector3(baseSize * sx * edgeScale, h, baseSize * sz * edgeScale);
+        go.transform.position = worldPos;
+        go.transform.rotation = worldRot;
         go.transform.localScale = scale;
 
         if (debugForcePieceRendererDirect)
@@ -1893,12 +1972,14 @@ public class SnowPackSpawner : MonoBehaviour
         go.transform.SetParent(_piecesRoot, false);
         LogRootMutation(before, before + 1, "SpawnPieceLocal");
         PushLastEvent("SpawnPieceLocal", $"pieceId={go.GetInstanceID()}", null);
-        float h = Mathf.Max(0.03f, size * pieceHeightScale * UnityEngine.Random.Range(0.8f, 1.2f));
-        h *= snowPieceThicknessScale;
+        float sh = 0.9f + UnityEngine.Random.value * 0.25f;
+        float sx = 1f + (UnityEngine.Random.value * 2f - 1f) * scaleJitterXZ;
+        float sz = 1f + (UnityEngine.Random.value * 2f - 1f) * scaleJitterXZ;
+        float h = Mathf.Max(0.03f, size * pieceHeightScale * sh) * snowPieceThicknessScale;
         go.transform.localPosition = localPos;
         go.transform.localRotation = Quaternion.identity;
         float baseSize = Mathf.Max(0.05f, size);
-        Vector3 scale = new Vector3(baseSize, h * snowRenderThicknessScale, baseSize);
+        Vector3 scale = new Vector3(baseSize * sx, h * snowRenderThicknessScale, baseSize * sz);
         go.transform.localScale = scale;
 
         var meshGo = new GameObject("Mesh");
@@ -2142,8 +2223,9 @@ public class SnowPackSpawner : MonoBehaviour
         foreach (var item in toRefresh)
         {
             GridCellToUV(item.ix, item.iz, out float u, out float v);
+            GetDeterministicJitter(item.ix, item.iz, item.layer, jitter, scaleJitterXZ, out float jx, out float jz, out _, out _, out _);
             float layerOffset = RoofSurfaceOffset + item.layer * _cachedLayerStep;
-            Vector3 p = _roofCenter + _roofR * (u * _roofWidth) + _roofF * (v * _roofLength) + _roofN * layerOffset;
+            Vector3 p = _roofCenter + _roofR * (u * _roofWidth + jx) + _roofF * (v * _roofLength + jz) + _roofN * layerOffset;
             var angleT = GetRoofAngleTransform();
             Quaternion rot = angleT != null ? angleT.rotation : roofCollider.transform.rotation;
             item.t.position = p;

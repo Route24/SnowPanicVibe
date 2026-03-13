@@ -498,6 +498,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
             _roofLayerMat = rend != null ? rend.sharedMaterial : null;
             _maskController = child.GetComponent<RoofSnowMaskController>();
             if (_maskController == null) _maskController = child.gameObject.AddComponent<RoofSnowMaskController>();
+            EnsureSnowSurfaceMesh(child);
             EnsureMaskMaterialAndInit(rend);
             LogRoofSnowSurface(rend);
             return;
@@ -508,12 +509,24 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         go.transform.SetParent(roofSlideCollider.transform, false);
         var col = go.GetComponent<Collider>();
         if (col != null) col.enabled = false;
+        EnsureSnowSurfaceMesh(go.transform);
         var goRend = go.GetComponent<Renderer>();
         _maskController = go.GetComponent<RoofSnowMaskController>();
         if (_maskController == null) _maskController = go.AddComponent<RoofSnowMaskController>();
         EnsureMaskMaterialAndInit(goRend);
         _roofLayer = go.transform;
         LogRoofSnowSurface(goRend);
+    }
+
+    void EnsureSnowSurfaceMesh(Transform layer)
+    {
+        if (layer == null) return;
+        var mf = layer.GetComponent<MeshFilter>();
+        if (mf != null)
+        {
+            var mesh = SnowSurfaceMeshBuilder.GetOrCreate();
+            if (mesh != null) mf.sharedMesh = mesh;
+        }
     }
 
     void EnsureMaskMaterialAndInit(Renderer rend)

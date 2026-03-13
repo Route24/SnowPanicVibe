@@ -28,6 +28,8 @@ Shader "SnowPanic/RoofSnowMask"
             #pragma vertex vert
             #pragma fragment frag
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Shadows.hlsl"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/SpaceTransforms.hlsl"
 
             CBUFFER_START(UnityPerMaterial)
@@ -53,6 +55,8 @@ Shader "SnowPanic/RoofSnowMask"
             {
                 float4 positionCS : SV_POSITION;
                 float3 positionWS : TEXCOORD0;
+                float3 normalWS : TEXCOORD1;
+                float3 viewDirWS : TEXCOORD2;
             };
 
             Varyings vert(Attributes input)
@@ -60,6 +64,8 @@ Shader "SnowPanic/RoofSnowMask"
                 Varyings output;
                 output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
                 output.positionCS = TransformWorldToHClip(output.positionWS);
+                output.normalWS = TransformObjectToWorldNormal(input.normalOS);
+                output.viewDirWS = GetCameraPositionWS() - output.positionWS;
                 return output;
             }
 
@@ -71,7 +77,27 @@ Shader "SnowPanic/RoofSnowMask"
                 float2 maskUV = float2(u, v);
                 float mask = SAMPLE_TEXTURE2D(_SnowMask, sampler_SnowMask, maskUV).r * _SnowIntensity;
                 clip(mask - _ClipThreshold);
-                return half4(_BaseColor.rgb, 1);
+                float3 N = normalize(input.normalWS);
+                float3 V = normalize(input.viewDirWS);
+                float3 L = 0;
+                float atten = 1;
+                #ifdef _MAIN_LIGHT_SHADOWS
+                Light mainLight = GetMainLight(TransformWorldToShadowCoord(input.positionWS));
+                L = mainLight.direction;
+                atten = mainLight.shadowAttenuation;
+                #else
+                L = normalize(float3(0.3, 0.6, 0.2));
+                #endif
+                float NdotL = saturate(dot(N, L));
+                float soft = pow(NdotL, 1.2);
+                float3 ambient = half3(0.42, 0.46, 0.56);
+                float3 diffuse = atten * soft;
+                float3 finalLight = saturate(ambient + diffuse * 0.6);
+                float topBoost = saturate(dot(N, float3(0, 1, 0))) * 0.05;
+                float edgeDarken = 1.0 - (1.0 - saturate(dot(N, V))) * 0.1;
+                finalLight = saturate(finalLight * edgeDarken + topBoost);
+                float3 snowColor = _BaseColor.rgb + float3(0, 0, 0.06);
+                return half4(snowColor * finalLight, 1);
             }
             ENDHLSL
         }

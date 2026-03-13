@@ -17,10 +17,10 @@ public class SnowVisual : MonoBehaviour
     [Header("Snow Visual Settings")]
     [Tooltip("false で従来の立方体に戻る")]
     public bool visualModuleEnabled = true;
-    [Tooltip("丸みの強さ。0=立方体、0.5=丸い")]
-    [Range(0f, 0.5f)] public float roundness = 0.15f;
-    [Tooltip("頂点ノイズの強さ")]
-    [Range(0f, 0.08f)] public float vertexNoiseStrength = 0.03f;
+    [Tooltip("丸みの強さ。0=立方体、0.5=丸い。見た目改善: 0.35=雪塊感UP（上面連続+側面）")]
+    [Range(0f, 0.5f)] public float roundness = 0.35f;
+    [Tooltip("頂点ノイズの強さ。見た目改善: 表面の不揃いでキューブ感を弱める")]
+    [Range(0f, 0.08f)] public float vertexNoiseStrength = 0.04f;
     [Tooltip("シード（同じ値で再現可能）")]
     public int noiseSeed = 42;
 
@@ -148,7 +148,8 @@ public class SnowVisual : MonoBehaviour
 
         var main = ps.main;
         main.loop = false;
-        main.duration = lifetime * 0.5f;
+        main.playOnAwake = false; // 明示 Play まで待機（duration 再生中変更エラー回避）
+        // duration は変更しない（再生中変更で Unity エラー回避）。ワンショットバーストは startLifetime で制御
         main.startLifetime = new ParticleSystem.MinMaxCurve(lifetime * 0.5f, lifetime);
         main.startSpeed = new ParticleSystem.MinMaxCurve(0.15f, 0.4f);
         main.startSize = new ParticleSystem.MinMaxCurve(0.03f, 0.08f);

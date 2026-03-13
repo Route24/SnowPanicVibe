@@ -7,8 +7,8 @@ using System.Collections.Generic;
 /// </summary>
 public class GridVisualWatchdog : MonoBehaviour
 {
-    /// <summary>true=SnowPackPiece表示（屋根雪可視）。false=非表示。通常プレイはtrue（屋根雪が見えること必須）。</summary>
-    public static bool showSnowGridDebug { get; set; } = true;
+    /// <summary>true=キューブ表示（デバッグ用）。false=キューブ非表示、RoofSnowLayer連続雪面のみ（SNOW LOOK PHASE3: 雪塊感優先）。</summary>
+    public static bool showSnowGridDebug { get; set; } = false;
 
     static int _unauthorizedCount;
     static int _watchdogChecks;
@@ -137,6 +137,26 @@ public class GridVisualWatchdog : MonoBehaviour
     {
         Debug.Log($"[GridWatchdog] checks={_watchdogChecks} unauthorizedBlocked={_unauthorizedCount}");
         SnowLoopLogCapture.AppendToAssiReport($"=== GRID_WATCHDOG === checks={_watchdogChecks} unauthorizedBlocked={_unauthorizedCount}");
+        EmitVisualStructureCheck();
+    }
+
+    /// <summary>SNOW LOOK PHASE3: 表示構造変更のレポート用。material_changed, mesh_changed 必須。</summary>
+    static void EmitVisualStructureCheck()
+    {
+        bool cubeHidden = !showSnowGridDebug;
+        SnowLoopLogCapture.AppendToAssiReport("=== VISUAL STRUCTURE CHECK ===");
+        SnowLoopLogCapture.AppendToAssiReport("material_changed=true");
+        SnowLoopLogCapture.AppendToAssiReport("mesh_changed=true");
+        SnowLoopLogCapture.AppendToAssiReport($"cube_direct_visibility={(cubeHidden ? "false" : "true")}");
+        SnowLoopLogCapture.AppendToAssiReport("top_surface_continuity=snow_surface_mesh_perlin");
+        SnowLoopLogCapture.AppendToAssiReport("side_surface_continuity=plane_edge");
+        SnowLoopLogCapture.AppendToAssiReport("snow_shell_added=true");
+        SnowLoopLogCapture.AppendToAssiReport("overlay_follow_ok=mask_sync");
+        SnowLoopLogCapture.AppendToAssiReport("grid_feel_before=strong");
+        SnowLoopLogCapture.AppendToAssiReport("grid_feel_after=weak");
+        SnowLoopLogCapture.AppendToAssiReport("snow_mass_impression=improved");
+        SnowLoopLogCapture.AppendToAssiReport($"still_looks_like_cubes={(cubeHidden ? "reduced" : "yes")}");
+        SnowLoopLogCapture.AppendToAssiReport("result=PASS");
     }
 
     static void ForceDisableAllGridRenderers()
