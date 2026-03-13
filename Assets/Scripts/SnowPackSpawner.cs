@@ -3630,7 +3630,9 @@ public class SnowPackSpawner : MonoBehaviour
 #endif
                 bool onlyAnchorLeft = rootChildren == 1 && _piecesRoot != null && _piecesRoot.childCount >= 1 && _piecesRoot.GetChild(0).name == "SnowPackAnchor";
                 bool allCleared = (rootChildren <= 1 && poolCount > 0) || onlyAnchorLeft;
-                if (!_snowPackPassErrorLogged && Application.isPlaying && rootChildren > 0 && !skipFail && !allCleared)
+                // SNOW LOOK PHASE3/4: showSnowGridDebug=false 時はキューブを非表示にしているため activePiecesCount(=enabled renderers)=0 は正常。rootChildren>0 なら実体あり。
+                bool snowShellModeOk = rootChildren > 0 && !GridVisualWatchdog.showSnowGridDebug;
+                if (!_snowPackPassErrorLogged && Application.isPlaying && rootChildren > 0 && !skipFail && !allCleared && !snowShellModeOk)
                 {
                     LogActivePiecesDiagnostic(rootChildren, activePiecesCount, poolCount);
                     _snowPackPassErrorLogged = true;

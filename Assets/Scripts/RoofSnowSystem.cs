@@ -518,15 +518,69 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         LogRoofSnowSurface(goRend);
     }
 
+    static Mesh _snowSurfaceMeshCache;
+
     void EnsureSnowSurfaceMesh(Transform layer)
     {
         if (layer == null) return;
         var mf = layer.GetComponent<MeshFilter>();
-        if (mf != null)
+        if (mf == null) return;
+        if (_snowSurfaceMeshCache == null) _snowSurfaceMeshCache = BuildSnowSurfaceMesh();
+        if (_snowSurfaceMeshCache != null) mf.sharedMesh = _snowSurfaceMeshCache;
+    }
+
+    /// <summary>屋根雪の連続雪面メッシュ。ゆるい凹凸・中央盛り・端落ち込みで板感を軽減。PHASE4。</summary>
+    static Mesh BuildSnowSurfaceMesh()
+    {
+        const int subdiv = 24;
+        float inv = 1f / subdiv;
+        var verts = new Vector3[(subdiv + 1) * (subdiv + 1)];
+        var uvs = new Vector2[verts.Length];
+        int idx = 0;
+        for (int iz = 0; iz <= subdiv; iz++)
         {
-            var mesh = SnowSurfaceMeshBuilder.GetOrCreate();
-            if (mesh != null) mf.sharedMesh = mesh;
+            for (int ix = 0; ix <= subdiv; ix++)
+            {
+                float x = (ix * inv - 0.5f);
+                float z = (iz * inv - 0.5f);
+                // 粗い起伏（大きめ）+ 細かい起伏
+                float n1 = Mathf.PerlinNoise(ix * 0.06f + 37f, iz * 0.06f);
+                float n2 = Mathf.PerlinNoise(ix * 0.2f + 11f, iz * 0.2f);
+                float bump = (n1 - 0.5f) * 0.12f + (n2 - 0.5f) * 0.06f;
+                // 中央がやや盛る（積雪の塊感）
+                float dx = x * 2f;
+                float dz = z * 2f;
+                float centerBump = Mathf.Max(0f, 0.04f * (1f - (dx * dx + dz * dz)));
+                // 端は少し落ちる（自然な雪の端）
+                float edge = Mathf.Max(Mathf.Abs(x) * 2f, Mathf.Abs(z) * 2f);
+                float edgeDip = edge > 0.7f ? (edge - 0.7f) * 0.1f : 0f;
+                float y = 0.5f + bump + centerBump - edgeDip;
+                verts[idx] = new Vector3(x, y, z);
+                uvs[idx] = new Vector2(ix * inv, iz * inv);
+                idx++;
+            }
         }
+        var tris = new int[subdiv * subdiv * 6];
+        idx = 0;
+        for (int iz = 0; iz < subdiv; iz++)
+        {
+            for (int ix = 0; ix < subdiv; ix++)
+            {
+                int a = iz * (subdiv + 1) + ix;
+                int b = a + 1;
+                int c = a + (subdiv + 1);
+                int d = c + 1;
+                tris[idx++] = a; tris[idx++] = c; tris[idx++] = b;
+                tris[idx++] = b; tris[idx++] = c; tris[idx++] = d;
+            }
+        }
+        var m = new Mesh { name = "SnowSurfaceMesh" };
+        m.vertices = verts;
+        m.uv = uvs;
+        m.triangles = tris;
+        m.RecalculateNormals();
+        m.RecalculateBounds();
+        return m;
     }
 
     void EnsureMaskMaterialAndInit(Renderer rend)

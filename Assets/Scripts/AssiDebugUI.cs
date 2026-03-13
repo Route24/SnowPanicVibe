@@ -18,6 +18,11 @@ public class AssiDebugUI : MonoBehaviour
             debugOverlayEnabled = !debugOverlayEnabled;
             Debug.Log($"[AssiDebugUI] debugOverlayEnabled={debugOverlayEnabled}");
         }
+        if (Input.GetKeyDown(KeyCode.F9))
+        {
+            GridVisualWatchdog.ToggleForceRoofLayerBlueFor5Sec();
+            Debug.Log("[AssiDebugUI] F9: RoofSnowLayer blue 5sec (visual trace test)");
+        }
     }
 
     static void ClearTapMarkerState()
@@ -164,6 +169,13 @@ public class AssiDebugUI : MonoBehaviour
             var spawner = Object.FindFirstObjectByType<SnowPackSpawner>();
             if (spawner != null) spawner.RefreshPieceMeshesForDebug();
             Debug.Log($"[AssiDebugUI] DebugNonSymMesh={DebugSnowVisibility.DebugNonSymMesh}");
+        }
+        y += ButtonH + Margin;
+
+        if (Button(x, y, "[BTN] RoofLayer Blue 5s (F9)"))
+        {
+            GridVisualWatchdog.ToggleForceRoofLayerBlueFor5Sec();
+            Debug.Log("[AssiDebugUI] RoofLayer blue 5sec (visual trace test)");
         }
 
         DrawHud();
