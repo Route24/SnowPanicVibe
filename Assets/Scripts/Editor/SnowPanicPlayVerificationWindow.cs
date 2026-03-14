@@ -16,8 +16,6 @@ public class SnowPanicPlayVerificationWindow : EditorWindow
     string _slideVisibleBeforeDrop = "";
     string _movesSidewaysOnRoof = "";
     string _contactExistsButSlideNotVisible = "";
-    string _movesSidewaysOnRoof = "";
-    string _contactExistsButSlideNotVisible = "";
 
     [MenuItem("Snow Panic/Play Verification (Snow Mass + Roof Slide)", false, 150)]
     public static void Open()
