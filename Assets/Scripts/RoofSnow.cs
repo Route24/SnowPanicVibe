@@ -118,7 +118,7 @@ public class RoofSnow : MonoBehaviour
         int cluster = debugMode ? Random.Range(1, 2) : (isCascade ? Random.Range(3, 7) : Random.Range(3, 5));
         float longAxis = isCascade ? 0.6f : 0.42f;
         float shortAxis = isCascade ? 0.25f : 0.2f;
-        SpawnDetachCluster(hitPoint, cluster, shortAxis, longAxis, isCascade ? 0.1f : 0.12f);
+        SpawnDetachCluster(hitPoint, cluster, shortAxis, longAxis, isCascade ? 0.18f : 0.22f);  // ASSI: 屋根沿い滑落 - 初速を強め (0.1/0.12 -> 0.18/0.22)
         RemoveSnowAtEaves();
         // 軒先のワールド位置でも明示的に削除
         Vector3 localEave = new Vector3(0f, 0f, slideDownDirection.z < 0 ? -0.4f : 0.4f);
@@ -143,7 +143,7 @@ public class RoofSnow : MonoBehaviour
         const int Steps = 18;
         const float FirstStepDelay = 0.12f;
         const float MinStepDelay = 0.03f;
-        const float SlideSpeed = 0.12f;
+        const float SlideSpeed = 0.20f;  // ASSI: 屋根沿い滑落 - 雪崩時の滑り初速 (0.12->0.20)
         float currentDelay = FirstStepDelay;
         Vector3 lastWorldPos = transform.TransformPoint(localHitStart);
         bool hadStep = false;
@@ -311,17 +311,18 @@ public class RoofSnow : MonoBehaviour
         var rb = go.AddComponent<Rigidbody>();
         rb.useGravity = true;
         rb.mass = Mathf.Lerp(2f, 5f, (count - 28f) / 67f);
-        rb.linearDamping = 0.2f;
+        rb.linearDamping = 0.35f;   // ASSI: 屋根沿い滑落 - 滑り過ぎ防止 (0.2->0.35)
         rb.angularDamping = 2f;
-        rb.interpolation = RigidbodyInterpolation.None;
+        rb.interpolation = RigidbodyInterpolation.Interpolate;  // ASSI: 滑落の見た目を滑らかに
         rb.collisionDetectionMode = CollisionDetectionMode.Discrete;
         rb.constraints = RigidbodyConstraints.FreezeRotation;
 
         var col = go.AddComponent<BoxCollider>();
         col.size = new Vector3(0.5f * widthScale, 0.12f * heightScale, 0.4f * depthScale);
         col.center = Vector3.zero;
+        col.contactOffset = 0.02f;   // ASSI: 屋根接触の安定化 (default 0.01)
 
-        var pm = new PhysicsMaterial("SnowSlide") { dynamicFriction = 0.08f, staticFriction = 0.12f, bounciness = 0f };
+        var pm = new PhysicsMaterial("SnowSlide") { dynamicFriction = 0.18f, staticFriction = 0.25f, bounciness = 0f };  // ASSI: 滑落前に少し「乗る」 (0.08/0.12 -> 0.18/0.25)
         col.material = pm;
 
         var clump = go.AddComponent<SnowClump>();
@@ -350,13 +351,13 @@ public class RoofSnow : MonoBehaviour
     {
         if (debugMode) return;
         if (snowParticles == null) return;
-        if (Time.time - _lastPressureDetachTime < 0.08f) return;
+        if (Time.time - _lastPressureDetachTime < 0.06f) return;  // ASSI: 雪塊感 - 圧力伝播を頻繁に (0.08->0.06)
         if (GetRemainingParticleCount() < 80) return;
-        if (pressure < 0.45f) return;
+        if (pressure < 0.38f) return;  // ASSI: 雪塊感 - 低めの圧力でも連鎖 (0.45->0.38)
 
         _lastPressureDetachTime = Time.time;
-        int cluster = Mathf.Clamp(Mathf.RoundToInt(pressure * 0.8f), 1, 3);
-        SpawnDetachCluster(worldPoint, cluster, 0.18f, 0.36f, 0.18f);
+        int cluster = Mathf.Clamp(Mathf.RoundToInt(pressure * 0.9f), 1, 4);  // ASSI: 雪塊感 - やや大きめの塊 (0.8->0.9, max 3->4)
+        SpawnDetachCluster(worldPoint, cluster, 0.18f, 0.36f, 0.20f);  // slideSpeed 0.18->0.20
     }
 
     /// <summary>中央を叩いたとき、棟から軒先へ向かって連鎖的に雪を落とす</summary>
@@ -366,7 +367,7 @@ public class RoofSnow : MonoBehaviour
         const float FirstStepDelay = 0.12f;
         const float MinStepDelay = 0.03f;
         const float StepDistance = 0.24f;
-        const float SlideSpeed = 0.1f;
+        const float SlideSpeed = 0.18f;  // ASSI: 屋根沿い滑落 - 連鎖カスケード初速 (0.1->0.18)
         float eavesDir = slideDownDirection.x < 0 ? -1f : 1f;
         float currentDelay = FirstStepDelay;
 

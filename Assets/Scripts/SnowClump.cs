@@ -6,7 +6,7 @@ using System.Collections.Generic;
 public class SnowClump : MonoBehaviour
 {
     [HideInInspector] public Vector3 slideDownDirection;
-    [HideInInspector] public float initialSlideSpeed = 0.25f;
+    [HideInInspector] public float initialSlideSpeed = 0.42f;  // ASSI: 屋根沿い滑落 - 初期滑りを強め (0.25->0.42)
     [HideInInspector] public Collider roofColliderToIgnoreWhenStuck;
     [HideInInspector] public Collider roofSurfaceCollider;
     [HideInInspector] public RoofSnow ownerRoofSnow;
@@ -44,14 +44,14 @@ public class SnowClump : MonoBehaviour
     const float GroundPileWaitSeconds = 4.0f;
     const float GroundPileBlinkDuration = 1.0f;
     const float GroundPileBlinkInterval = 0.1f;
-    const float OffDistDropThreshold = 0.20f; // 0.06 -> 0.20
+    const float OffDistDropThreshold = 0.28f; // ASSI: 屋根沿い滑落 - 落下判定の猶予を拡大 (0.20->0.28)
 
-    /// <summary>ASSI Fix Pack: 軒先落下時のチューニング（Script 先頭で変更可）</summary>
-    public static float maxFallCarrySpeed = 1.2f;
-    public static float sideDamp = 0.2f;
-    public static float dropImpulse = 0.6f;
-    public static float airDrag = 1.2f;
-    const float OffDistGraceDuration = 0.25f;
+    /// <summary>ASSI Fix Pack: 屋根沿い滑落優先。軒先落下時チューニング。</summary>
+    public static float maxFallCarrySpeed = 1.5f;   // 滑落方向の初速を強めに持ち越す (1.2->1.5)
+    public static float sideDamp = 0.25f;           // 横方向は少し残す (0.2->0.25)
+    public static float dropImpulse = 0.35f;        // 真下成分を弱め、屋根傾斜方向を優先 (0.6->0.35)
+    public static float airDrag = 1.0f;             // 空気抵抗 (1.2->1.0)
+    const float OffDistGraceDuration = 0.4f;       // ASSI: 接触安定の猶予延長 (0.25->0.4)
     const float NearEdgeMargin = 0.02f;
     const float NearEdgeDropDelay = 0.22f; // 0.35 -> 0.22
     const float DebugMinRoofSlideTime = 0.7f;
@@ -476,12 +476,13 @@ public class SnowClump : MonoBehaviour
         _rb.useGravity = true;
         _rb.constraints = RigidbodyConstraints.FreezeRotation;
 
-        Vector3 v = initialVelocity;
+        // ASSI: 屋根沿い滑落 - 真下落下を減らし、屋根傾斜方向の初速を優先
         Vector3 downhill = GetRoofSlideDirection();
-        Vector3 vDown = Vector3.Project(v, downhill);
-        Vector3 vSide = v - vDown;
+        Vector3 vDown = Vector3.Project(initialVelocity, downhill);
+        Vector3 vSide = initialVelocity - vDown;
         float downMag = Mathf.Min(vDown.magnitude, maxFallCarrySpeed);
-        v = downhill.normalized * downMag + vSide * sideDamp + Vector3.down * dropImpulse;
+        // 屋根斜面方向を主軸に、真下成分は最小限
+        Vector3 v = downhill.normalized * Mathf.Max(downMag, 0.5f) + vSide * sideDamp + downhill.normalized * dropImpulse;
         _rb.linearVelocity = v;
 
         _rb.linearDamping = airDrag;

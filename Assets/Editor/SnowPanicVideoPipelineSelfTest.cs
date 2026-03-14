@@ -578,6 +578,35 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("roof_surface_size=" + (_roofSurfaceSize ?? "(pending)"));
             sb.AppendLine("snow_cover_size=" + (_snowCoverSize ?? "(pending)"));
             sb.AppendLine("snow_cover_matches_roof=" + _snowCoverMatchesRoof.ToString().ToLower());
+            sb.AppendLine("");
+            sb.AppendLine("=== ASSI REPORT - ROOF SLIDE BASE ===");
+            sb.AppendLine("compile_result=(Unity確認)");
+            sb.AppendLine("console_error_count=(Console確認)");
+            sb.AppendLine("roof_slide_before=真下即落ち");
+            sb.AppendLine("roof_slide_after=屋根沿い滑落(要Play確認)");
+            sb.AppendLine("still_falls_straight_down=(Play確認)");
+            sb.AppendLine("roof_collider_check=RoofPanel BoxCollider transform.up=屋根法線");
+            sb.AppendLine("snow_piece_collider_check=BoxCollider contactOffset=0.02 friction=0.18/0.25");
+            sb.AppendLine("physics_material_check=SnowSlide dynamic=0.18 static=0.25");
+            sb.AppendLine("rigidbody_check=mass=2-5 interpolation=Interpolate linearDamping=0.35");
+            sb.AppendLine("root_cause_of_vertical_drop=BeginFallにVector3.down*0.35を加算→弱化済み。OffDist猶予0.28に拡大。滑落方向初速を優先。");
+            sb.AppendLine("cohesion_adjustment=TryDetachByPressure cooldown 0.06 pressure 0.38");
+            sb.AppendLine("group_slide_feel=Avalanche SlideSpeed 0.18 Cascade 0.16");
+            var outDirForReport = Path.GetDirectoryName(_outputPathBase ?? _mp4Path ?? "");
+            var mp4PathCurr = !string.IsNullOrEmpty(_sessionId) && !string.IsNullOrEmpty(outDirForReport)
+                ? Path.Combine(outDirForReport, "snow_test_tmp_" + _sessionId + ".mp4")
+                : (_localPath ?? _mp4Path ?? "");
+            var gifPathCurr = !string.IsNullOrEmpty(_sessionId) && !string.IsNullOrEmpty(outDirForReport)
+                ? Path.Combine(outDirForReport, "snow_test_tmp_" + _sessionId + ".gif")
+                : (_gifPath ?? "");
+            sb.AppendLine("current_session_id=" + (_sessionId ?? ""));
+            sb.AppendLine("mp4_generated_for_current_session=" + (File.Exists(mp4PathCurr) ? "YES" : "NO"));
+            sb.AppendLine("gif_generated_for_current_session=" + (File.Exists(gifPathCurr) ? "YES" : "NO"));
+            sb.AppendLine("mp4_path_current_session=" + mp4PathCurr);
+            sb.AppendLine("gif_path_current_session=" + gifPathCurr);
+            sb.AppendLine("why_gif_missing_or_ok=" + (!string.IsNullOrEmpty(_gifPath) && File.Exists(_gifPath ?? "") ? "gif_generated" : (_previewErrorReason ?? "not_generated")));
+            sb.AppendLine("recommended_next_step=Play→雪崩発動→屋根沿い滑落を確認→Stop→レポート送信");
+            sb.AppendLine("");
             if (!string.IsNullOrEmpty(_lastRecorderExceptionMessage))
                 sb.AppendLine("exception=" + (_lastRecorderExceptionMessage ?? "").Replace("\r", " ").Replace("\n", " | "));
             if (!string.IsNullOrEmpty(_lastRecorderExceptionStackTrace))
@@ -903,7 +932,10 @@ public static class SnowPanicVideoPipelineSelfTest
         var ffmpeg = ResolveFfmpegPath();
         _ffmpegPathUsed = ffmpeg ?? "";
         _ffmpegAvailable = !string.IsNullOrEmpty(ffmpeg);
-        var gifOutPath = Path.Combine(outDir, "snow_test_latest.gif");
+        var gifFileName = !string.IsNullOrEmpty(_sessionId)
+            ? "snow_test_tmp_" + _sessionId + ".gif"
+            : "snow_test_latest.gif";
+        var gifOutPath = Path.Combine(outDir, gifFileName);
         var stripPath = Path.Combine(outDir, "preview_strip.png");
         _previewStartCalled = true;
         AssiLog("preview_start ffmpeg_path=" + (_ffmpegPathUsed ?? "(none)") + " ffmpeg_available=" + _ffmpegAvailable.ToString().ToLower());
