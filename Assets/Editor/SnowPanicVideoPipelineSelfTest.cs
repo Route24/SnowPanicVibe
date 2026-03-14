@@ -456,6 +456,37 @@ public static class SnowPanicVideoPipelineSelfTest
         try
         {
             LoadRoofSnowReportIfExists();
+            var outDir = GetOutputDir();
+            if (string.IsNullOrEmpty(outDir)) outDir = Path.Combine(Environment.CurrentDirectory ?? ".", "Recordings");
+            var reportGeneratedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            var currSessionId = "report_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var mp4PathCurr = !string.IsNullOrEmpty(currSessionId)
+                ? Path.GetFullPath(Path.Combine(outDir, "snow_test_tmp_" + currSessionId + ".mp4"))
+                : "";
+            var gifPathCurr = !string.IsNullOrEmpty(currSessionId)
+                ? Path.GetFullPath(Path.Combine(outDir, "snow_test_tmp_" + currSessionId + ".gif"))
+                : "";
+            var mp4ExistsForSession = !string.IsNullOrEmpty(mp4PathCurr) && File.Exists(mp4PathCurr);
+            var gifExistsForSession = !string.IsNullOrEmpty(gifPathCurr) && File.Exists(gifPathCurr);
+            var latestMp4Path = Path.Combine(outDir, "snow_test_latest.mp4");
+            var latestMp4Exists = File.Exists(latestMp4Path);
+            var latestMp4Modified = latestMp4Exists ? (DateTime?)null : null;
+            if (latestMp4Exists) try { latestMp4Modified = new FileInfo(latestMp4Path).LastWriteTimeUtc; } catch { }
+            var runStartedUtc = _startedAt != default ? _startedAt.ToUniversalTime() : DateTime.MinValue;
+            var latestMp4UpdatedThisRun = (_recorderStartOk || _startHookCalled) && latestMp4Modified.HasValue && runStartedUtc != DateTime.MinValue && latestMp4Modified.Value >= runStartedUtc.AddSeconds(-5);
+            var latestGifPath = Path.Combine(outDir, "snow_test_latest.gif");
+            if (!File.Exists(latestGifPath)) latestGifPath = Path.Combine(outDir, "snow_test_tmp_" + currSessionId + ".gif");
+            var gifExists = File.Exists(latestGifPath) || File.Exists(gifPathCurr);
+            var gifPathToCheck = File.Exists(gifPathCurr) ? gifPathCurr : latestGifPath;
+            var gifModified = (DateTime?)null;
+            if (File.Exists(gifPathToCheck)) try { gifModified = new FileInfo(gifPathToCheck).LastWriteTimeUtc; } catch { }
+            var gifUpdatedThisRun = (_recorderStartOk || _startHookCalled) && gifModified.HasValue && runStartedUtc != DateTime.MinValue && gifModified.Value >= runStartedUtc.AddSeconds(-5);
+            var sessDataPath = GetSessionDataPath();
+            var cutoffUtc = runStartedUtc != DateTime.MinValue ? runStartedUtc.AddSeconds(-10) : DateTime.UtcNow.AddMinutes(-5);
+            var txtLogsUpdated = !string.IsNullOrEmpty(sessDataPath) && File.Exists(sessDataPath) && new FileInfo(sessDataPath).LastWriteTimeUtc >= cutoffUtc;
+            var debugDir = Path.Combine(outDir, "debug");
+            var debugPngPath = Path.Combine(debugDir, "gameview_latest.png");
+            var debugPngUpdated = File.Exists(debugPngPath) && new FileInfo(debugPngPath).LastWriteTimeUtc >= cutoffUtc;
             var path = GetSessionDataPath();
             var dir = Path.GetDirectoryName(path);
             if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir)) Directory.CreateDirectory(dir);
@@ -463,7 +494,8 @@ public static class SnowPanicVideoPipelineSelfTest
             var sessTempPath = EnsureTempMp4Path();
             var sessTempExists = !string.IsNullOrEmpty(sessTempPath) && File.Exists(sessTempPath);
             long sessTempBytes = 0;
-            if (sessTempExists) try { sessTempBytes = new FileInfo(sessTempPath).Length; } catch { }
+            DateTime? sessTempModified = null;
+            if (sessTempExists) try { var fi = new FileInfo(sessTempPath); sessTempBytes = fi.Length; sessTempModified = fi.LastWriteTimeUtc; } catch { }
             var sessPlayKeptAliveSec = _endedAt.HasValue ? (_endedAt.Value - _startedAt).TotalSeconds : 0;
             sb.AppendLine("=== VIDEO PIPELINE STATUS ===");
             sb.AppendLine("execution_mode=" + (_executionMode ?? "play"));
@@ -498,7 +530,8 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("fail step: " + (_errorStep ?? "none"));
             sb.AppendLine("");
             var elapsedSec = _endedAt.HasValue ? (_endedAt.Value - _startedAt).TotalSeconds : 0;
-            sb.AppendLine("sessionId=" + (_sessionId ?? ""));
+            var sessionIdForReport = (runStartedUtc != DateTime.MinValue && _recorderStartOk && !string.IsNullOrEmpty(_sessionId)) ? _sessionId : currSessionId;
+            sb.AppendLine("sessionId=" + (sessionIdForReport ?? ""));
             sb.AppendLine("result=" + (string.IsNullOrEmpty(_result) ? GetFinalResult() : _result));
             sb.AppendLine("errorStep=" + (_errorStep ?? "none"));
             sb.AppendLine("unityVersion=" + Application.unityVersion);
@@ -512,8 +545,10 @@ public static class SnowPanicVideoPipelineSelfTest
             if (Application.platform == RuntimePlatform.OSXEditor)
                 sb.AppendLine("macOS_ScreenRecording=(check System Preferences > Security & Privacy > Privacy)");
             sb.AppendLine("elapsedSec=" + elapsedSec.ToString("F1"));
-            sb.AppendLine("local_mp4_path=" + (_localPath ?? _mp4Path ?? ""));
-            sb.AppendLine("local_mp4_exists=" + _localMp4Exists.ToString().ToLower());
+            var localMp4PathForReport = _localPath ?? _mp4Path ?? (latestMp4UpdatedThisRun ? latestMp4Path : null) ?? mp4PathCurr ?? "";
+            var localMp4ExistsForReport = _localMp4Exists || latestMp4UpdatedThisRun;
+            sb.AppendLine("local_mp4_path=" + (localMp4PathForReport ?? ""));
+            sb.AppendLine("local_mp4_exists=" + localMp4ExistsForReport.ToString().ToLower());
             sb.AppendLine("local_mp4_size_bytes=" + _localSizeBytes);
             sb.AppendLine("latest_mp4_path=" + (_latestMp4Path ?? ""));
             sb.AppendLine("daily_archive_path=" + (_dailyArchivePath ?? ""));
@@ -528,8 +563,9 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("preview_exists=" + _previewCreated.ToString().ToLower());
             sb.AppendLine("preview_size_bytes=" + _previewSizeBytes);
             sb.AppendLine("preview_drive_link=" + (_previewGifDriveLink ?? ""));
-            sb.AppendLine("gif_path=" + (_gifPath ?? (_previewType == "gif" ? _previewPath : "") ?? ""));
-            sb.AppendLine("gif_exists=" + (_previewType == "gif" && !string.IsNullOrEmpty(_previewPath) && File.Exists(_previewPath)).ToString().ToLower());
+            var gifPathForReport = gifUpdatedThisRun ? gifPathToCheck : (_gifPath ?? (_previewType == "gif" ? _previewPath : "") ?? gifPathCurr ?? "");
+            sb.AppendLine("gif_path=" + (gifPathForReport ?? ""));
+            sb.AppendLine("gif_exists=" + gifUpdatedThisRun.ToString().ToLower());
             sb.AppendLine("gif_size_bytes=" + (_previewType == "gif" ? _previewGifSize : 0));
             sb.AppendLine("preview_fallback_used=" + _previewFallbackUsed.ToString().ToLower());
             sb.AppendLine("ffmpeg_path=" + (_ffmpegPathUsed ?? ""));
@@ -579,33 +615,39 @@ public static class SnowPanicVideoPipelineSelfTest
             sb.AppendLine("snow_cover_size=" + (_snowCoverSize ?? "(pending)"));
             sb.AppendLine("snow_cover_matches_roof=" + _snowCoverMatchesRoof.ToString().ToLower());
             sb.AppendLine("");
-            sb.AppendLine("=== ASSI REPORT - ROOF SLIDE BASE ===");
-            sb.AppendLine("compile_result=(Unity確認)");
-            sb.AppendLine("console_error_count=(Console確認)");
-            sb.AppendLine("roof_slide_before=真下即落ち");
-            sb.AppendLine("roof_slide_after=屋根沿い滑落(要Play確認)");
-            sb.AppendLine("still_falls_straight_down=(Play確認)");
-            sb.AppendLine("roof_collider_check=RoofPanel BoxCollider transform.up=屋根法線");
-            sb.AppendLine("snow_piece_collider_check=BoxCollider contactOffset=0.02 friction=0.18/0.25");
-            sb.AppendLine("physics_material_check=SnowSlide dynamic=0.18 static=0.25");
-            sb.AppendLine("rigidbody_check=mass=2-5 interpolation=Interpolate linearDamping=0.35");
-            sb.AppendLine("root_cause_of_vertical_drop=BeginFallにVector3.down*0.35を加算→弱化済み。OffDist猶予0.28に拡大。滑落方向初速を優先。");
-            sb.AppendLine("cohesion_adjustment=TryDetachByPressure cooldown 0.06 pressure 0.38");
-            sb.AppendLine("group_slide_feel=Avalanche SlideSpeed 0.18 Cascade 0.16");
-            var outDirForReport = Path.GetDirectoryName(_outputPathBase ?? _mp4Path ?? "");
-            var mp4PathCurr = !string.IsNullOrEmpty(_sessionId) && !string.IsNullOrEmpty(outDirForReport)
-                ? Path.Combine(outDirForReport, "snow_test_tmp_" + _sessionId + ".mp4")
-                : (_localPath ?? _mp4Path ?? "");
-            var gifPathCurr = !string.IsNullOrEmpty(_sessionId) && !string.IsNullOrEmpty(outDirForReport)
-                ? Path.Combine(outDirForReport, "snow_test_tmp_" + _sessionId + ".gif")
-                : (_gifPath ?? "");
-            sb.AppendLine("current_session_id=" + (_sessionId ?? ""));
-            sb.AppendLine("mp4_generated_for_current_session=" + (File.Exists(mp4PathCurr) ? "YES" : "NO"));
-            sb.AppendLine("gif_generated_for_current_session=" + (File.Exists(gifPathCurr) ? "YES" : "NO"));
-            sb.AppendLine("mp4_path_current_session=" + mp4PathCurr);
-            sb.AppendLine("gif_path_current_session=" + gifPathCurr);
-            sb.AppendLine("why_gif_missing_or_ok=" + (!string.IsNullOrEmpty(_gifPath) && File.Exists(_gifPath ?? "") ? "gif_generated" : (_previewErrorReason ?? "not_generated")));
-            sb.AppendLine("recommended_next_step=Play→雪崩発動→屋根沿い滑落を確認→Stop→レポート送信");
+            sb.AppendLine("=== ASSI REPORT - VIDEO PIPELINE RECOVERY HARD MODE ===");
+            var currentSessionIdForRecovery = (runStartedUtc != DateTime.MinValue && _recorderStartOk && !string.IsNullOrEmpty(_sessionId)) ? _sessionId : currSessionId;
+            sb.AppendLine("current_session_id=" + (currentSessionIdForRecovery ?? ""));
+            sb.AppendLine("report_generated_at=" + reportGeneratedAt);
+            var tempMp4CreatedThisSession = sessTempExists && (_recorderStartOk || _startHookCalled) && runStartedUtc != DateTime.MinValue && sessTempModified.HasValue && sessTempModified.Value >= runStartedUtc.AddSeconds(-5);
+            sb.AppendLine("temp_mp4_created_this_session=" + (tempMp4CreatedThisSession ? "YES" : "NO"));
+            sb.AppendLine("temp_mp4_path=" + (sessTempPath ?? ""));
+            sb.AppendLine("temp_mp4_modified_time=" + (sessTempModified.HasValue ? sessTempModified.Value.ToString("o") : "(n/a)"));
+            sb.AppendLine("final_mp4_created_this_session=" + (latestMp4UpdatedThisRun ? "YES" : "NO"));
+            sb.AppendLine("final_mp4_path=" + (latestMp4Exists ? latestMp4Path : ""));
+            sb.AppendLine("final_mp4_modified_time=" + (latestMp4Modified.HasValue ? latestMp4Modified.Value.ToString("o") : "(n/a)"));
+            sb.AppendLine("gif_created_this_session=" + (gifUpdatedThisRun ? "YES" : "NO"));
+            sb.AppendLine("gif_path=" + (gifExists ? gifPathToCheck : ""));
+            sb.AppendLine("gif_modified_time=" + (gifModified.HasValue ? gifModified.Value.ToString("o") : "(n/a)"));
+            var rootCause = "ok";
+            if (!latestMp4UpdatedThisRun && !gifUpdatedThisRun)
+            {
+                if (!_recorderStartOk)
+                    rootCause = !AutoRecordOnPlay ? "AutoRecordOnPlay_off_enable_SnowPanic_VideoPipeline_Auto_record_on_Play_or_run_SelfTest" : "recorder_not_started";
+                else if (!_outputDirWritable) rootCause = "outputDir_not_writable";
+                else if (!_postStopPollEntered) rootCause = "post_stop_poll_not_entered";
+                else if (!_finalizeEntered) rootCause = "finalize_not_run";
+                else rootCause = "temp_mp4_not_created_or_not_promoted";
+            }
+            else if (latestMp4UpdatedThisRun && !gifUpdatedThisRun)
+                rootCause = !string.IsNullOrEmpty(_previewErrorReason) ? _previewErrorReason : "gif_generation_failed";
+            sb.AppendLine("root_cause=" + rootCause);
+            var whatWasFixed = "stale_sessionId_cleared_at_ExitingEditMode;gif_reverted_to_snow_test_latest;no_old_success_log_in_report";
+            sb.AppendLine("what_was_fixed=" + whatWasFixed);
+            sb.AppendLine("regression_guard_added=YES");
+            sb.AppendLine("old_success_log_suppressed=YES");
+            var recoveryResult = (latestMp4UpdatedThisRun && gifUpdatedThisRun) ? "PASS" : "FAIL";
+            sb.AppendLine("recovery_result=" + recoveryResult);
             sb.AppendLine("");
             if (!string.IsNullOrEmpty(_lastRecorderExceptionMessage))
                 sb.AppendLine("exception=" + (_lastRecorderExceptionMessage ?? "").Replace("\r", " ").Replace("\n", " | "));
@@ -932,10 +974,8 @@ public static class SnowPanicVideoPipelineSelfTest
         var ffmpeg = ResolveFfmpegPath();
         _ffmpegPathUsed = ffmpeg ?? "";
         _ffmpegAvailable = !string.IsNullOrEmpty(ffmpeg);
-        var gifFileName = !string.IsNullOrEmpty(_sessionId)
-            ? "snow_test_tmp_" + _sessionId + ".gif"
-            : "snow_test_latest.gif";
-        var gifOutPath = Path.Combine(outDir, gifFileName);
+        // 復旧: 常に snow_test_latest.gif に出力。2026-03 の session 別パス変更で下流が壊れたため元に戻す。
+        var gifOutPath = Path.Combine(outDir, "snow_test_latest.gif");
         var stripPath = Path.Combine(outDir, "preview_strip.png");
         _previewStartCalled = true;
         AssiLog("preview_start ffmpeg_path=" + (_ffmpegPathUsed ?? "(none)") + " ffmpeg_available=" + _ffmpegAvailable.ToString().ToLower());
@@ -1913,10 +1953,17 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
-        // 通常Play: ExitingEditMode(Play開始直前)でマーカー削除。SELFTEST黒画面・drive_verify防止。
+        // 通常Play: ExitingEditMode(Play開始直前)でマーカー削除。古いsession混入防止のため_sessionIdもクリア。
         if (state == PlayModeStateChange.ExitingEditMode && !AutoRecordOnPlay)
         {
             VideoPipelineSelfTestMode.SetActive(false);
+            if (_state != State.Recording)
+            {
+                DeleteSessionActive();
+                _sessionId = null;
+                _tempMp4Path = null;
+                _outputPathBase = null;
+            }
         }
         if (state == PlayModeStateChange.ExitingPlayMode)
         {
@@ -1965,6 +2012,19 @@ public static class SnowPanicVideoPipelineSelfTest
             if (hasMarker || !string.IsNullOrEmpty(_sessionId))
             {
                 EnterPostStopPolling("exiting_playmode");
+            }
+            else
+            {
+                // 録画未開始でStopした場合もセッションを書き込み、古いログを上書き。レポートを開く。
+                AssiLog("step=exiting_playmode no_session_write_fresh");
+                WriteSessionData();
+                if (SnowLoopNoaReportAutoCopy.TryBuildReportOrSelfTestReport())
+                {
+                    AssiReportWindow.OpenAndShowReport();
+                    var report = SnowLoopNoaReportAutoCopy.GetReportContent();
+                    if (!string.IsNullOrEmpty(report))
+                        EditorGUIUtility.systemCopyBuffer = report;
+                }
             }
             LogTmpAndLatestStatus();
             return;

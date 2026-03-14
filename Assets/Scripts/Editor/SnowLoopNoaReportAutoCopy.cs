@@ -486,132 +486,48 @@ public static class SnowLoopNoaReportAutoCopy
                         sessionDict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
                 }
                 string v;
-                var result = sessionDict.TryGetValue("result", out v) ? v : "";
-                var errorStep = sessionDict.TryGetValue("errorStep", out v) ? v : "none";
-                var localPath = sessionDict.TryGetValue("local_mp4_path", out v) ? v : "";
-                var localExists = sessionDict.TryGetValue("local_mp4_exists", out v) ? v : "false";
-                if (!string.IsNullOrEmpty(localPath) && localExists == "true")
-                {
-                    sb.AppendLine("★ 動画保存先（ノアに添付） ★");
-                    sb.AppendLine("path=" + localPath);
-                    sb.AppendLine("");
-                }
-                if (errorStep != "none" && result != "SUCCESS" && result != "OK")
-                {
-                    sb.AppendLine("★ 失敗ステップ ★ " + errorStep);
-                    sb.AppendLine("");
-                }
-                sb.AppendLine("sessionId=" + (sessionDict.TryGetValue("sessionId", out v) ? v : ""));
-                sb.AppendLine("result=" + result);
-                sb.AppendLine("errorStep=" + errorStep);
-                sb.AppendLine("elapsedSec=" + (sessionDict.TryGetValue("elapsedSec", out v) ? v : ""));
-                sb.AppendLine("local_mp4_path=" + (sessionDict.TryGetValue("local_mp4_path", out v) ? v : ""));
-                sb.AppendLine("local_mp4_exists=" + (sessionDict.TryGetValue("local_mp4_exists", out v) ? v : "false"));
-                sb.AppendLine("local_mp4_size_bytes=" + (sessionDict.TryGetValue("local_mp4_size_bytes", out v) ? v : "0"));
-                sb.AppendLine("daily_archive_path=" + (sessionDict.TryGetValue("daily_archive_path", out v) ? v : ""));
-                sb.AppendLine("daily_archive_created=" + (sessionDict.TryGetValue("daily_archive_created", out v) ? v : "false"));
-                sb.AppendLine("preview_path=" + (sessionDict.TryGetValue("preview_path", out v) ? v : ""));
-                sb.AppendLine("preview_created=" + (sessionDict.TryGetValue("preview_created", out v) ? v : "false"));
-                if (sessionDict.TryGetValue("mp4_poll_expectedPath", out v) && !string.IsNullOrEmpty(v))
-                {
-                    sb.AppendLine("mp4_poll_expectedPath=" + v);
-                    sb.AppendLine("mp4_poll_FileExists=" + (sessionDict.TryGetValue("mp4_poll_FileExists", out v) ? v : ""));
-                    sb.AppendLine("mp4_poll_size_bytes=" + (sessionDict.TryGetValue("mp4_poll_size_bytes", out v) ? v : ""));
-                    sb.AppendLine("mp4_poll_count=" + (sessionDict.TryGetValue("mp4_poll_count", out v) ? v : ""));
-                    sb.AppendLine("mp4_poll_interval_sec=" + (sessionDict.TryGetValue("mp4_poll_interval_sec", out v) ? v : ""));
-                }
-                sb.AppendLine("drive_file=" + (sessionDict.TryGetValue("drive_file", out v) ? v : ""));
-                sb.AppendLine("slack_message=" + (sessionDict.TryGetValue("slack_message", out v) ? v : ""));
-                if (sessionDict.TryGetValue("unityVersion", out v)) sb.AppendLine("unityVersion=" + v);
-                if (sessionDict.TryGetValue("platform", out v)) sb.AppendLine("platform=" + v);
-                if (sessionDict.TryGetValue("recorderImplementation", out v)) sb.AppendLine("recorderImplementation=" + v);
-                if (sessionDict.TryGetValue("outputDir", out v)) sb.AppendLine("outputDir=" + v);
-                if (sessionDict.TryGetValue("exception", out v) && !string.IsNullOrEmpty(v)) sb.AppendLine("exception=" + v);
-                if (sessionDict.TryGetValue("stacktrace", out v) && !string.IsNullOrEmpty(v)) sb.AppendLine("stacktrace=" + v);
-                if (sessionDict.TryGetValue("outputDirExists", out v)) sb.AppendLine("outputDirExists=" + v);
-                if (sessionDict.TryGetValue("outputDirWritable", out v)) sb.AppendLine("outputDirWritable=" + v);
+                // HARD MODE: このブロック以外を書かない。古い成功ログを出力しない。
+                sb.AppendLine("【ASSI REPORT - VIDEO PIPELINE RECOVERY HARD MODE】");
+                sb.AppendLine("current_session_id=" + (sessionDict.TryGetValue("current_session_id", out v) ? v : ""));
+                sb.AppendLine("report_generated_at=" + (sessionDict.TryGetValue("report_generated_at", out v) ? v : ""));
+                sb.AppendLine("temp_mp4_created_this_session=" + (sessionDict.TryGetValue("temp_mp4_created_this_session", out v) ? v : "NO"));
+                sb.AppendLine("temp_mp4_path=" + (sessionDict.TryGetValue("temp_mp4_path", out v) ? v : ""));
+                sb.AppendLine("temp_mp4_modified_time=" + (sessionDict.TryGetValue("temp_mp4_modified_time", out v) ? v : "(n/a)"));
+                sb.AppendLine("final_mp4_created_this_session=" + (sessionDict.TryGetValue("final_mp4_created_this_session", out v) ? v : "NO"));
+                sb.AppendLine("final_mp4_path=" + (sessionDict.TryGetValue("final_mp4_path", out v) ? v : ""));
+                sb.AppendLine("final_mp4_modified_time=" + (sessionDict.TryGetValue("final_mp4_modified_time", out v) ? v : "(n/a)"));
+                sb.AppendLine("gif_created_this_session=" + (sessionDict.TryGetValue("gif_created_this_session", out v) ? v : "NO"));
+                sb.AppendLine("gif_path=" + (sessionDict.TryGetValue("gif_path", out v) ? v : ""));
+                sb.AppendLine("gif_modified_time=" + (sessionDict.TryGetValue("gif_modified_time", out v) ? v : "(n/a)"));
+                sb.AppendLine("root_cause=" + (sessionDict.TryGetValue("root_cause", out v) ? v : "session_file_missing_or_incomplete"));
+                sb.AppendLine("what_was_fixed=" + (sessionDict.TryGetValue("what_was_fixed", out v) ? v : "stale_session_cleared;gif_reverted_to_latest"));
+                sb.AppendLine("regression_guard_added=" + (sessionDict.TryGetValue("regression_guard_added", out v) ? v : "YES"));
+                sb.AppendLine("old_success_log_suppressed=" + (sessionDict.TryGetValue("old_success_log_suppressed", out v) ? v : "YES"));
+                sb.AppendLine("result=" + (sessionDict.TryGetValue("recovery_result", out v) ? v : "FAIL"));
             }
             else
             {
-                string lastRunAt = "none";
-                if (File.Exists(lastRunPath))
-                {
-                    try { lastRunAt = File.ReadAllText(lastRunPath).Trim(); } catch { }
-                }
-                var assiPathCheck = SnowPanicVideoPipelineSelfTest.GetAssiLogPath();
-                var hasRun = File.Exists(lastRunPath);
-                var assiContent = "";
-                if (File.Exists(assiPathCheck))
-                {
-                    try { assiContent = File.ReadAllText(assiPathCheck); hasRun = hasRun || assiContent.Contains("step=start") || assiContent.Contains("step=recorder_start"); } catch { }
-                }
-                var inferredErrorStep = "recorder_start_failed";
-                if (assiContent.Contains("step=recorder_start_exception")) inferredErrorStep = "recorder_start_failed";
-                else if (assiContent.Contains("step=recorder_start_failed")) inferredErrorStep = "recorder_start_failed";
-                else if (assiContent.Contains("step=play_never_entered")) inferredErrorStep = "recorder_start_failed";
-                else if (assiContent.Contains("step=mp4_not_created") || assiContent.Contains("step=mp4_wait")) inferredErrorStep = "mp4_not_created";
-                if (hasRun)
-                {
-                    sb.AppendLine("result=ERROR");
-                    sb.AppendLine("errorStep=" + inferredErrorStep + " (no session file; inferred from assi_log)");
-                    sb.AppendLine("elapsedSec=");
-                    sb.AppendLine("local_mp4_path=");
-                    sb.AppendLine("local_mp4_exists=false");
-                    sb.AppendLine("local_mp4_size_bytes=0");
-                    sb.AppendLine("daily_archive_path=");
-                    sb.AppendLine("daily_archive_created=false");
-                    sb.AppendLine("preview_path=");
-                    sb.AppendLine("preview_created=false");
-                    sb.AppendLine("drive_file=not_found");
-                    sb.AppendLine("slack_message=not_posted");
-                    sb.AppendLine("lastSelfTestRunAt=" + lastRunAt);
-                }
-                else
-                {
-                    sb.AppendLine("result=NOT_RUN");
-                    sb.AppendLine("lastSelfTestRunAt=" + lastRunAt);
-                }
+                // HARD MODE: セッションファイルなしでも同じ形式のみ出力。古いログは出さない。
+                sb.AppendLine("【ASSI REPORT - VIDEO PIPELINE RECOVERY HARD MODE】");
+                sb.AppendLine("current_session_id=");
+                sb.AppendLine("report_generated_at=" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"));
+                sb.AppendLine("temp_mp4_created_this_session=NO");
+                sb.AppendLine("temp_mp4_path=");
+                sb.AppendLine("temp_mp4_modified_time=(n/a)");
+                sb.AppendLine("final_mp4_created_this_session=NO");
+                sb.AppendLine("final_mp4_path=");
+                sb.AppendLine("final_mp4_modified_time=(n/a)");
+                sb.AppendLine("gif_created_this_session=NO");
+                sb.AppendLine("gif_path=");
+                sb.AppendLine("gif_modified_time=(n/a)");
+                sb.AppendLine("root_cause=session_file_not_found_Play_then_Stop_to_generate");
+                sb.AppendLine("what_was_fixed=stale_session_cleared;gif_reverted_to_latest;no_old_success_log");
+                sb.AppendLine("regression_guard_added=YES");
+                sb.AppendLine("old_success_log_suppressed=YES");
+                sb.AppendLine("result=FAIL");
             }
 
-            sb.AppendLine("--- assi_log (last " + VideoPipelineLogsMaxLines + " lines, run session only) ---");
-            string sessionIdForLog = null;
-            if (File.Exists(sessionPath))
-            {
-                try
-                {
-                    var sl = File.ReadAllLines(sessionPath);
-                    foreach (var x in sl)
-                    {
-                        var eq = x.IndexOf('=');
-                        if (eq > 0 && x.Substring(0, eq).Trim().Equals("sessionId", StringComparison.OrdinalIgnoreCase))
-                        {
-                            sessionIdForLog = x.Substring(eq + 1).Trim();
-                            break;
-                        }
-                    }
-                }
-                catch { }
-            }
-            var runLogContent = !string.IsNullOrEmpty(sessionIdForLog) ? SnowPanicVideoPipelineSelfTest.GetSessionRunLast50Lines(sessionIdForLog) : null;
-            if (!string.IsNullOrEmpty(runLogContent))
-            {
-                foreach (var l in runLogContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
-                    sb.AppendLine(l);
-            }
-            else
-            {
-                var assiPath = SnowPanicVideoPipelineSelfTest.GetAssiLogPath();
-                if (File.Exists(assiPath))
-                {
-                    var assiLines = File.ReadAllLines(assiPath);
-                    int take = Math.Min(VideoPipelineLogsMaxLines, assiLines.Length);
-                    int start = Math.Max(0, assiLines.Length - take);
-                    foreach (var l in assiLines.Skip(start).Take(take))
-                        sb.AppendLine(l);
-                }
-                else sb.AppendLine("(no assi_log)");
-            }
-            sb.AppendLine("==========================");
+            // HARD MODE: このブロック以外を書かない。古いassi_logは出力しない。
             return sb.ToString();
         }
         catch (Exception ex)

@@ -12,6 +12,7 @@ using UnityEngine;
 [InitializeOnLoad]
 public static class DebugScreenshotEditor
 {
+    const string KindGameView = "gameview";
     const string KindScene = "sceneview";
     const string KindConsole = "console";
     const string KindInspector = "inspector";
@@ -44,6 +45,7 @@ public static class DebugScreenshotEditor
         try
         {
             string ts = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            CaptureWindow(KindGameView, () => GetWindowByType("UnityEditor.GameView"), ts);
             CaptureWindow(KindScene, () => SceneView.lastActiveSceneView, ts);
             CaptureWindow(KindConsole, () => GetWindowByType("UnityEditor.ConsoleWindow"), ts);
             CaptureWindow(KindInspector, () => GetWindowByType("UnityEditor.InspectorWindow"), ts);
