@@ -1,5 +1,6 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>屋根端を越えた雪ブロック用。Rigidbodyで重力落下、地面接触でGrounded→4s待機→1s点滅→Despawn。</summary>
 public class SnowPackFallingPiece : MonoBehaviour
@@ -20,8 +21,18 @@ public class SnowPackFallingPiece : MonoBehaviour
     const float BlinkDuration = 1.0f;
     const float BlinkInterval = 0.1f;
 
-    enum State { Falling, Grounded, Despawning }
+    enum State { RoofSliding, Falling, Grounded, Despawning }
     State _state = State.Falling;
+
+    /// <summary>屋根スライドフェーズ用。滑落後Fallingへ遷移。</summary>
+    const float RoofSlidePhaseSeconds = 0.5f;
+    Vector3 _roofCenter;
+    Vector3 _roofDownhill;
+    float _roofEdgeTEnd;
+    Collider _roofCollider;
+    readonly List<Vector3> _trajectoryPoints = new List<Vector3>();
+    float _roofContactStartTime = -1f;
+    float _roofContactEndTime = -1f;
 
     public bool hasLanded => _state == State.Grounded;
     Rigidbody _rb;
@@ -37,6 +48,10 @@ public class SnowPackFallingPiece : MonoBehaviour
     {
         _startTime = Time.time;
         _state = State.Falling;
+        _roofCollider = null;
+        _trajectoryPoints.Clear();
+        _roofContactStartTime = -1f;
+        _roofContactEndTime = -1f;
         _roofStuckTimer = 0f;
         _roofStuckLogged = false;
         _rb = GetComponent<Rigidbody>();
@@ -59,15 +74,79 @@ public class SnowPackFallingPiece : MonoBehaviour
         gameObject.layer = 0;
         SetLayerRecursively(gameObject, 0);
 
+        var roofSys = Object.FindFirstObjectByType<RoofSnowSystem>();
+        _roofDownhill = (roofSys != null && roofSys.roofSlideCollider != null) ? Vector3.ProjectOnPlane(Vector3.down, roofSys.roofSlideCollider.transform.up).normalized : Vector3.forward;
+
         _fallingTriggeredCount++;
         float velMag = initialVelocity.magnitude;
         float verticalMag = Mathf.Abs(initialVelocity.y);
         float horizontalMag = Mathf.Sqrt(initialVelocity.x * initialVelocity.x + initialVelocity.z * initialVelocity.z);
-        UnityEngine.Debug.Log($"[ROOT_CAUSE_ISOLATION] begin_fall_source=SnowPackFallingPiece vel=({initialVelocity.x:F2},{initialVelocity.y:F2},{initialVelocity.z:F2}) vel_mag={velMag:F2} vertical_mag={verticalMag:F2} horizontal_mag={horizontalMag:F2} roof_ignored=N/A use_gravity=YES");
+        bool downhillDominantAtT0 = horizontalMag > verticalMag && velMag > 0.05f;
+        bool verticalDominantAtT0 = verticalMag > horizontalMag && velMag > 0.05f;
+        UnityEngine.Debug.Log($"[ROOT_CAUSE_ISOLATION] begin_fall_source=SnowPackFallingPiece vel=({initialVelocity.x:F2},{initialVelocity.y:F2},{initialVelocity.z:F2}) roof_ignored=N/A use_gravity=YES");
+        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece maintains_roof_contact_after_detach=NO loses_contact_immediately=YES gravity_applied_too_early=YES downhill_velocity_dominant_at_t0={(downhillDominantAtT0 ? "YES" : "NO")} vertical_velocity_dominant_at_t0={(verticalDominantAtT0 ? "YES" : "NO")} detached_at=PAST_ROOF_EDGE");
+        StartCoroutine(LogVelocityAt01s());
         DetachedSnowRegistry.RegisterFalling(this);
         DetachedSnowDiagnostics.LogFallingInfoIfFirst(this);
         LogDetachedSpawn();
         SnowLoopLogCapture.AppendToAssiReport($"=== FallingTriggered === count={_fallingTriggeredCount}");
+    }
+
+    /// <summary>屋根面上でdetach。useGravity=falseで短いslide phase→軒先越えでFallingへ。</summary>
+    public void ActivateRoofSlide(Vector3 initialVelocity, Collider roofCol, Vector3 roofCenter, Vector3 downhill, float roofEdgeTEnd)
+    {
+        _startTime = Time.time;
+        _state = State.RoofSliding;
+        _roofCenter = roofCenter;
+        _roofDownhill = downhill;
+        _roofEdgeTEnd = roofEdgeTEnd;
+        _roofCollider = roofCol;
+        _trajectoryPoints.Clear();
+        _roofContactStartTime = -1f;
+        _roofContactEndTime = -1f;
+        _roofStuckTimer = 0f;
+        _roofStuckLogged = false;
+        _rb = GetComponent<Rigidbody>();
+        if (_rb == null) _rb = gameObject.AddComponent<Rigidbody>();
+        _rb.isKinematic = false;
+        _rb.useGravity = false;
+        _rb.linearVelocity = initialVelocity;
+        _rb.constraints = RigidbodyConstraints.None;
+        _renderers = GetComponentsInChildren<Renderer>(true);
+
+        var col = GetComponent<Collider>();
+        if (col == null)
+        {
+            col = gameObject.AddComponent<BoxCollider>();
+            var b = (BoxCollider)col;
+            b.size = Vector3.one * 0.15f;
+            b.center = Vector3.zero;
+        }
+        if (col != null) { col.enabled = true; col.isTrigger = false; }
+        gameObject.layer = 0;
+        SetLayerRecursively(gameObject, 0);
+
+        _fallingTriggeredCount++;
+        float velMag = initialVelocity.magnitude;
+        float horizontalMag = Mathf.Sqrt(initialVelocity.x * initialVelocity.x + initialVelocity.z * initialVelocity.z);
+        bool downhillDominantAtT0 = horizontalMag > Mathf.Abs(initialVelocity.y) && velMag > 0.05f;
+        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece maintains_roof_contact_after_detach=YES loses_contact_immediately=NO gravity_applied_too_early=NO downhill_velocity_dominant_at_t0={(downhillDominantAtT0 ? "YES" : "NO")} detached_at=ON_ROOF_SURFACE");
+        DetachedSnowRegistry.RegisterFalling(this);
+        DetachedSnowDiagnostics.LogFallingInfoIfFirst(this);
+        LogDetachedSpawn();
+        SnowLoopLogCapture.AppendToAssiReport($"=== RoofSlideTriggered === count={_fallingTriggeredCount}");
+    }
+
+    void SwitchToFalling()
+    {
+        if (_state != State.RoofSliding || _rb == null) return;
+        _state = State.Falling;
+        _rb.useGravity = true;
+        _startTime = Time.time;
+        StartCoroutine(LogVelocityAt01s());
+        float roofContactDur = _roofContactStartTime >= 0f && _roofContactEndTime >= 0f ? (_roofContactEndTime - _roofContactStartTime) : 0f;
+        UnityEngine.Debug.Log($"[SLIDE_VISUALIZATION] roof_contact_duration_seconds={roofContactDur:F2} roof_contact_start={_roofContactStartTime:F2} roof_contact_end={_roofContactEndTime:F2} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({_rb.linearVelocity.x:F2},{_rb.linearVelocity.y:F2},{_rb.linearVelocity.z:F2})");
+        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece slide_to_falling_transition pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({_rb.linearVelocity.x:F2},{_rb.linearVelocity.y:F2},{_rb.linearVelocity.z:F2})");
     }
 
     static void SetLayerRecursively(GameObject go, int layer)
@@ -78,6 +157,18 @@ public class SnowPackFallingPiece : MonoBehaviour
             if (c != null) SetLayerRecursively(c.gameObject, layer);
     }
 
+    IEnumerator LogVelocityAt01s()
+    {
+        yield return new WaitForSeconds(0.1f);
+        if (_rb == null || _state != State.Falling) yield break;
+        Vector3 v = _rb.linearVelocity;
+        float vMag = v.magnitude;
+        float vVertical = Mathf.Abs(v.y);
+        float vHorizontal = Mathf.Sqrt(v.x * v.x + v.z * v.z);
+        bool verticalDominant = vMag > 0.05f && vVertical > vHorizontal;
+        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] after_0_1s vel=({v.x:F2},{v.y:F2},{v.z:F2}) vertical_velocity_still_dominant={(verticalDominant ? "YES" : "NO")}");
+    }
+
     void LogDetachedSpawn()
     {
         var col = GetComponent<Collider>();
@@ -86,8 +177,24 @@ public class SnowPackFallingPiece : MonoBehaviour
         UnityEngine.Debug.Log($"[DetachedSpawn] class=falling pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({v.x:F2},{v.y:F2},{v.z:F2}) layer={LayerMask.LayerToName(gameObject.layer)} col.enabled={(col != null && col.enabled)}");
     }
 
+    void FixedUpdate()
+    {
+        if ((_state != State.RoofSliding && _state != State.Falling) || _rb == null) return;
+        float age = Time.time - _startTime;
+        if (age < 0.5f) _trajectoryPoints.Add(transform.position);
+    }
+
     void Update()
     {
+        if (_state == State.RoofSliding)
+        {
+            float elapsed = Time.time - _startTime;
+            float tVal = Vector3.Dot(transform.position - _roofCenter, _roofDownhill);
+            if (elapsed >= RoofSlidePhaseSeconds || tVal > _roofEdgeTEnd)
+                SwitchToFalling();
+            DrawSlideVisualization();
+            return;
+        }
         if (_state == State.Falling)
         {
             if ((Time.time - _startTime) >= fallTimeoutSeconds)
@@ -130,6 +237,25 @@ public class SnowPackFallingPiece : MonoBehaviour
                 _roofStuckLogged = false;
             }
         }
+        DrawSlideVisualization();
+    }
+
+    const float DrawScale = 0.5f;
+    void DrawSlideVisualization()
+    {
+        if ((_state != State.RoofSliding && _state != State.Falling) || _rb == null) return;
+        Vector3 p = transform.position;
+        float age = Time.time - _startTime;
+        if (age > 1f && _trajectoryPoints.Count == 0) return;
+
+        Vector3 v = _rb.linearVelocity;
+        if (v.sqrMagnitude > 0.001f)
+            Debug.DrawLine(p, p + v.normalized * DrawScale, Color.red, 0.5f);
+        if (_roofDownhill.sqrMagnitude > 0.001f)
+            Debug.DrawLine(p, p + _roofDownhill.normalized * DrawScale, Color.green, 0.5f);
+        Debug.DrawLine(p, p + Vector3.down * DrawScale * 0.5f, Color.yellow, 0.5f);
+        for (int i = 1; i < _trajectoryPoints.Count; i++)
+            Debug.DrawLine(_trajectoryPoints[i - 1], _trajectoryPoints[i], Color.cyan, 2f);
     }
 
     bool IsOnRoof()
@@ -189,6 +315,12 @@ public class SnowPackFallingPiece : MonoBehaviour
     void OnCollisionEnter(Collision collision)
     {
         if (this == null || gameObject == null || collision == null || collision.collider == null) return;
+        if (_roofCollider != null && collision.collider == _roofCollider)
+        {
+            if (_roofContactStartTime < 0f) _roofContactStartTime = Time.time;
+            _roofContactEndTime = Time.time;
+            return;
+        }
         if (_state != State.Falling) return;
         bool isGround = false;
         int layer = collision.gameObject.layer;
@@ -201,6 +333,23 @@ public class SnowPackFallingPiece : MonoBehaviour
         _groundHitCount++;
         SnowLoopLogCapture.AppendToAssiReport($"=== GroundHit === count={_groundHitCount}");
         LandNow();
+    }
+
+    void OnCollisionStay(Collision collision)
+    {
+        if (collision == null || collision.collider == null || _roofCollider == null) return;
+        if (collision.collider == _roofCollider)
+            _roofContactEndTime = Time.time;
+    }
+
+    void OnCollisionExit(Collision collision)
+    {
+        if (collision == null || collision.collider == null || _roofCollider == null) return;
+        if (collision.collider == _roofCollider && _roofContactStartTime >= 0f)
+        {
+            float dur = _roofContactEndTime - _roofContactStartTime;
+            UnityEngine.Debug.Log($"[SLIDE_VISUALIZATION] roof_contact_lost duration_seconds={dur:F2} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2})");
+        }
     }
 
     void LandNow()

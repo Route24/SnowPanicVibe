@@ -1552,6 +1552,8 @@ public class SnowPackSpawner : MonoBehaviour
     }
 
     const float RoofEdgeMargin = 0.05f;
+    /// <summary>Detach BEFORE piece passes roof edge. Piece still on roof surface for slide phase.</summary>
+    const float DetachBeforeEdgeMargin = 0.25f;
 
     IEnumerator LocalAvalancheSlideRoutine(List<Transform> pieces, Vector3 slopeDir, float slideSpeed)
     {
@@ -1638,22 +1640,22 @@ public class SnowPackSpawner : MonoBehaviour
             float t01 = Mathf.Clamp01(elapsed / duration);
             slideRoot.transform.position = startPos + slideOffset * t01;
 
-            // Step1: Check each piece for roof edge (t > tEnd + margin)
+            // Step1: Detach BEFORE roof edge (t > tEnd - DetachBeforeEdgeMargin) so piece stays on roof for slide phase
             for (int i = slideRoot.transform.childCount - 1; i >= 0; i--)
             {
                 var t = slideRoot.transform.GetChild(i);
                 if (t == null) continue;
                 Vector3 piecePos = t.position;
                 float tVal = Vector3.Dot(piecePos - roofCenter, downhill);
-                if (tVal > tEnd + RoofEdgeMargin)
+                if (tVal > tEnd - DetachBeforeEdgeMargin)
                 {
-                    // Step2: Convert to falling - detach, add Rigidbody, gravity, keep velocity
+                    // Step2: ActivateRoofSlide - detach on roof, useGravity=false, slide then fall
                     t.SetParent(null, true);
                     var falling = t.gameObject.GetComponent<SnowPackFallingPiece>();
                     if (falling == null) falling = t.gameObject.AddComponent<SnowPackFallingPiece>();
                     falling.spawner = this;
                     falling.groundMask = groundMask;
-                    falling.ActivateFalling(slideVelocity);
+                    falling.ActivateRoofSlide(slideVelocity, roofCollider, roofCenter, downhill, tEnd);
                     var rb = t.GetComponent<Rigidbody>();
                     fallingCount++;
                     bool rbPresent = rb != null;
@@ -1754,14 +1756,14 @@ public class SnowPackSpawner : MonoBehaviour
                 if (t == null) continue;
                 Vector3 piecePos = t.position;
                 float tVal = Vector3.Dot(piecePos - roofCenter, downhill);
-                if (tVal > tEnd + RoofEdgeMargin)
+                if (tVal > tEnd - DetachBeforeEdgeMargin)
                 {
                     t.SetParent(null, true);
                     var falling = t.gameObject.GetComponent<SnowPackFallingPiece>();
                     if (falling == null) falling = t.gameObject.AddComponent<SnowPackFallingPiece>();
                     falling.spawner = this;
                     falling.groundMask = groundMask;
-                    falling.ActivateFalling(slideVelocity);
+                    falling.ActivateRoofSlide(slideVelocity, roofCollider, roofCenter, downhill, tEnd);
                 }
             }
             yield return null;
@@ -2131,7 +2133,6 @@ public class SnowPackSpawner : MonoBehaviour
         _pieceMeshNonSym = BuildNonSymMesh();
     }
 
-    static bool _rootCauseMeshLogged;
     Mesh GetCurrentPieceMesh()
     {
         if (DebugSnowVisibility.DebugNonSymMesh)

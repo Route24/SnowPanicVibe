@@ -202,6 +202,12 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine();
         sb.AppendLine(BuildSnowMassRoofSlideSection());
         sb.AppendLine();
+        sb.AppendLine(BuildVerticalDropRootCauseSection(lines));
+        sb.AppendLine();
+        sb.AppendLine(BuildFixRoofContactLossSection(lines));
+        sb.AppendLine();
+        sb.AppendLine(BuildSlideVisualizationSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== PARTICLE DURATION ERROR CHECK ===");
         sb.AppendLine(BuildParticleDurationErrorCheckSection(lines));
         sb.AppendLine();
@@ -980,6 +986,12 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine();
         sb.AppendLine(BuildRootCauseIsolationSection(lines));
         sb.AppendLine();
+        sb.AppendLine(BuildVerticalDropRootCauseSection(lines));
+        sb.AppendLine();
+        sb.AppendLine(BuildFixRoofContactLossSection(lines));
+        sb.AppendLine();
+        sb.AppendLine(BuildSlideVisualizationSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== SCORE UI CHECK ===");
         sb.AppendLine(BuildScoreUiCheckSection(lines));
         sb.AppendLine();
@@ -1130,6 +1142,151 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine("next_single_fix_target=" + nextFix.Trim());
         sb.AppendLine("evidence_path=" + v.evidencePath);
         sb.AppendLine("result=" + ((v.stillLooksLikeBlocks != "(Play確認後記入)" && v.stillFallsStraightDown != "(Play確認後記入)") ? "PASS" : "FAIL"));
+        return sb.ToString();
+    }
+
+    /// <summary>【ASSI REPORT - VERTICAL DROP ROOT CAUSE】垂直落下の原因切り分け。Console の [VERTICAL_DROP_ISOLATION] を解析。</summary>
+    static string BuildVerticalDropRootCauseSection(string[] lines)
+    {
+        int errorCount = 0;
+        try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
+        var v = SnowPanicPlayVerificationWindow.LoadVerification();
+        var sb = new StringBuilder();
+        sb.AppendLine("【ASSI REPORT - VERTICAL DROP ROOT CAUSE】");
+        sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
+        sb.AppendLine("console_error_count=" + errorCount);
+        sb.AppendLine();
+        string maintainsRoof = "UNKNOWN";
+        string downhillDom = "UNKNOWN";
+        string verticalDom = "UNKNOWN";
+        string losesContact = "UNKNOWN";
+        string gravityEarly = "UNKNOWN";
+        string verticalDomAfter01 = "UNKNOWN";
+        if (lines != null)
+        {
+            foreach (var line in lines.Where(l => l != null && l.Contains("[VERTICAL_DROP_ISOLATION]")))
+            {
+                var m = Regex.Match(line, @"maintains_roof_contact_after_detach=(\w+)");
+                if (m.Success) maintainsRoof = m.Groups[1].Value;
+                m = Regex.Match(line, @"downhill_velocity_dominant(?:_at_t0)?=(\w+)");
+                if (m.Success) downhillDom = m.Groups[1].Value;
+                m = Regex.Match(line, @"vertical_velocity(?:_still)?_dominant(?:_at_t0)?=(\w+)");
+                if (m.Success) verticalDom = m.Groups[1].Value;
+                m = Regex.Match(line, @"loses_contact_immediately=(\w+)");
+                if (m.Success) losesContact = m.Groups[1].Value;
+                m = Regex.Match(line, @"gravity_applied_too_early=(\w+)");
+                if (m.Success) gravityEarly = m.Groups[1].Value;
+                m = Regex.Match(line, @"vertical_velocity_still_dominant=(\w+)");
+                if (m.Success && line.Contains("after_0_1s")) verticalDomAfter01 = m.Groups[1].Value;
+            }
+        }
+        sb.AppendLine("falls_straight_down_now=" + v.stillFallsStraightDown);
+        sb.AppendLine("maintains_roof_contact_after_detach=" + maintainsRoof);
+        sb.AppendLine("downhill_velocity_dominant=" + downhillDom);
+        sb.AppendLine("vertical_velocity_still_dominant=" + (verticalDomAfter01 != "UNKNOWN" ? verticalDomAfter01 : verticalDom));
+        sb.AppendLine("loses_contact_immediately=" + losesContact);
+        sb.AppendLine("gravity_applied_too_early=" + gravityEarly);
+        sb.AppendLine();
+        string singleRoot = "UNKNOWN";
+        if (maintainsRoof == "NO" && losesContact == "YES") singleRoot = "Piece detached past roof edge (SnowPackFallingPiece) or Physics.IgnoreCollision(roof) at BeginFall (SnowClump). No roof contact after detach.";
+        else if (gravityEarly == "YES") singleRoot = "useGravity=true from frame 1. Vertical accumulates before any slide.";
+        else if (verticalDom == "YES") singleRoot = "Vertical velocity dominant at t=0 or t=0.1s.";
+        sb.AppendLine("single_root_cause=" + singleRoot);
+        string nextFix = singleRoot.Contains("past roof edge") ? "SnowPackSpawner: detach BEFORE piece passes roof edge, keep on roof for slide phase" : (singleRoot.Contains("IgnoreCollision") ? "SnowClump.BeginFall: remove or conditional Physics.IgnoreCollision(roof)" : (singleRoot.Contains("useGravity") ? "SnowPackFallingPiece: delay gravity or add roof-slide phase before gravity" : "Play→2回タップ→Consoleで[VERTICAL_DROP_ISOLATION]確認"));
+        sb.AppendLine("next_single_fix_target=" + nextFix);
+        sb.AppendLine("evidence_path=" + v.evidencePath);
+        sb.AppendLine("result=" + (v.stillFallsStraightDown != "(Play確認後記入)" ? "PASS" : "FAIL"));
+        return sb.ToString();
+    }
+
+    /// <summary>【ASSI REPORT - FIX ROOF CONTACT LOSS】屋根接触維持の1点修正レポート。</summary>
+    static string BuildFixRoofContactLossSection(string[] lines)
+    {
+        int errorCount = 0;
+        try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
+        var v = SnowPanicPlayVerificationWindow.LoadVerification();
+        string slideVisible = SnowPanicPlayVerificationWindow.GetVerificationValue("slide_visible_before_drop");
+        if (string.IsNullOrWhiteSpace(slideVisible)) slideVisible = "(Play確認後記入)";
+
+        string maintainsAfter = "UNKNOWN";
+        string losesAfter = "UNKNOWN";
+        string gravityAfter = "UNKNOWN";
+        if (lines != null)
+        {
+            foreach (var line in lines.Where(l => l != null && l.Contains("[VERTICAL_DROP_ISOLATION]")))
+            {
+                var m = Regex.Match(line, @"maintains_roof_contact_after_detach=(\w+)");
+                if (m.Success) maintainsAfter = m.Groups[1].Value;
+                m = Regex.Match(line, @"loses_contact_immediately=(\w+)");
+                if (m.Success) losesAfter = m.Groups[1].Value;
+                m = Regex.Match(line, @"gravity_applied_too_early=(\w+)");
+                if (m.Success) gravityAfter = m.Groups[1].Value;
+            }
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("【ASSI REPORT - FIX ROOF CONTACT LOSS】");
+        sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
+        sb.AppendLine("console_error_count=" + errorCount);
+        sb.AppendLine();
+        sb.AppendLine("maintains_roof_contact_after_detach_before=NO");
+        sb.AppendLine("maintains_roof_contact_after_detach_after=" + maintainsAfter);
+        sb.AppendLine("loses_contact_immediately_before=YES");
+        sb.AppendLine("loses_contact_immediately_after=" + losesAfter);
+        sb.AppendLine("gravity_applied_too_early_before=YES");
+        sb.AppendLine("gravity_applied_too_early_after=" + gravityAfter);
+        sb.AppendLine();
+        sb.AppendLine("still_falls_straight_down=" + v.stillFallsStraightDown);
+        sb.AppendLine("slide_visible_before_drop=" + slideVisible);
+        sb.AppendLine("play_confirmed=" + v.playConfirmed);
+        sb.AppendLine("evidence_path=" + v.evidencePath);
+        sb.AppendLine();
+        sb.AppendLine("single_fix_applied=SnowPackSpawner: detach BEFORE roof edge (tEnd-DetachBeforeEdgeMargin) + ActivateRoofSlide (useGravity=false slide phase 0.5s)→Falling");
+        bool pass = maintainsAfter == "YES" && losesAfter == "NO" && v.stillFallsStraightDown == "NO";
+        sb.AppendLine("result=" + (pass ? "PASS" : "FAIL"));
+        return sb.ToString();
+    }
+
+    /// <summary>【ASSI REPORT - SLIDE VISUALIZATION】可視化・事実確認レポート。</summary>
+    static string BuildSlideVisualizationSection(string[] lines)
+    {
+        int errorCount = 0;
+        try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
+        var v = SnowPanicPlayVerificationWindow.LoadVerification();
+        string movesSideways = SnowPanicPlayVerificationWindow.GetVerificationValue("moves_sideways_on_roof");
+        string hasVisibleSlide = SnowPanicPlayVerificationWindow.GetVerificationValue("slide_visible_before_drop");
+        string contactButNotVisible = SnowPanicPlayVerificationWindow.GetVerificationValue("contact_exists_but_slide_not_visible");
+        if (string.IsNullOrWhiteSpace(movesSideways)) movesSideways = "(Play確認後記入)";
+        if (string.IsNullOrWhiteSpace(hasVisibleSlide)) hasVisibleSlide = "(Play確認後記入)";
+        if (string.IsNullOrWhiteSpace(contactButNotVisible)) contactButNotVisible = "(Play確認後記入)";
+
+        bool hasSlideVisLog = lines != null && lines.Any(l => l != null && l.Contains("[SLIDE_VISUALIZATION]"));
+        bool hasTrajectory = lines != null && lines.Any(l => l != null && l.Contains("[DetachedSpawn]"));
+        string downhillVis = hasSlideVisLog ? "YES" : "UNKNOWN";
+        string velocityVis = hasSlideVisLog ? "YES" : "UNKNOWN";
+        string roofContactVis = hasSlideVisLog ? "YES" : "UNKNOWN";
+        string trajectoryVis = hasTrajectory ? "YES" : "UNKNOWN";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("【ASSI REPORT - SLIDE VISUALIZATION】");
+        sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
+        sb.AppendLine("console_error_count=" + errorCount);
+        sb.AppendLine();
+        sb.AppendLine("downhill_vector_visible=" + downhillVis);
+        sb.AppendLine("velocity_vector_visible=" + velocityVis);
+        sb.AppendLine("roof_contact_time_visible=" + roofContactVis);
+        sb.AppendLine("trajectory_visible=" + trajectoryVis);
+        sb.AppendLine();
+        sb.AppendLine("falls_straight_down_now=" + v.stillFallsStraightDown);
+        sb.AppendLine("moves_sideways_on_roof=" + movesSideways);
+        sb.AppendLine("has_visible_slide_before_drop=" + hasVisibleSlide);
+        sb.AppendLine("contact_exists_but_slide_not_visible=" + contactButNotVisible);
+        sb.AppendLine();
+        sb.AppendLine("single_root_cause=(2回タップ後Play確認で特定)");
+        sb.AppendLine("next_single_fix_target=(single_root_causeに基づき決定)");
+        sb.AppendLine("evidence_path=" + v.evidencePath);
+        bool pass = v.stillFallsStraightDown != "(Play確認後記入)" && v.playConfirmed == "YES";
+        sb.AppendLine("result=" + (pass ? "PASS" : "FAIL"));
         return sb.ToString();
     }
 

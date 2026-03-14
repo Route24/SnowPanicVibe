@@ -13,6 +13,11 @@ public class SnowPanicPlayVerificationWindow : EditorWindow
     string _stillFallsStraightDown = "";
     string _playConfirmed = "";
     string _evidencePath = "";
+    string _slideVisibleBeforeDrop = "";
+    string _movesSidewaysOnRoof = "";
+    string _contactExistsButSlideNotVisible = "";
+    string _movesSidewaysOnRoof = "";
+    string _contactExistsButSlideNotVisible = "";
 
     [MenuItem("Snow Panic/Play Verification (Snow Mass + Roof Slide)", false, 150)]
     public static void Open()
@@ -47,6 +52,9 @@ public class SnowPanicPlayVerificationWindow : EditorWindow
             if (d.TryGetValue("still_falls_straight_down", out var v2)) _stillFallsStraightDown = v2;
             if (d.TryGetValue("play_confirmed", out var v3)) _playConfirmed = v3;
             if (d.TryGetValue("evidence_path", out var v4)) _evidencePath = v4;
+            if (d.TryGetValue("slide_visible_before_drop", out var v5)) _slideVisibleBeforeDrop = v5;
+            if (d.TryGetValue("moves_sideways_on_roof", out var v6)) _movesSidewaysOnRoof = v6;
+            if (d.TryGetValue("contact_exists_but_slide_not_visible", out var v7)) _contactExistsButSlideNotVisible = v7;
         }
         catch { }
     }
@@ -64,6 +72,9 @@ public class SnowPanicPlayVerificationWindow : EditorWindow
             sb.AppendLine("still_falls_straight_down=" + (_stillFallsStraightDown ?? "").Trim());
             sb.AppendLine("play_confirmed=" + (_playConfirmed ?? "").Trim());
             sb.AppendLine("evidence_path=" + (_evidencePath ?? "").Trim());
+            sb.AppendLine("slide_visible_before_drop=" + (_slideVisibleBeforeDrop ?? "").Trim());
+            sb.AppendLine("moves_sideways_on_roof=" + (_movesSidewaysOnRoof ?? "").Trim());
+            sb.AppendLine("contact_exists_but_slide_not_visible=" + (_contactExistsButSlideNotVisible ?? "").Trim());
             File.WriteAllText(path, sb.ToString());
         }
         catch (Exception ex)
@@ -95,6 +106,16 @@ public class SnowPanicPlayVerificationWindow : EditorWindow
 
         _evidencePath = EditorGUILayout.TextField("evidence_path", _evidencePath);
         EditorGUILayout.LabelField("", "gif または debug スクショのフルパス");
+        EditorGUILayout.Space(2);
+
+        _slideVisibleBeforeDrop = EditorGUILayout.TextField("slide_visible_before_drop", _slideVisibleBeforeDrop);
+        EditorGUILayout.LabelField("", "YES/NO（downhill方向に滑ってから落ちたか）");
+        EditorGUILayout.Space(2);
+        _movesSidewaysOnRoof = EditorGUILayout.TextField("moves_sideways_on_roof", _movesSidewaysOnRoof);
+        EditorGUILayout.LabelField("", "YES/NO（pieceは屋根面上を横移動しているか）");
+        EditorGUILayout.Space(2);
+        _contactExistsButSlideNotVisible = EditorGUILayout.TextField("contact_exists_but_slide_not_visible", _contactExistsButSlideNotVisible);
+        EditorGUILayout.LabelField("", "YES/NO（接触はあるが見た目は落下か）");
         EditorGUILayout.Space(8);
 
         EditorGUILayout.BeginHorizontal();
@@ -143,6 +164,24 @@ public class SnowPanicPlayVerificationWindow : EditorWindow
         {
             return (Placeholder, Placeholder, Placeholder, Placeholder);
         }
+    }
+
+    /// <summary>レポート用。指定キーの値を返す。無い場合は空文字。</summary>
+    public static string GetVerificationValue(string key)
+    {
+        try
+        {
+            var path = GetVerificationPath();
+            if (!File.Exists(path)) return "";
+            foreach (var line in File.ReadAllLines(path))
+            {
+                var eq = line.IndexOf('=');
+                if (eq > 0 && string.Equals(line.Substring(0, eq).Trim(), key, StringComparison.OrdinalIgnoreCase))
+                    return line.Substring(eq + 1).Trim();
+            }
+        }
+        catch { }
+        return "";
     }
 }
 #endif

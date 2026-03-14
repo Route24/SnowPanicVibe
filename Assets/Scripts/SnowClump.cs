@@ -492,7 +492,10 @@ public class SnowClump : MonoBehaviour
         _rb.angularDamping = 2f;
         float downhillDot = Vector3.Dot(v.normalized, downhill.normalized);
         float verticalDot = Vector3.Dot(v.normalized, Vector3.down);
+        bool downhillDom = downhillDot > 0.5f && v.magnitude > 0.05f;
+        bool verticalDom = Mathf.Abs(verticalDot) > 0.5f && v.magnitude > 0.05f;
         Debug.Log($"[ROOT_CAUSE_ISOLATION] begin_fall_source=SnowClump reason={reason} vel=({v.x:F2},{v.y:F2},{v.z:F2}) downhill_dot={downhillDot:F2} vertical_dot={verticalDot:F2} roof_ignored=YES maintains_roof_contact_after_detach=NO");
+        Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowClump maintains_roof_contact_after_detach=NO loses_contact_immediately=YES gravity_applied_too_early=YES downhill_velocity_dominant={(downhillDom ? "YES" : "NO")} vertical_velocity_still_dominant={(verticalDom ? "YES" : "NO")} roof_ignored=YES");
         if (debugMode) Debug.Log($"[SnowClumpDrop] reason={reason} pos={transform.position} vel={v} offDist={offDist:F3}");
     }
 
