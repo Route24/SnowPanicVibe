@@ -1,0 +1,48 @@
+---
+description: 動画/gif生成は固定済み。無関係な修正で壊さない。VIDEO REGRESSION CHECK 必須。
+globs: Assets/Editor/SnowPanicVideoPipelineSelfTest.cs, Assets/Scripts/Editor/SnowLoopNoaReportAutoCopy.cs
+alwaysApply: true
+---
+
+# 動画/gif生成は固定済み（VIDEO REGRESSION）
+
+動画(mp4)とgif生成は**復旧済み**。これを「固定済みの既存成功機能」として扱う。
+
+## 最重要ルール
+
+- **無関係な修正では VideoPipeline 系コードを触らない**
+- 動画/gif生成に関係する設定を勝手に変更しない
+- **Auto-record on Play を OFF に戻さない**
+- gif/mp4生成が失敗したら、その時点で **FAIL** と明記する
+- 他の修正を続ける前に、まず動画/gif生成の回帰を直す
+
+## 固定対象
+
+- snow_test_latest.mp4 が生成されること
+- snow_test_latest.gif が生成されること
+- current session で mp4/gif が更新されること
+- 古い成功ログを混ぜないこと
+
+## 禁止事項
+
+- 動画/gif生成系を「ついでに」触ること
+- 古い成功ログを混ぜること
+- 実ファイル未確認で YES と書くこと
+- mp4/gif未生成でも他作業を優先して進めること
+
+## VIDEO REGRESSION CHECK（全レポート末尾必須）
+
+全レポート末尾に以下が出力される:
+
+```
+【VIDEO REGRESSION CHECK】
+current_session_id=
+mp4_updated_this_run=YES/NO
+mp4_modified_time=
+gif_updated_this_run=YES/NO
+gif_modified_time=
+video_pipeline_regression=PASS/FAIL
+```
+
+- **FAIL なら、その作業全体を FAIL 扱い**
+- 動画/gif生成が壊れた状態で先に進まない

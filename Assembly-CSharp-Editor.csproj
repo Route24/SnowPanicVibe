@@ -62,6 +62,7 @@
     <Compile Include="Assets/Editor/SnowTestPrefabBuilder.cs" />
     <Compile Include="Assets/Editor/TMP_ImporterFix.cs" />
     <Compile Include="Assets/Editor/SnowVerifyMinimalSceneCreator.cs" />
+    <Compile Include="Assets/Scripts/Editor/SnowPanicPlayVerificationWindow.cs" />
     <Compile Include="Assets/Editor/SnowVerifyFixedSceneCreator.cs" />
     <Compile Include="Assets/Scripts/Editor/CorniceSceneSetup.cs" />
     <Compile Include="Assets/Editor/SnowPanicAutoRecord.cs" />

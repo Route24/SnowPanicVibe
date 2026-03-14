@@ -65,16 +65,17 @@ public class SnowPackSpawner : MonoBehaviour
     [Range(0.01f, 1f)] public float snowDepthScale = 0.2f;
     [Tooltip("Piece見た目厚みスケール。1=等倍, 0.25≈1.25cm相当(5cm→2.5cm→1.25cm)")]
     [Range(0.01f, 1f)] public float snowPieceThicknessScale = 0.25f;
-    [Tooltip("描画メッシュ厚みスケール。1=等倍, 0.5=半分(見た目Y)")]
-    [Range(0.01f, 1f)] public float snowRenderThicknessScale = 0.5f;
+    [Tooltip("描画メッシュ厚みスケール。1=等倍, 0.5=半分(見た目Y)。ASSI雪塊: 0.6=白い平たい板感を減らし厚みを出す")]
+    [Range(0.01f, 1f)]
+    public float snowRenderThicknessScale = 0.6f;
     [Range(0.05f, 0.5f), Tooltip("巨大崩壊型: 0.17 = 重みのある塊感。")]
     public float pieceSize = 0.17f;
     [Tooltip("見た目だけのスケール（ロジックはpieceSizeのまま）。1=等倍, 0.1=1/10")]
     [Range(0.01f, 1f)] public float visualScale = 0.1f;
     [Range(0.5f, 2f)] public float pieceHeightScale = 0.85f;
     [Range(0f, 0.08f)] public float jitter = 0.045f;
-    [Range(0f, 0.2f), Tooltip("見た目改善: 幅/奥行きのスケールばらつき。0=均一、0.12=±12%")]
-    public float scaleJitterXZ = 0.12f;
+    [Range(0f, 0.25f), Tooltip("ASSI雪塊感: 幅/奥行きのスケールばらつき。0.18=格子感・板感をさらに減らす")]
+    public float scaleJitterXZ = 0.18f;
     [Range(0f, 0.06f)] public float normalInset = 0.01f;
     public int maxPieces = 1800;
     public bool rebuildOnPlay = true;
@@ -124,6 +125,7 @@ public class SnowPackSpawner : MonoBehaviour
     bool _spawnLogOnce;
     bool _scaleLogOnce;
     static bool _poolReturnThrowOnce;
+    static bool _rootCauseMeshLogged;
     float _nextToggleLogTime;
     float _nextAuditLogTime;
     float _nextSyncCheckTime;
@@ -2129,6 +2131,7 @@ public class SnowPackSpawner : MonoBehaviour
         _pieceMeshNonSym = BuildNonSymMesh();
     }
 
+    static bool _rootCauseMeshLogged;
     Mesh GetCurrentPieceMesh()
     {
         if (DebugSnowVisibility.DebugNonSymMesh)
@@ -2137,9 +2140,16 @@ public class SnowPackSpawner : MonoBehaviour
             return _pieceMeshNonSym;
         }
         var mesh = SnowVisual.GetPieceMesh();
-        if (mesh != null) return mesh;
-        EnsurePieceMesh();
-        return _pieceMesh;
+        Mesh result;
+        if (mesh != null) { result = mesh; } else { EnsurePieceMesh(); result = _pieceMesh; }
+        if (!_rootCauseMeshLogged)
+        {
+            _rootCauseMeshLogged = true;
+            string meshName = result != null ? (result.name ?? "null") : "null";
+            bool nonCube = result != null && mesh != null && mesh.name != null && mesh.name.Contains("Rounded");
+            UnityEngine.Debug.Log($"[ROOT_CAUSE_ISOLATION] source=packed mesh_name={meshName} mesh_is_non_cube={(nonCube ? "YES" : "NO")} renderer_path=SnowPackPiece");
+        }
+        return result;
     }
 
     /// <summary>DebugNonSymMeshトグル変更時に全pieceのメッシュを差し替え。</summary>

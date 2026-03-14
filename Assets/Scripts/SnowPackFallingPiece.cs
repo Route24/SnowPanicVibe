@@ -60,6 +60,10 @@ public class SnowPackFallingPiece : MonoBehaviour
         SetLayerRecursively(gameObject, 0);
 
         _fallingTriggeredCount++;
+        float velMag = initialVelocity.magnitude;
+        float verticalMag = Mathf.Abs(initialVelocity.y);
+        float horizontalMag = Mathf.Sqrt(initialVelocity.x * initialVelocity.x + initialVelocity.z * initialVelocity.z);
+        UnityEngine.Debug.Log($"[ROOT_CAUSE_ISOLATION] begin_fall_source=SnowPackFallingPiece vel=({initialVelocity.x:F2},{initialVelocity.y:F2},{initialVelocity.z:F2}) vel_mag={velMag:F2} vertical_mag={verticalMag:F2} horizontal_mag={horizontalMag:F2} roof_ignored=N/A use_gravity=YES");
         DetachedSnowRegistry.RegisterFalling(this);
         DetachedSnowDiagnostics.LogFallingInfoIfFirst(this);
         LogDetachedSpawn();

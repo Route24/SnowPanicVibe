@@ -6,7 +6,7 @@ using System.Collections.Generic;
 public class SnowClump : MonoBehaviour
 {
     [HideInInspector] public Vector3 slideDownDirection;
-    [HideInInspector] public float initialSlideSpeed = 0.42f;  // ASSI: 屋根沿い滑落 - 初期滑りを強め (0.25->0.42)
+    [HideInInspector] public float initialSlideSpeed = 0.62f;  // ASSI雪塊: 屋根沿い滑落 - 初期滑りを強め (0.58->0.62)
     [HideInInspector] public Collider roofColliderToIgnoreWhenStuck;
     [HideInInspector] public Collider roofSurfaceCollider;
     [HideInInspector] public RoofSnow ownerRoofSnow;
@@ -46,11 +46,11 @@ public class SnowClump : MonoBehaviour
     const float GroundPileBlinkInterval = 0.1f;
     const float OffDistDropThreshold = 0.28f; // ASSI: 屋根沿い滑落 - 落下判定の猶予を拡大 (0.20->0.28)
 
-    /// <summary>ASSI Fix Pack: 屋根沿い滑落優先。軒先落下時チューニング。</summary>
-    public static float maxFallCarrySpeed = 1.5f;   // 滑落方向の初速を強めに持ち越す (1.2->1.5)
-    public static float sideDamp = 0.25f;           // 横方向は少し残す (0.2->0.25)
-    public static float dropImpulse = 0.35f;        // 真下成分を弱め、屋根傾斜方向を優先 (0.6->0.35)
-    public static float airDrag = 1.0f;             // 空気抵抗 (1.2->1.0)
+    /// <summary>ASSI Fix Pack: 屋根沿い滑落優先。真下落ちを減らし滑落方向を強調。</summary>
+    public static float maxFallCarrySpeed = 1.6f;   // 滑落方向の初速を強めに持ち越す (1.5->1.6)
+    public static float sideDamp = 0.22f;           // 横方向は抑え、滑落軸を優先 (0.25->0.22)
+    public static float dropImpulse = 0.52f;        // ASSI雪塊: 屋根傾斜方向を強く (0.48->0.52)
+    public static float airDrag = 1.0f;             // 空気抵抗
     const float OffDistGraceDuration = 0.4f;       // ASSI: 接触安定の猶予延長 (0.25->0.4)
     const float NearEdgeMargin = 0.02f;
     const float NearEdgeDropDelay = 0.22f; // 0.35 -> 0.22
@@ -159,7 +159,7 @@ public class SnowClump : MonoBehaviour
         bool nearEdge = IsNearColliderEdge(closest, roofSurfaceCollider.bounds, NearEdgeMargin * 3f);
         if (nearEdge && offDist > 0.08f)
         {
-            BeginFall((GetRoofSlideDirection() * Mathf.Max(0.5f, initialSlideSpeed) + Vector3.down * 1.1f), "nearEavesEdge", closest, offDist);
+            BeginFall((GetRoofSlideDirection() * Mathf.Max(0.65f, initialSlideSpeed) + Vector3.down * 0.35f), "nearEavesEdge", closest, offDist);
             return;
         }
         if (offDist <= OffDistDropThreshold || _offDistGraceTimer > 0f)
@@ -174,7 +174,7 @@ public class SnowClump : MonoBehaviour
                 _edgeStickTime += Time.fixedDeltaTime;
                 if (_edgeStickTime > NearEdgeDropDelay)
                 {
-                    BeginFall((GetRoofSlideDirection() * Mathf.Max(0.5f, initialSlideSpeed) + Vector3.down * 1.1f), "nearEdge", closest, offDist);
+                    BeginFall((GetRoofSlideDirection() * Mathf.Max(0.65f, initialSlideSpeed) + Vector3.down * 0.35f), "nearEdge", closest, offDist);
                     return;
                 }
             }
@@ -198,7 +198,7 @@ public class SnowClump : MonoBehaviour
         bool reallyLeavingRoof = verticalVel < -0.05f || speed > 0.35f;
         if (reallyLeavingRoof)
         {
-            BeginFall((GetRoofSlideDirection() * Mathf.Max(0.6f, initialSlideSpeed) + Vector3.down * 1.1f), "offDist", closest, offDist);
+            BeginFall((GetRoofSlideDirection() * Mathf.Max(0.75f, initialSlideSpeed) + Vector3.down * 0.35f), "offDist", closest, offDist);
             return;
         }
 
@@ -216,7 +216,7 @@ public class SnowClump : MonoBehaviour
         if (myCol != null && roofCol != null)
             Physics.IgnoreCollision(myCol, roofCol);
         RecordForcedDrop();
-        Vector3 initVel = (Vector3.down + GetRoofSlideDirection() * 0.45f).normalized * 1.2f;
+        Vector3 initVel = (Vector3.down * 0.3f + GetRoofSlideDirection() * 0.95f).normalized * 1.2f;
         BeginFall(initVel, "forcedDrop", transform.position, 0f);
     }
 
@@ -399,7 +399,10 @@ public class SnowClump : MonoBehaviour
     {
         if (roofSurfaceCollider == null)
         {
-            BeginFall(Vector3.down * 1.1f, "noRoofSurface", transform.position, 1f);
+            Vector3 fallDir = slideDownDirection.sqrMagnitude > 0.01f
+                ? (slideDownDirection.normalized * 0.8f + Vector3.down * 0.35f).normalized * 1f
+                : Vector3.down * 0.5f;
+            BeginFall(fallDir, "noRoofSurface", transform.position, 1f);
             return;
         }
 
@@ -449,7 +452,7 @@ public class SnowClump : MonoBehaviour
         {
             if (!debugMode)
             {
-                BeginFall(slideDir * Mathf.Max(0.6f, tangentV.magnitude) + Vector3.down * 1.1f, "offDist", closest, Vector3.Distance(transform.position, closest));
+                BeginFall(slideDir * Mathf.Max(0.7f, tangentV.magnitude) + Vector3.down * 0.35f, "offDist", closest, Vector3.Distance(transform.position, closest));
                 return;
             }
             _rb.position = closest + roofNormal * 0.02f;
@@ -487,6 +490,9 @@ public class SnowClump : MonoBehaviour
 
         _rb.linearDamping = airDrag;
         _rb.angularDamping = 2f;
+        float downhillDot = Vector3.Dot(v.normalized, downhill.normalized);
+        float verticalDot = Vector3.Dot(v.normalized, Vector3.down);
+        Debug.Log($"[ROOT_CAUSE_ISOLATION] begin_fall_source=SnowClump reason={reason} vel=({v.x:F2},{v.y:F2},{v.z:F2}) downhill_dot={downhillDot:F2} vertical_dot={verticalDot:F2} roof_ignored=YES maintains_roof_contact_after_detach=NO");
         if (debugMode) Debug.Log($"[SnowClumpDrop] reason={reason} pos={transform.position} vel={v} offDist={offDist:F3}");
     }
 

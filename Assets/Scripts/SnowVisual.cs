@@ -17,10 +17,10 @@ public class SnowVisual : MonoBehaviour
     [Header("Snow Visual Settings")]
     [Tooltip("false で従来の立方体に戻る")]
     public bool visualModuleEnabled = true;
-    [Tooltip("丸みの強さ。0=立方体、0.5=丸い。見た目改善: 0.35=雪塊感UP（上面連続+側面）")]
-    [Range(0f, 0.5f)] public float roundness = 0.35f;
-    [Tooltip("頂点ノイズの強さ。見た目改善: 表面の不揃いでキューブ感を弱める")]
-    [Range(0f, 0.08f)] public float vertexNoiseStrength = 0.04f;
+    [Tooltip("丸みの強さ。0=立方体、0.5=丸い。ASSI雪塊感: 0.48=白い板感をさらに減らす")]
+    [Range(0f, 0.5f)] public float roundness = 0.48f;
+    [Tooltip("頂点ノイズの強さ。表面の不揃いでブロック断面感を減らす")]
+    [Range(0f, 0.1f)] public float vertexNoiseStrength = 0.06f;
     [Tooltip("シード（同じ値で再現可能）")]
     public int noiseSeed = 42;
 

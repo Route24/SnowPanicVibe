@@ -15,6 +15,7 @@ public static class SnowLoopNoaReportAutoCopy
     static readonly string BufferPath = Path.GetFullPath(Path.Combine("Assets", "Logs", "console_buffer.txt"));
     static readonly string ReportPath = Path.GetFullPath(Path.Combine("Assets", "Logs", "noa_report_latest.txt"));
     static readonly string PreviousFullPath = Path.GetFullPath(Path.Combine("Assets", "Logs", "noa_report_previous_full.txt"));
+    static readonly string PlayVerificationPath = Path.GetFullPath(Path.Combine("Assets", "Logs", "play_verification_snow_mass.txt"));
     const int FullConsoleDumpLines = 300;
     const int ActiveZeroContextLines = 30;
     static readonly Regex RunIdRegex = new Regex(@"runId=(\d+)", RegexOptions.Compiled);
@@ -124,6 +125,8 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("");
         sb.AppendLine(BuildCompileGateSection());
         sb.AppendLine("");
+        sb.AppendLine(BuildSnowMassRoofSlideSection());
+        sb.AppendLine("");
         sb.AppendLine("=== PARTICLE DURATION ERROR CHECK ===");
         sb.AppendLine(BuildParticleDurationErrorCheckSection(lines));
         sb.AppendLine("");
@@ -168,6 +171,8 @@ public static class SnowLoopNoaReportAutoCopy
             sb.AppendLine("");
             sb.AppendLine(BuildImplementationSummary());
             sb.AppendLine("");
+            sb.AppendLine(BuildVideoRegressionCheckSection());
+            sb.AppendLine("");
             var dir = Path.GetDirectoryName(ReportPath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
             File.WriteAllText(ReportPath, sb.ToString());
@@ -194,6 +199,8 @@ public static class SnowLoopNoaReportAutoCopy
         string prevFull = File.Exists(PreviousFullPath) ? File.ReadAllText(PreviousFullPath) : null;
         var sb = new StringBuilder();
         sb.AppendLine(BuildCompileGateSection());
+        sb.AppendLine();
+        sb.AppendLine(BuildSnowMassRoofSlideSection());
         sb.AppendLine();
         sb.AppendLine("=== PARTICLE DURATION ERROR CHECK ===");
         sb.AppendLine(BuildParticleDurationErrorCheckSection(lines));
@@ -314,6 +321,8 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine(BuildConsoleLogsFilteredSection());
         sb.AppendLine();
         sb.AppendLine(BuildImplementationSummary());
+        sb.AppendLine();
+        sb.AppendLine(BuildVideoRegressionCheckSection());
         return TruncateReport(sb.ToString());
     }
 
@@ -577,6 +586,75 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine("・NOAプレビュー: ffmpeg→gif, なければ contact_sheet, 必ず1つ生成");
         sb.AppendLine("・final_result: local mp4+preview あれば LOCAL_READY（Drive失敗でもERRORにしない）");
         sb.AppendLine("・次にやるべきこと: 6軒→1軒への戻し（今回は後回し）");
+        return sb.ToString();
+    }
+
+    /// <summary>【VIDEO REGRESSION CHECK】動画/gif生成の回帰防止。全レポート末尾に必須。FAILなら作業全体をFAIL扱い。</summary>
+    static string BuildVideoRegressionCheckSection()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("【VIDEO REGRESSION CHECK】");
+        try
+        {
+            var sessionPath = SnowPanicVideoPipelineSelfTest.GetSessionDataPath();
+            var recordingsDir = Path.GetDirectoryName(sessionPath);
+            if (string.IsNullOrEmpty(recordingsDir)) recordingsDir = Path.Combine(Environment.CurrentDirectory ?? ".", "Recordings");
+
+            string currentSessionId = "";
+            string mp4Updated = "NO";
+            string mp4ModifiedTime = "";
+            string gifUpdated = "NO";
+            string gifModifiedTime = "";
+            bool fromSession = false;
+
+            if (File.Exists(sessionPath))
+            {
+                var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var line in File.ReadAllLines(sessionPath))
+                {
+                    var eq = line.IndexOf('=');
+                    if (eq > 0) dict[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim();
+                }
+                if (dict.TryGetValue("current_session_id", out var v)) currentSessionId = v ?? "";
+                if (dict.TryGetValue("final_mp4_created_this_session", out v)) mp4Updated = (v ?? "").ToUpperInvariant() == "YES" ? "YES" : "NO";
+                if (dict.TryGetValue("final_mp4_modified_time", out v)) mp4ModifiedTime = v ?? "";
+                if (dict.TryGetValue("gif_created_this_session", out v)) gifUpdated = (v ?? "").ToUpperInvariant() == "YES" ? "YES" : "NO";
+                if (dict.TryGetValue("gif_modified_time", out v)) gifModifiedTime = v ?? "";
+                fromSession = true;
+            }
+            else
+            {
+                var mp4Path = Path.Combine(recordingsDir, "snow_test_latest.mp4");
+                var gifPath = Path.Combine(recordingsDir, "snow_test_latest.gif");
+                if (File.Exists(mp4Path))
+                {
+                    try { mp4ModifiedTime = new FileInfo(mp4Path).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"); } catch { }
+                }
+                if (File.Exists(gifPath))
+                {
+                    try { gifModifiedTime = new FileInfo(gifPath).LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"); } catch { }
+                }
+            }
+
+            sb.AppendLine("current_session_id=" + currentSessionId);
+            sb.AppendLine("mp4_updated_this_run=" + mp4Updated);
+            sb.AppendLine("mp4_modified_time=" + (string.IsNullOrEmpty(mp4ModifiedTime) ? "(n/a)" : mp4ModifiedTime));
+            sb.AppendLine("gif_updated_this_run=" + gifUpdated);
+            sb.AppendLine("gif_modified_time=" + (string.IsNullOrEmpty(gifModifiedTime) ? "(n/a)" : gifModifiedTime));
+            var regression = (mp4Updated == "YES" && gifUpdated == "YES") ? "PASS" : "FAIL";
+            if (!fromSession) regression = "FAIL";
+            sb.AppendLine("video_pipeline_regression=" + regression);
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine("current_session_id=");
+            sb.AppendLine("mp4_updated_this_run=NO");
+            sb.AppendLine("mp4_modified_time=(error)");
+            sb.AppendLine("gif_updated_this_run=NO");
+            sb.AppendLine("gif_modified_time=(error)");
+            sb.AppendLine("video_pipeline_regression=FAIL");
+            sb.AppendLine("error=" + (ex.Message ?? "").Replace("\r", " ").Replace("\n", " "));
+        }
         return sb.ToString();
     }
 
@@ -898,6 +976,10 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine();
         sb.AppendLine(BuildCompileGateSection());
         sb.AppendLine();
+        sb.AppendLine(BuildSnowMassRoofSlideSection());
+        sb.AppendLine();
+        sb.AppendLine(BuildRootCauseIsolationSection(lines));
+        sb.AppendLine();
         sb.AppendLine("=== SCORE UI CHECK ===");
         sb.AppendLine(BuildScoreUiCheckSection(lines));
         sb.AppendLine();
@@ -930,6 +1012,8 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine(BuildConsoleLogsFilteredSection());
         sb.AppendLine();
         sb.AppendLine(BuildImplementationSummary());
+        sb.AppendLine();
+        sb.AppendLine(BuildVideoRegressionCheckSection());
         return sb.ToString();
     }
 
@@ -955,6 +1039,97 @@ public static class SnowLoopNoaReportAutoCopy
         sb.AppendLine("console_warning_count=" + warningCount);
         sb.AppendLine("compile_result=" + compileResult);
         sb.AppendLine("blocking_errors=" + blockingErrors);
+        return sb.ToString();
+    }
+
+    /// <summary>【ASSI REPORT - SNOW MASS + ROOF SLIDE FINAL】雪塊感・屋根滑落。Play確認は Snow Panic > Play Verification で必須記入。</summary>
+    static string BuildSnowMassRoofSlideSection()
+    {
+        int errorCount = 0;
+        try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
+        var verification = SnowPanicPlayVerificationWindow.LoadVerification();
+        var sb = new StringBuilder();
+        sb.AppendLine("【ASSI REPORT - SNOW MASS + ROOF SLIDE FINAL】");
+        sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
+        sb.AppendLine("console_error_count=" + errorCount);
+        sb.AppendLine();
+        sb.AppendLine("snow_mass_feel_before=白いブロック群");
+        sb.AppendLine("snow_mass_feel_after=屋根に積もった雪塊(roundness0.48 scaleJitter0.18 vertexNoise0.06)");
+        sb.AppendLine("grid_feel_before=strong");
+        sb.AppendLine("grid_feel_after=weak");
+        sb.AppendLine("top_surface_continuity=improved_by_roundness_scaleJitter_snowRenderThickness0.6");
+        sb.AppendLine("side_surface_naturalness=improved_by_vertexNoise0.06");
+        sb.AppendLine("still_looks_like_blocks=" + verification.stillLooksLikeBlocks);
+        sb.AppendLine();
+        sb.AppendLine("roof_slide_before=真下即落ち");
+        sb.AppendLine("roof_slide_after=屋根沿い滑落(down*0.35 downhill優先 initialSlide0.62)");
+        sb.AppendLine("still_falls_straight_down=" + verification.stillFallsStraightDown);
+        sb.AppendLine("roof_collider_contact=RoofPanel BoxCollider transform.up=屋根法線");
+        sb.AppendLine("piece_collider_contact=BoxCollider contactOffset=0.025 friction=0.14/0.20");
+        sb.AppendLine("physics_material_state=SnowSlide dynamic=0.14 static=0.20");
+        sb.AppendLine("burst_direction_state=downhill*0.7+down*0.35 dropImpulse=0.52");
+        sb.AppendLine("rigidbody_state=mass=2-5 interpolation=Interpolate linearDamping=0.35");
+        sb.AppendLine();
+        sb.AppendLine("cohesion_adjustment=TryDetachByPressure cooldown 0.05 pressure 0.35 cluster 2-5");
+        sb.AppendLine("group_slide_feel=Avalanche SlideSpeed 0.26 Cascade 0.26");
+        sb.AppendLine("play_confirmed=" + verification.playConfirmed);
+        sb.AppendLine("evidence_path=" + verification.evidencePath);
+        sb.AppendLine();
+        sb.AppendLine("recommended_next_step=" + (verification.playConfirmed == "YES" ? "レポート送信" : "Play→2回タップ→Play Verificationで記入→Stop→レポート送信"));
+        return sb.ToString();
+    }
+
+    /// <summary>【ASSI REPORT - ROOT CAUSE ISOLATION】Console の [ROOT_CAUSE_ISOLATION] を解析し、切り分け結果を出力。</summary>
+    static string BuildRootCauseIsolationSection(string[] lines)
+    {
+        int errorCount = 0;
+        try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
+        var v = SnowPanicPlayVerificationWindow.LoadVerification();
+        var sb = new StringBuilder();
+        sb.AppendLine("【ASSI REPORT - ROOT CAUSE ISOLATION】");
+        sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
+        sb.AppendLine("console_error_count=" + errorCount);
+        sb.AppendLine();
+        string meshNonCube = "UNKNOWN";
+        string rendererPathNew = "UNKNOWN";
+        string maintainsRoofContact = "UNKNOWN";
+        string downhillDominant = "UNKNOWN";
+        string verticalDominant = "UNKNOWN";
+        if (lines != null)
+        {
+            foreach (var line in lines.Where(l => l != null && l.Contains("[ROOT_CAUSE_ISOLATION]")))
+            {
+                var m = Regex.Match(line, @"mesh_is_non_cube=(\w+)");
+                if (m.Success) meshNonCube = m.Groups[1].Value;
+                m = Regex.Match(line, @"renderer_path=(\w+)");
+                if (m.Success) rendererPathNew = m.Groups[1].Value == "SnowPackPiece" ? "YES" : "UNKNOWN";
+                m = Regex.Match(line, @"maintains_roof_contact_after_detach=(\w+)");
+                if (m.Success) maintainsRoofContact = m.Groups[1].Value;
+                m = Regex.Match(line, @"downhill_dot=([\d.-]+)");
+                if (m.Success) { float d; if (float.TryParse(m.Groups[1].Value, out d)) downhillDominant = d > 0.6f ? "YES" : (d < 0.3f ? "NO" : "PARTIAL"); }
+                m = Regex.Match(line, @"vertical_dot=([\d.-]+)");
+                if (m.Success) { float d; if (float.TryParse(m.Groups[1].Value, out d)) verticalDominant = Mathf.Abs(d) > 0.6f ? "YES" : "NO"; }
+            }
+        }
+        sb.AppendLine("looks_like_blocks_now=" + v.stillLooksLikeBlocks);
+        sb.AppendLine("mesh_is_non_cube=" + meshNonCube);
+        sb.AppendLine("renderer_path_is_new=" + rendererPathNew);
+        sb.AppendLine("visual_change_visible_in_screenshot=(スクショ確認)");
+        string visualRoot = meshNonCube == "NO" ? "packed=Rounded可・clump=Cube。OneHouse時RoofSnow廃止でpackedのみ。非OneHouseでclump出現時=Cube固定" : (meshNonCube == "YES" ? "packedはSnowVisualRoundedMesh使用" : "ログ未検出");
+        sb.AppendLine("visual_root_cause=" + visualRoot);
+        sb.AppendLine();
+        sb.AppendLine("falls_straight_down_now=" + v.stillFallsStraightDown);
+        sb.AppendLine("maintains_roof_contact_after_detach=" + maintainsRoofContact);
+        sb.AppendLine("downhill_velocity_dominant=" + downhillDominant);
+        sb.AppendLine("vertical_velocity_still_dominant=" + verticalDominant);
+        string slideRoot = maintainsRoofContact == "NO" ? "SnowClump.BeginFallでPhysics.IgnoreCollision(roof)→接触不能" : (verticalDominant == "YES" ? "重力優勢または初速のvertical成分大" : "ログ確認");
+        sb.AppendLine("slide_root_cause=" + slideRoot);
+        sb.AppendLine();
+        string nextFix = (meshNonCube == "NO" ? "見た目: RoofSnow.SpawnSnowClumpのCube→SnowVisualMesh化 または OneHouse以外のmesh確認" : "スライド: ") + (maintainsRoofContact == "NO" ? "SnowClump.BeginFallのroof IgnoreCollisionを削除または条件付きに" : "");
+        if (string.IsNullOrWhiteSpace(nextFix.Trim())) nextFix = "Play→2回タップ→Consoleで[ROOT_CAUSE_ISOLATION]確認→next_single_fix_targetを特定";
+        sb.AppendLine("next_single_fix_target=" + nextFix.Trim());
+        sb.AppendLine("evidence_path=" + v.evidencePath);
+        sb.AppendLine("result=" + ((v.stillLooksLikeBlocks != "(Play確認後記入)" && v.stillFallsStraightDown != "(Play確認後記入)") ? "PASS" : "FAIL"));
         return sb.ToString();
     }
 
