@@ -55,6 +55,22 @@ public class SnowVisual : MonoBehaviour
         return _roundedMesh;
     }
 
+    /// <summary>SnowVisual Instance がない場合に runtime 生成して production mesh を確保する。</summary>
+    public static void ForceEnsureInstance()
+    {
+        if (Instance != null) return;
+        var found = Object.FindFirstObjectByType<SnowVisual>();
+        if (found != null) { Instance = found; }
+        else
+        {
+            var go = new GameObject("SnowVisual_AutoCreated") { hideFlags = HideFlags.HideAndDontSave };
+            Object.DontDestroyOnLoad(go);
+            Instance = go.AddComponent<SnowVisual>();
+            UnityEngine.Debug.Log("[FALLING_MESH_ROUTE] SnowVisual_instance_was_null -> auto_created production mesh now available");
+        }
+        EnsureInitialized();
+    }
+
     /// <summary>SnowPackSpawner が使用するマテリアルを取得。無効時は null。</summary>
     public static Material GetSnowMaterial(Color baseColor)
     {
@@ -66,7 +82,7 @@ public class SnowVisual : MonoBehaviour
         return _snowMaterial;
     }
 
-    static void EnsureInitialized()
+    internal static void EnsureInitialized()
     {
         if (_initialized && _roundedMesh != null && _snowMaterial != null) return;
         var inst = Instance ?? Object.FindFirstObjectByType<SnowVisual>();

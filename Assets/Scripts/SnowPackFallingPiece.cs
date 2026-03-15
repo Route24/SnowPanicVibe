@@ -25,7 +25,7 @@ public class SnowPackFallingPiece : MonoBehaviour
     State _state = State.Falling;
 
     /// <summary>屋根スライドフェーズ用。滑落後Fallingへ遷移。</summary>
-    const float RoofSlidePhaseSeconds = 0.5f;
+    const float RoofSlidePhaseSeconds = 2.0f;
     Vector3 _roofCenter;
     Vector3 _roofDownhill;
     float _roofEdgeTEnd;
@@ -61,6 +61,7 @@ public class SnowPackFallingPiece : MonoBehaviour
         _rb.linearVelocity = initialVelocity;
         _rb.constraints = RigidbodyConstraints.None;
         _renderers = GetComponentsInChildren<Renderer>(true);
+        EnableFallingRenderers();
 
         var col = GetComponent<Collider>();
         if (col == null)
@@ -117,6 +118,8 @@ public class SnowPackFallingPiece : MonoBehaviour
         _rb.linearVelocity = slideSurfaceVelocity;
         _rb.constraints = RigidbodyConstraints.None;
         _renderers = GetComponentsInChildren<Renderer>(true);
+        // falling piece は常に表示（showSnowGridDebug に関係なく本番 mesh で見せる）
+        EnableFallingRenderers();
 
         var col = GetComponent<Collider>();
         if (col == null)
@@ -154,7 +157,11 @@ public class SnowPackFallingPiece : MonoBehaviour
     {
         if (_state != State.RoofSliding || _rb == null) return;
         _state = State.Falling;
+        // G: Kinematic を解除して通常物理落下に戻す
+        _rb.isKinematic = false;
         _rb.useGravity = true;
+        // 軒先を越えた時点の downhill 速度を初速として引き継ぐ
+        _rb.linearVelocity = _roofDownhill * SlideMinSpeed;
         _startTime = Time.time;
         StartCoroutine(LogVelocityAt01s());
         float roofContactDur = _roofContactStartTime >= 0f && _roofContactEndTime >= 0f ? (_roofContactEndTime - _roofContactStartTime) : 0f;
@@ -185,6 +192,30 @@ public class SnowPackFallingPiece : MonoBehaviour
         float vHorizontal = Mathf.Sqrt(v.x * v.x + v.z * v.z);
         bool verticalDominant = vMag > 0.05f && vVertical > vHorizontal;
         UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] after_0_1s vel=({v.x:F2},{v.y:F2},{v.z:F2}) vertical_velocity_still_dominant={(verticalDominant ? "YES" : "NO")}");
+    }
+
+    void EnableFallingRenderers()
+    {
+        if (_renderers == null) return;
+        bool logged = false;
+        foreach (var r in _renderers)
+        {
+            if (r == null) continue;
+            r.enabled = true;
+            if (!logged)
+            {
+                logged = true;
+                var mf = r.GetComponent<MeshFilter>();
+                if (mf == null) { var child = r.transform.Find("Mesh"); if (child != null) mf = child.GetComponent<MeshFilter>(); }
+                string meshName = mf != null && mf.sharedMesh != null ? mf.sharedMesh.name : "null";
+                string matName = r.sharedMaterial != null ? r.sharedMaterial.name : "null";
+                string meshSrc = meshName.Contains("Rounded") ? "SnowVisual(production)"
+                    : meshName.Contains("Cube") ? "BuildCubeMesh(fallback!)"
+                    : meshName.Contains("NonSym") ? "BuildNonSymMesh(debug)"
+                    : "unknown";
+                UnityEngine.Debug.Log($"[FALLING_MESH_ROUTE] mesh_name={meshName} mesh_source={meshSrc} renderer_name={r.name} prefab_name={gameObject.name} script_source=SnowPackFallingPiece.cs assignment_callsite=EnableFallingRenderers material={matName}");
+            }
+        }
     }
 
     void LogDetachedSpawn()
@@ -246,7 +277,8 @@ public class SnowPackFallingPiece : MonoBehaviour
             Vector3 closest = _roofCollider.ClosestPoint(nextPos);
             transform.position = closest + rNormal * 0.075f;
 
-            UnityEngine.Debug.Log($"[ROOF_SLIDE_FORCE] age={age:F2} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) v=({v.x:F2},{v.y:F2},{v.z:F2}) downhillSpeed={downhillSpeed:F2}");
+            if (age < Time.fixedDeltaTime * 2f)
+                UnityEngine.Debug.Log($"[ROOF_SLIDE_FORCE] kinematic_slide_started pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) v=({v.x:F2},{v.y:F2},{v.z:F2}) downhillSpeed={downhillSpeed:F2} minSpeed={SlideMinSpeed}");
         }
     }
 

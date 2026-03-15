@@ -2142,17 +2142,32 @@ public class SnowPackSpawner : MonoBehaviour
             EnsureNonSymMesh();
             return _pieceMeshNonSym;
         }
+        // production mesh を優先。null の場合は SnowVisual を強制初期化して再取得
         var mesh = SnowVisual.GetPieceMesh();
-        Mesh result;
-        if (mesh != null) { result = mesh; } else { EnsurePieceMesh(); result = _pieceMesh; }
+        if (mesh == null)
+        {
+            // SnowVisual がシーンにない場合は runtime 生成して production mesh を確保
+            SnowVisual.ForceEnsureInstance();
+            mesh = SnowVisual.GetPieceMesh();
+        }
+        // それでも null なら cube fallback（最終手段）
+        Mesh result = mesh != null ? mesh : (_pieceMesh != null ? _pieceMesh : (EnsurePieceMesh_Return()));
         if (!_rootCauseMeshLogged)
         {
             _rootCauseMeshLogged = true;
             string meshName = result != null ? (result.name ?? "null") : "null";
-            bool nonCube = result != null && mesh != null && mesh.name != null && mesh.name.Contains("Rounded");
-            UnityEngine.Debug.Log($"[ROOT_CAUSE_ISOLATION] source=packed mesh_name={meshName} mesh_is_non_cube={(nonCube ? "YES" : "NO")} renderer_path=SnowPackPiece");
+            bool isProduction = meshName.Contains("Rounded");
+            bool isCubeFallback = meshName.Contains("Cube");
+            UnityEngine.Debug.Log($"[ROOT_CAUSE_ISOLATION] source=packed mesh_name={meshName} mesh_is_production={isProduction} mesh_is_cube_fallback={isCubeFallback} renderer_path=SnowPackPiece");
+            UnityEngine.Debug.Log($"[FALLING_MESH_ROUTE] mesh_name={meshName} mesh_source={(isProduction ? "SnowVisual(production)" : isCubeFallback ? "BuildCubeMesh(fallback!)" : "unknown")} renderer_name=SnowPackPiece/Mesh prefab_name=SnowPackPiece(runtime) script_source=SnowPackSpawner.cs assignment_callsite=GetCurrentPieceMesh");
         }
         return result;
+    }
+
+    Mesh EnsurePieceMesh_Return()
+    {
+        EnsurePieceMesh();
+        return _pieceMesh;
     }
 
     /// <summary>DebugNonSymMeshトグル変更時に全pieceのメッシュを差し替え。</summary>
