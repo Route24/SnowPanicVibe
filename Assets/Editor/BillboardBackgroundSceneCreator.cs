@@ -31,23 +31,26 @@ public static class BillboardBackgroundSceneCreator
     const float RoofSlopeDeg = -15f;
     const float RoofThick    = 0.05f;
 
-    // 6枚の屋根: 背景画像の各家屋根に対応
-    // 画像レイアウト（1024x576 px 相当）:
-    //   上段3軒: 画面 X = -35%/-0%/+35%, 画面 Y = 上から 30-55%
-    //   下段3軒: 画面 X = -28%/-0%/+28%, 画面 Y = 上から 50-80%
-    // カメラ rot=36° で奥=高Y・大Z、手前=低Y・小Z
-    // 上段: world Y≈2.0, Z≈1.5, 幅1.7, 奥1.0
-    // 下段: world Y≈0.3, Z≈3.5, 幅2.0, 奥1.2
+    // 6枚の屋根: 背景画像(1024x576)の各家屋根ピクセル座標から逆算
+    // BgPos=(0,-0.3,0.6) BgRot=(36,0,0) BgScale=(15,8.5,1)
+    // local_x=(px_x/1024-0.5)*15  local_y=(0.5-px_y/576)*8.5
+    // world_x=local_x  world_y=-0.3+local_y*0.809  world_z=0.6-local_y*0.588
+    // scale_x=px_w/1024*15  scale_y=px_h/576*8.5*0.809 (奥行き補正)
+    // 背景面より 0.05m 手前にオフセット (法線=(0,sin36,−cos36)=(0,0.588,−0.809))
     static readonly (string name, Vector3 pos, Vector3 scale)[] RoofDefs = new[]
     {
-        // 上段（奥の3軒）: 小さめ
-        ("RoofPlane_TL", new Vector3(-2.8f, 2.0f, 1.5f), new Vector3(1.7f, RoofThick, 1.0f)),
-        ("RoofPlane_TM", new Vector3( 0.0f, 2.0f, 1.5f), new Vector3(1.7f, RoofThick, 1.0f)),
-        ("RoofPlane_TR", new Vector3( 2.8f, 2.0f, 1.5f), new Vector3(1.7f, RoofThick, 1.0f)),
-        // 下段（手前の3軒）: 大きめ
-        ("RoofPlane_BL", new Vector3(-2.2f, 0.3f, 3.5f), new Vector3(2.0f, RoofThick, 1.2f)),
-        ("RoofPlane_BM", new Vector3( 0.0f, 0.3f, 3.5f), new Vector3(2.0f, RoofThick, 1.2f)),
-        ("RoofPlane_BR", new Vector3( 2.2f, 0.3f, 3.5f), new Vector3(2.0f, RoofThick, 1.2f)),
+        // TL: px(215,200) w=190 h=45
+        ("RoofPlane_TL", new Vector3(-3.05f+0f, 0.21f+0.03f, 0.23f-0.03f), new Vector3(2.6f, 0.50f, 1f)),
+        // TM: px(510,182) w=215 h=50
+        ("RoofPlane_TM", new Vector3(-0.04f+0f, 0.43f+0.03f, 0.07f-0.03f), new Vector3(2.9f, 0.55f, 1f)),
+        // TR: px(795,192) w=195 h=48
+        ("RoofPlane_TR", new Vector3( 2.90f+0f, 0.32f+0.03f, 0.15f-0.03f), new Vector3(2.6f, 0.52f, 1f)),
+        // BL: px(205,370) w=255 h=60
+        ("RoofPlane_BL", new Vector3(-3.19f+0f,-1.08f+0.03f, 1.16f-0.03f), new Vector3(3.4f, 0.65f, 1f)),
+        // BM: px(510,400) w=185 h=50
+        ("RoofPlane_BM", new Vector3(-0.04f+0f,-1.43f+0.03f, 1.42f-0.03f), new Vector3(2.5f, 0.55f, 1f)),
+        // BR: px(800,368) w=255 h=60
+        ("RoofPlane_BR", new Vector3( 2.93f+0f,-1.06f+0.03f, 1.15f-0.03f), new Vector3(3.4f, 0.65f, 1f)),
     };
 
     [MenuItem("SnowPanic/Billboard: Create Avalanche_Billboard_Test", false, 50)]
@@ -126,26 +129,31 @@ public static class BillboardBackgroundSceneCreator
         light.intensity = 1f;
         lightGo.transform.eulerAngles = new Vector3(50f, -30f, 0f);
 
-        // ── RoofPlane x6 ─────────────────────────────────────
+        // ── RoofPlane x6 (Quad) ──────────────────────────────
+        // Quad はデフォルト 1x1 unit (XY平面)。scale.x=幅, scale.y=奥行き相当。
+        // 屋根オーバーレイ: x=1.0, y=0.45, z=1.0
+        // 傾斜: X軸 -15° で back→front slope
         var roofRoot = new GameObject("RoofPlanes");
         int created = 0;
         foreach (var (rName, rPos, rScale) in RoofDefs)
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             go.name = rName;
-            go.transform.SetParent(roofRoot.transform, false);
+            // MeshCollider(Quad付属) を除去して BoxCollider を追加
+            var meshCol = go.GetComponent<MeshCollider>();
+            if (meshCol != null) Object.DestroyImmediate(meshCol);
+            go.AddComponent<BoxCollider>();
+
+            // 位置・スケール・回転を設定してから親に追加
             go.transform.position = rPos;
             go.transform.localScale = rScale;
             go.transform.eulerAngles = new Vector3(RoofSlopeDeg, 0f, 0f);
+            go.transform.SetParent(roofRoot.transform, true);
 
-            // BoxCollider はそのまま使用（Cube に付属）
-            var col = go.GetComponent<BoxCollider>();
-            if (col == null) go.AddComponent<BoxCollider>();
-
-            // 半透明マテリアル（アライン確認用）
+            // 半透明ピンクマテリアル（アライン確認用）
             var mat = new Material(Shader.Find("Standard"));
-            mat.color = new Color(0.5f, 0.8f, 1f, 0.45f);
-            mat.SetFloat("_Mode", 3f); // Transparent
+            mat.color = new Color(1f, 0.4f, 0.7f, 0.6f);
+            mat.SetFloat("_Mode", 3f);
             mat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
             mat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
             mat.SetInt("_ZWrite", 0);
@@ -155,14 +163,13 @@ public static class BillboardBackgroundSceneCreator
             mat.renderQueue = 3000;
             go.GetComponent<Renderer>().sharedMaterial = mat;
 
-            // RoofSnowSystem 用タグ
             go.tag = "Untagged";
             go.layer = 0;
 
             created++;
-            Debug.Log($"[BillboardBG] roof_plane_created={rName} pos={rPos} scale={rScale}");
+            Debug.Log($"[BillboardBG] roof_quad_created={rName} pos={rPos} scale={rScale} type=Quad");
         }
-        Debug.Log($"[BillboardBG] roof_planes_created={created}/6");
+        Debug.Log($"[BillboardBG] roof_planes_created={created}/6 mesh_type=Quad");
     }
 }
 #endif
