@@ -481,7 +481,7 @@ public static class CorniceSceneSetup
                     cube.transform.localScale = new Vector3(sz * Random.Range(0.98f, 1.08f), sz * Random.Range(0.98f, 1.05f), sz * Random.Range(0.98f, 1.08f));
                     bool isCritical = (float)iz / gridZ >= 0.55f && Random.value < 0.7f;
                     var mat = new Material(snowMat);
-                    mat.SetColor("_BaseColor", isCritical ? new Color(0.99f, 0.95f, 0.88f) : new Color(0.98f, 0.99f, 1f));
+                    mat.SetColor("_BaseColor", new Color(0.98f, 0.99f, 1f)); // isCritical warm tint を停止: 本番snowColorに統一
                     cube.GetComponent<Renderer>().sharedMaterial = mat;
                     cube.GetComponent<Collider>().material = new PhysicsMaterial("Snow") { dynamicFriction = 0.2f, staticFriction = 0.28f, bounciness = 0f };
 

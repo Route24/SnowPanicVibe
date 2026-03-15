@@ -690,7 +690,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         marker.transform.localScale = Vector3.one * 0.5f;
         if (marker.GetComponent<Collider>() != null) marker.GetComponent<Collider>().enabled = false;
         var r = marker.GetComponent<Renderer>();
-        if (r != null && r.material != null) MaterialColorHelper.SetColorSafe(r.material, Color.red);
+        if (r != null && r.material != null) MaterialColorHelper.SetColorSafe(r.material, new Color(0.93f, 0.96f, 1f, 1f)); // 本番snowColor
         UnityEngine.Object.Destroy(marker, 1f);
         int count = Mathf.Max(6, burstChunkCount);
         float roofSlideTime = 0.35f;
@@ -847,7 +847,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
             var mat = sh != null ? new Material(sh) : null;
             if (mat != null)
             {
-                MaterialColorHelper.SetColorSafe(mat, new Color(0.3f, 0.7f, 1f)); // 雪崩中=シアンで視認性
+                MaterialColorHelper.SetColorSafe(mat, new Color(0.93f, 0.96f, 1f, 1f)); // 本番snowColor
                 r.sharedMaterial = mat;
             }
         }

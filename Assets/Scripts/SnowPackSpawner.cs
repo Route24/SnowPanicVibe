@@ -1608,13 +1608,6 @@ public class SnowPackSpawner : MonoBehaviour
                     bool goActiveAfter = t.gameObject != null && t.gameObject.activeInHierarchy;
                     UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] source_renderer_enabled_after={renAfter} source_active_after={goActiveAfter} showSnowGridDebug={GridVisualWatchdog.showSnowGridDebug}");
                 }
-                var mr = t.GetComponentInChildren<Renderer>();
-                if (mr != null && mr.sharedMaterial != null)
-                {
-                    var mat = new Material(mr.sharedMaterial);
-                    MaterialColorHelper.SetColorSafe(mat, Color.red);
-                    mr.sharedMaterial = mat;
-                }
                 t.SetParent(slideRoot.transform, true);
             }
         }
@@ -2062,7 +2055,12 @@ public class SnowPackSpawner : MonoBehaviour
         if (!enableStateIndicator)
         {
             var child = _visualRoot != null ? _visualRoot.Find("SnowPackStateIndicator") : null;
-            if (child != null) child.gameObject.SetActive(false);
+            if (child != null)
+            {
+                child.gameObject.SetActive(false);
+                var rr = child.GetComponent<Renderer>();
+                if (rr != null) rr.enabled = false;
+            }
             _stateIndicatorRenderer = null;
             return;
         }
@@ -2094,20 +2092,24 @@ public class SnowPackSpawner : MonoBehaviour
         }
     }
 
+    bool _yellowRouteLogged;
     void UpdateStateIndicatorColor()
     {
+        // StateIndicator は常に非表示（debug着色を完全停止）
+        if (_stateIndicatorRenderer != null)
+        {
+            _stateIndicatorRenderer.enabled = false;
+            if (!_yellowRouteLogged)
+            {
+                _yellowRouteLogged = true;
+                string matName = _stateIndicatorRenderer.sharedMaterial != null ? _stateIndicatorRenderer.sharedMaterial.name : "null";
+                UnityEngine.Debug.Log($"[YELLOW_ROUTE] renderer=SnowPackStateIndicator(Quad) material={matName} prefab=none(runtime_generated) script=SnowPackSpawner.cs callsite=UpdateStateIndicatorColor enableStateIndicator={enableStateIndicator} -> DISABLED");
+            }
+        }
         if (!enableStateIndicator) return;
         if (_stateIndicatorRenderer == null || _stateIndicatorRenderer.material == null) return;
-        bool inSlide = _inAvalancheSlide;
-        bool inCooldown = roofSnowSystem != null && roofSnowSystem.IsInAvalancheCooldown && !_inAvalancheSlide;
-        bool isFail = _autoRebuildFailReason != AutoRebuildFailReason.None;
-        Color c;
-        if (isFail) c = new Color(1f, 0.2f, 0.2f, 0.4f);       // FAIL/ERROR = 赤
-        else if (inSlide) c = new Color(0.3f, 0.5f, 1f, 0.25f); // Avalanche中 = 青
-        else if (inCooldown) c = new Color(1f, 1f, 0.3f, 0.25f); // Cooldown = 黄
-        else c = new Color(1f, 1f, 1f, 0.12f);                  // Normal = 白
-        if (_stateIndicatorRenderer.material != null) MaterialColorHelper.SetColorSafe(_stateIndicatorRenderer.material, c);
-        _stateIndicatorRenderer.enabled = true;
+        // 色設定は残すが Renderer は非表示のため画面には出ない
+        MaterialColorHelper.SetColorSafe(_stateIndicatorRenderer.material, new Color(1f, 1f, 1f, 0f));
     }
 
     void EnsureMaterial()
@@ -2663,10 +2665,10 @@ public class SnowPackSpawner : MonoBehaviour
 
     enum PieceVisualState { Accumulating, Sliding, Cooldown, Returning, Pooled }
     static readonly Color _colorAccum = Color.white;       // Normal
-    static readonly Color _colorSliding = Color.yellow;     // Avalanche
-    static readonly Color _colorCooldown = new Color(0.3f, 0.5f, 1f);  // Cooldown
-    static readonly Color _colorReturning = new Color(1f, 0.5f, 0f);   // Returning
-    static readonly Color _colorPooled = Color.black;       // Pooled (非表示)
+    static readonly Color _colorSliding = Color.white;     // Sliding: 本番は白（debug着色を停止）
+    static readonly Color _colorCooldown = Color.white;    // Cooldown: 本番は白（debug着色を停止）
+    static readonly Color _colorReturning = Color.white;   // Returning: 本番は白（debug着色を停止）
+    static readonly Color _colorPooled = Color.black;      // Pooled (非表示)
 
     int _pieceStateLogThrottle;
     void SetPieceVisualState(Transform t, PieceVisualState s, bool logOneSample = false)

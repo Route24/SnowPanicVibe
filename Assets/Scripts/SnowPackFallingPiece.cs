@@ -146,6 +146,7 @@ public class SnowPackFallingPiece : MonoBehaviour
         DetachedSnowRegistry.RegisterFalling(this);
         DetachedSnowDiagnostics.LogFallingInfoIfFirst(this);
         LogDetachedSpawn();
+        LogRealCollisionDiagnostics(roofCol);
         SnowLoopLogCapture.AppendToAssiReport($"=== RoofSlideTriggered === count={_fallingTriggeredCount}");
     }
 
@@ -194,8 +195,29 @@ public class SnowPackFallingPiece : MonoBehaviour
         UnityEngine.Debug.Log($"[DetachedSpawn] class=falling pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({v.x:F2},{v.y:F2},{v.z:F2}) layer={LayerMask.LayerToName(gameObject.layer)} col.enabled={(col != null && col.enabled)}");
     }
 
-    /// <summary>slide grace time: この秒数は Y velocity を clamp して下向き初速を抑える。</summary>
-    const float SlideGraceSeconds = 0.2f;
+    void LogRealCollisionDiagnostics(Collider roofCol)
+    {
+        var myCol = GetComponent<Collider>();
+        bool myColEnabled = myCol != null && myCol.enabled;
+        bool myColTrigger = myCol != null && myCol.isTrigger;
+        bool rbDetect = _rb != null && _rb.detectCollisions;
+        bool rbGravity = _rb != null && _rb.useGravity;
+        int myLayer = gameObject.layer;
+
+        bool roofIsTrigger = roofCol != null && roofCol.isTrigger;
+        int roofLayer = roofCol != null ? roofCol.gameObject.layer : -1;
+        string roofLayerName = roofLayer >= 0 ? LayerMask.LayerToName(roofLayer) : "null";
+        bool layerCollisionEnabled = roofLayer >= 0 && !Physics.GetIgnoreLayerCollision(myLayer, roofLayer);
+        Bounds roofBounds = roofCol != null ? roofCol.bounds : default;
+
+        UnityEngine.Debug.Log($"[ROOF_COLLISION_REAL] DIAGNOSTICS roof_isTrigger={roofIsTrigger} roof_layer={roofLayerName}({roofLayer}) roof_bounds_center=({roofBounds.center.x:F2},{roofBounds.center.y:F2},{roofBounds.center.z:F2}) roof_bounds_size=({roofBounds.size.x:F2},{roofBounds.size.y:F2},{roofBounds.size.z:F2})");
+        UnityEngine.Debug.Log($"[ROOF_COLLISION_REAL] DIAGNOSTICS piece_col_enabled={myColEnabled} piece_col_isTrigger={myColTrigger} piece_rb_detectCollisions={rbDetect} piece_rb_useGravity={rbGravity} piece_layer={LayerMask.LayerToName(myLayer)}({myLayer}) layer_collision_enabled={layerCollisionEnabled}");
+    }
+
+    /// <summary>slide phase 中の最低 downhill 速度。これを下回ったら補完する。</summary>
+    const float SlideMinSpeed = 0.8f;
+    /// <summary>slide phase 全期間 roof plane 上を Kinematic 移動させる。</summary>
+    const float SlideGraceSeconds = 0.25f; // 後方互換のため残す（未使用）
 
     void FixedUpdate()
     {
@@ -203,14 +225,28 @@ public class SnowPackFallingPiece : MonoBehaviour
         float age = Time.time - _startTime;
         if (age < 0.5f) _trajectoryPoints.Add(transform.position);
 
-        // D: slide grace time 中は Y velocity を 0 に clamp して垂直落下初速を抑える
-        if (_state == State.RoofSliding && age < SlideGraceSeconds)
+        // G: RoofSliding 全期間を Kinematic 強制移動で roof plane 拘束
+        if (_state == State.RoofSliding && _roofCollider != null)
         {
+            Vector3 rNormal = _roofCollider.transform.up;
+
+            // Kinematic に切り替えて物理干渉を排除
+            if (!_rb.isKinematic) _rb.isKinematic = true;
+
+            // downhill 方向への移動量を計算（最低速度を保証）
             Vector3 v = _rb.linearVelocity;
-            if (v.y < 0f)
-            {
-                _rb.linearVelocity = new Vector3(v.x, 0f, v.z);
-            }
+            float downhillSpeed = Vector3.Dot(v, _roofDownhill);
+            if (downhillSpeed < SlideMinSpeed)
+                v = _roofDownhill * SlideMinSpeed;
+            // roof plane 上にプロジェクション（法線成分を除去）
+            v = Vector3.ProjectOnPlane(v, rNormal);
+
+            // 位置を roof 面上に snap しながら downhill 方向に移動
+            Vector3 nextPos = transform.position + v * Time.fixedDeltaTime;
+            Vector3 closest = _roofCollider.ClosestPoint(nextPos);
+            transform.position = closest + rNormal * 0.075f;
+
+            UnityEngine.Debug.Log($"[ROOF_SLIDE_FORCE] age={age:F2} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) v=({v.x:F2},{v.y:F2},{v.z:F2}) downhillSpeed={downhillSpeed:F2}");
         }
     }
 
@@ -219,23 +255,6 @@ public class SnowPackFallingPiece : MonoBehaviour
         if (_state == State.RoofSliding)
         {
             float elapsed = Time.time - _startTime;
-            // C: slide phase 中は毎フレーム屋根面上に位置を snap して接触を維持
-            if (_roofCollider != null && _rb != null)
-            {
-                Vector3 rNormal = _roofCollider.transform.up;
-                Vector3 closest = _roofCollider.ClosestPoint(transform.position);
-                float halfSize = 0.075f;
-                Vector3 snapPos = closest + rNormal * halfSize;
-                // downhill 方向の移動は維持しつつ法線方向のみ補正
-                Vector3 delta = snapPos - transform.position;
-                float normalDelta = Vector3.Dot(delta, rNormal);
-                if (Mathf.Abs(normalDelta) > 0.001f)
-                    transform.position += rNormal * normalDelta;
-                // 法線方向の velocity 成分を除去して屋根から離れないようにする
-                Vector3 v = _rb.linearVelocity;
-                float vNormal = Vector3.Dot(v, rNormal);
-                if (vNormal < 0f) _rb.linearVelocity = v - rNormal * vNormal;
-            }
             float tVal = Vector3.Dot(transform.position - _roofCenter, _roofDownhill);
             if (elapsed >= RoofSlidePhaseSeconds || tVal > _roofEdgeTEnd)
                 SwitchToFalling();
@@ -359,6 +378,8 @@ public class SnowPackFallingPiece : MonoBehaviour
         StartCoroutine(FadeOutThenDespawn("CentralRoofStuck"));
     }
 
+    int _roofCollisionStayFrames;
+
     void OnCollisionEnter(Collision collision)
     {
         if (this == null || gameObject == null || collision == null || collision.collider == null) return;
@@ -366,8 +387,15 @@ public class SnowPackFallingPiece : MonoBehaviour
         {
             if (_roofContactStartTime < 0f) _roofContactStartTime = Time.time;
             _roofContactEndTime = Time.time;
+            _roofCollisionStayFrames = 1;
+            UnityEngine.Debug.Log($"[ROOF_COLLISION_REAL] ON_COLLISION_ENTER fired with roofCollider pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({_rb?.linearVelocity.x:F2},{_rb?.linearVelocity.y:F2},{_rb?.linearVelocity.z:F2}) state={_state}");
             return;
         }
+        // 屋根と思われる別コライダーとの衝突も記録（layer/name で判定）
+        string hitName = collision.collider.name ?? "";
+        bool hitRoofLike = hitName.Contains("Roof") || hitName.Contains("roof") || hitName.Contains("Slide");
+        if (hitRoofLike)
+            UnityEngine.Debug.Log($"[ROOF_COLLISION_REAL] ON_COLLISION_ENTER hit roof-like object={hitName} (not _roofCollider ref) state={_state} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2})");
         if (_state != State.Falling) return;
         bool isGround = false;
         int layer = collision.gameObject.layer;
@@ -386,7 +414,12 @@ public class SnowPackFallingPiece : MonoBehaviour
     {
         if (collision == null || collision.collider == null || _roofCollider == null) return;
         if (collision.collider == _roofCollider)
+        {
             _roofContactEndTime = Time.time;
+            _roofCollisionStayFrames++;
+            if (_roofCollisionStayFrames == 5 || _roofCollisionStayFrames == 15)
+                UnityEngine.Debug.Log($"[ROOF_COLLISION_REAL] ON_COLLISION_STAY frames={_roofCollisionStayFrames} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({_rb?.linearVelocity.x:F2},{_rb?.linearVelocity.y:F2},{_rb?.linearVelocity.z:F2})");
+        }
     }
 
     void OnCollisionExit(Collision collision)
