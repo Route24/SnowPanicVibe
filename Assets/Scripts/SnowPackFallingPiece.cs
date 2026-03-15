@@ -109,13 +109,13 @@ public class SnowPackFallingPiece : MonoBehaviour
         _roofStuckLogged = false;
         _rb = GetComponent<Rigidbody>();
         if (_rb == null) _rb = gameObject.AddComponent<Rigidbody>();
-        _rb.isKinematic = false;
+        // 初期化時点で即 Kinematic にして物理エンジンの介入を完全排除
+        _rb.isKinematic = true;
         _rb.useGravity = false;
-        // A: velocity を屋根面上にプロジェクションして Y 混入を除去
+        // A: velocity を屋根面上にプロジェクションして Y 混入を除去（参照用に保持）
         Vector3 roofNormal = roofCol != null ? roofCol.transform.up : Vector3.up;
         Vector3 slideSurfaceVelocity = Vector3.ProjectOnPlane(initialVelocity, roofNormal);
         if (slideSurfaceVelocity.sqrMagnitude < 0.001f) slideSurfaceVelocity = downhill * initialVelocity.magnitude;
-        _rb.linearVelocity = slideSurfaceVelocity;
         _rb.constraints = RigidbodyConstraints.None;
         _renderers = GetComponentsInChildren<Renderer>(true);
         // falling piece は常に表示（showSnowGridDebug に関係なく本番 mesh で見せる）
@@ -260,25 +260,21 @@ public class SnowPackFallingPiece : MonoBehaviour
         if (_state == State.RoofSliding && _roofCollider != null)
         {
             Vector3 rNormal = _roofCollider.transform.up;
-
-            // Kinematic に切り替えて物理干渉を排除
             if (!_rb.isKinematic) _rb.isKinematic = true;
 
-            // downhill 方向への移動量を計算（最低速度を保証）
-            Vector3 v = _rb.linearVelocity;
-            float downhillSpeed = Vector3.Dot(v, _roofDownhill);
-            if (downhillSpeed < SlideMinSpeed)
-                v = _roofDownhill * SlideMinSpeed;
-            // roof plane 上にプロジェクション（法線成分を除去）
-            v = Vector3.ProjectOnPlane(v, rNormal);
+            // _roofCenter（Spawner から渡した bounds.center）を基準に roof plane を定義
+            // transform.position を roof plane 上に投影（法線成分を除去）
+            Vector3 toPos = transform.position - _roofCenter;
+            Vector3 onPlane = _roofCenter + Vector3.ProjectOnPlane(toPos, rNormal);
 
-            // 位置を roof 面上に snap しながら downhill 方向に移動
-            Vector3 nextPos = transform.position + v * Time.fixedDeltaTime;
-            Vector3 closest = _roofCollider.ClosestPoint(nextPos);
-            transform.position = closest + rNormal * 0.075f;
+            // downhill 方向に SlideMinSpeed で移動
+            Vector3 v = Vector3.ProjectOnPlane(_roofDownhill, rNormal).normalized * SlideMinSpeed;
+            Vector3 nextPos = onPlane + v * Time.fixedDeltaTime;
+            // 法線方向に 0.075f オフセットして surface 上に乗せる
+            transform.position = nextPos + rNormal * 0.075f;
 
             if (age < Time.fixedDeltaTime * 2f)
-                UnityEngine.Debug.Log($"[ROOF_SLIDE_FORCE] kinematic_slide_started pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) v=({v.x:F2},{v.y:F2},{v.z:F2}) downhillSpeed={downhillSpeed:F2} minSpeed={SlideMinSpeed}");
+                UnityEngine.Debug.Log($"[ROOF_SLIDE_FORCE] kinematic_slide_started pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) v=({v.x:F2},{v.y:F2},{v.z:F2}) downhillSpeed={Vector3.Dot(v, _roofDownhill):F2} minSpeed={SlideMinSpeed}");
         }
     }
 
@@ -286,9 +282,9 @@ public class SnowPackFallingPiece : MonoBehaviour
     {
         if (_state == State.RoofSliding)
         {
-            float elapsed = Time.time - _startTime;
+            // edge-based のみで Falling に切り替え（time-based は除去）
             float tVal = Vector3.Dot(transform.position - _roofCenter, _roofDownhill);
-            if (elapsed >= RoofSlidePhaseSeconds || tVal > _roofEdgeTEnd)
+            if (tVal > _roofEdgeTEnd)
                 SwitchToFalling();
             DrawSlideVisualization();
             return;
