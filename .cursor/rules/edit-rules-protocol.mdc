@@ -1,0 +1,43 @@
+# ASSI EDIT RULES PROTOCOL（コード編集ルール固定）
+
+## 適用範囲
+
+Snow Panic のすべてのコード修正に自動適用する。
+
+## EDIT RULES（全修正で必須）
+
+1. **Edit only the minimal lines required.**
+   - 必要な行だけを編集する。それ以外は触らない。
+
+2. **Do not rewrite entire files.**
+   - ファイル全体の書き直しは禁止。
+
+3. **Keep all existing logic unchanged unless explicitly requested.**
+   - 明示的に指示されない限り、既存ロジックを変更しない。
+
+4. **Do not modify unrelated systems.**
+   - 無関係なスクリプト・システムを変更しない。
+
+5. **Return only the modified code block or minimal patch.**
+   - 変更箇所のみを返す。全体コードの貼り付けは不要。
+
+6. **Preserve current architecture and script structure.**
+   - 現在のアーキテクチャとスクリプト構造を維持する。
+
+## 特に重要な対象スクリプト
+
+- SnowPackSpawner
+- RoofSnowSystem
+- SnowPackFallingPiece
+- SnowPhysics
+
+## 禁止事項
+
+- full file rewrite（ファイル全体の書き直し）
+- architecture refactor（アーキテクチャの再設計）
+- unrelated script modification（無関係スクリプトの変更）
+- automatic cleanup that changes logic（ロジックを変えるクリーンアップ）
+
+## 目的
+
+「巻き戻し」防止。コード修正による意図しない機能破壊を防ぐ。

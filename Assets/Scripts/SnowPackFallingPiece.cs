@@ -110,7 +110,11 @@ public class SnowPackFallingPiece : MonoBehaviour
         if (_rb == null) _rb = gameObject.AddComponent<Rigidbody>();
         _rb.isKinematic = false;
         _rb.useGravity = false;
-        _rb.linearVelocity = initialVelocity;
+        // A: velocity を屋根面上にプロジェクションして Y 混入を除去
+        Vector3 roofNormal = roofCol != null ? roofCol.transform.up : Vector3.up;
+        Vector3 slideSurfaceVelocity = Vector3.ProjectOnPlane(initialVelocity, roofNormal);
+        if (slideSurfaceVelocity.sqrMagnitude < 0.001f) slideSurfaceVelocity = downhill * initialVelocity.magnitude;
+        _rb.linearVelocity = slideSurfaceVelocity;
         _rb.constraints = RigidbodyConstraints.None;
         _renderers = GetComponentsInChildren<Renderer>(true);
 
@@ -126,11 +130,19 @@ public class SnowPackFallingPiece : MonoBehaviour
         gameObject.layer = 0;
         SetLayerRecursively(gameObject, 0);
 
+        // B: 開始位置を屋根面上に補正（closest point + 法線方向に半径分オフセット）
+        if (roofCol != null)
+        {
+            Vector3 closest = roofCol.ClosestPoint(transform.position);
+            float halfSize = 0.075f;
+            transform.position = closest + roofNormal * halfSize;
+        }
+
         _fallingTriggeredCount++;
-        float velMag = initialVelocity.magnitude;
-        float horizontalMag = Mathf.Sqrt(initialVelocity.x * initialVelocity.x + initialVelocity.z * initialVelocity.z);
-        bool downhillDominantAtT0 = horizontalMag > Mathf.Abs(initialVelocity.y) && velMag > 0.05f;
-        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece maintains_roof_contact_after_detach=YES loses_contact_immediately=NO gravity_applied_too_early=NO downhill_velocity_dominant_at_t0={(downhillDominantAtT0 ? "YES" : "NO")} detached_at=ON_ROOF_SURFACE");
+        float velMag = slideSurfaceVelocity.magnitude;
+        float horizontalMag = Mathf.Sqrt(slideSurfaceVelocity.x * slideSurfaceVelocity.x + slideSurfaceVelocity.z * slideSurfaceVelocity.z);
+        bool downhillDominantAtT0 = horizontalMag > Mathf.Abs(slideSurfaceVelocity.y) && velMag > 0.05f;
+        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece maintains_roof_contact_after_detach=YES loses_contact_immediately=NO gravity_applied_too_early=NO downhill_velocity_dominant_at_t0={(downhillDominantAtT0 ? "YES" : "NO")} detached_at=ON_ROOF_SURFACE slide_vel=({slideSurfaceVelocity.x:F2},{slideSurfaceVelocity.y:F2},{slideSurfaceVelocity.z:F2})");
         DetachedSnowRegistry.RegisterFalling(this);
         DetachedSnowDiagnostics.LogFallingInfoIfFirst(this);
         LogDetachedSpawn();
@@ -146,7 +158,12 @@ public class SnowPackFallingPiece : MonoBehaviour
         StartCoroutine(LogVelocityAt01s());
         float roofContactDur = _roofContactStartTime >= 0f && _roofContactEndTime >= 0f ? (_roofContactEndTime - _roofContactStartTime) : 0f;
         UnityEngine.Debug.Log($"[SLIDE_VISUALIZATION] roof_contact_duration_seconds={roofContactDur:F2} roof_contact_start={_roofContactStartTime:F2} roof_contact_end={_roofContactEndTime:F2} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({_rb.linearVelocity.x:F2},{_rb.linearVelocity.y:F2},{_rb.linearVelocity.z:F2})");
-        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece slide_to_falling_transition pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({_rb.linearVelocity.x:F2},{_rb.linearVelocity.y:F2},{_rb.linearVelocity.z:F2})");
+        Vector3 vAtTransition = _rb.linearVelocity;
+        float vMagT = vAtTransition.magnitude;
+        float vVertT = Mathf.Abs(vAtTransition.y);
+        float vHorizT = Mathf.Sqrt(vAtTransition.x * vAtTransition.x + vAtTransition.z * vAtTransition.z);
+        bool vertDomAtTransition = vMagT > 0.05f && vVertT > vHorizT;
+        UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] source=SnowPackFallingPiece slide_to_falling_transition pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({vAtTransition.x:F2},{vAtTransition.y:F2},{vAtTransition.z:F2}) vertical_velocity_still_dominant={(vertDomAtTransition ? "YES" : "NO")}");
     }
 
     static void SetLayerRecursively(GameObject go, int layer)
@@ -177,11 +194,24 @@ public class SnowPackFallingPiece : MonoBehaviour
         UnityEngine.Debug.Log($"[DetachedSpawn] class=falling pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) vel=({v.x:F2},{v.y:F2},{v.z:F2}) layer={LayerMask.LayerToName(gameObject.layer)} col.enabled={(col != null && col.enabled)}");
     }
 
+    /// <summary>slide grace time: この秒数は Y velocity を clamp して下向き初速を抑える。</summary>
+    const float SlideGraceSeconds = 0.2f;
+
     void FixedUpdate()
     {
         if ((_state != State.RoofSliding && _state != State.Falling) || _rb == null) return;
         float age = Time.time - _startTime;
         if (age < 0.5f) _trajectoryPoints.Add(transform.position);
+
+        // D: slide grace time 中は Y velocity を 0 に clamp して垂直落下初速を抑える
+        if (_state == State.RoofSliding && age < SlideGraceSeconds)
+        {
+            Vector3 v = _rb.linearVelocity;
+            if (v.y < 0f)
+            {
+                _rb.linearVelocity = new Vector3(v.x, 0f, v.z);
+            }
+        }
     }
 
     void Update()
@@ -189,6 +219,23 @@ public class SnowPackFallingPiece : MonoBehaviour
         if (_state == State.RoofSliding)
         {
             float elapsed = Time.time - _startTime;
+            // C: slide phase 中は毎フレーム屋根面上に位置を snap して接触を維持
+            if (_roofCollider != null && _rb != null)
+            {
+                Vector3 rNormal = _roofCollider.transform.up;
+                Vector3 closest = _roofCollider.ClosestPoint(transform.position);
+                float halfSize = 0.075f;
+                Vector3 snapPos = closest + rNormal * halfSize;
+                // downhill 方向の移動は維持しつつ法線方向のみ補正
+                Vector3 delta = snapPos - transform.position;
+                float normalDelta = Vector3.Dot(delta, rNormal);
+                if (Mathf.Abs(normalDelta) > 0.001f)
+                    transform.position += rNormal * normalDelta;
+                // 法線方向の velocity 成分を除去して屋根から離れないようにする
+                Vector3 v = _rb.linearVelocity;
+                float vNormal = Vector3.Dot(v, rNormal);
+                if (vNormal < 0f) _rb.linearVelocity = v - rNormal * vNormal;
+            }
             float tVal = Vector3.Dot(transform.position - _roofCenter, _roofDownhill);
             if (elapsed >= RoofSlidePhaseSeconds || tVal > _roofEdgeTEnd)
                 SwitchToFalling();

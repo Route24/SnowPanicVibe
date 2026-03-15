@@ -1,0 +1,136 @@
+# ASSI MASTER PROTOCOL（Snow Panic 開発ルール統合版）
+
+protocol_name=SNOWPANIC_ASSI_MASTER
+protocol_version=1.0
+
+## 目的
+
+以下の問題を完全に防止する:
+
+- コード巻き戻し
+- 無関係システム変更
+- ファイル全体再生成
+- 複数原因同時修正
+- 分割リクエスト
+- コピー操作ミス
+
+---
+
+## ASSI REQUEST FORMAT
+
+今後のすべての ASSI リクエストは必ず以下の形式にする:
+
+```
+BEGIN ASSI REQUEST
+(すべての内容)
+END ASSI REQUEST
+```
+
+ルール:
+1. 必ず1つのコードブロック
+2. 分割出力禁止
+3. 解説付き出力禁止
+4. ユーザーがそのままコピーして送れる状態
+
+---
+
+## CORE EDIT RULES
+
+1. Edit only the minimal lines required.
+2. Do not rewrite entire files.
+3. Keep all existing logic unchanged unless explicitly requested.
+4. Do not modify unrelated systems.
+5. Return only the modified code block or minimal patch.
+6. Preserve current architecture.
+7. Do not auto-refactor scripts.
+8. Never regenerate working systems.
+9. Never revert confirmed behaviour.
+10. If unsure, ask instead of rewriting.
+
+---
+
+## STRICT PROTECTED FILES
+
+以下のスクリプトは**絶対に全体書き換え禁止**:
+
+- SnowPackSpawner.cs
+- RoofSnowSystem.cs
+- SnowPackFallingPiece.cs
+- SnowVisual.cs
+- SnowPhysicsScoreManager.cs
+
+許可: 最小行修正のみ
+
+---
+
+## CHANGE SCOPE RULE
+
+**1リクエストで変更できる原因は1つのみ。**
+
+Allowed:
+- 1原因修正
+- 小パラメータ変更
+- 小関数追加
+
+Forbidden:
+- 複数原因修正
+- 大規模リファクタ
+- 別システム変更
+- 自動クリーンアップ
+
+---
+
+## DEBUG RULE
+
+原因が不明な場合、コードを書き換えず以下を優先する:
+
+- ログ
+- 可視化
+- ベクトル表示
+- 接触時間表示
+
+---
+
+## ROLLBACK PREVENTION
+
+ASSI は以下を禁止:
+
+- 確認済み動作の削除
+- 屋根傾斜方向の変更
+- 雪物理の巻き戻し
+- スクリプト再生成
+
+---
+
+## ASSI RESPONSE FORMAT
+
+ASSI は必ず以下を返す:
+
+```
+【ASSI REPORT】
+
+file_modified=
+lines_changed=
+
+minimal_patch=YES
+full_rewrite_attempted=NO
+unrelated_system_modified=NO
+
+compile_result=
+console_error_count=
+
+single_root_cause=
+
+play_confirmed=
+
+result=PASS/FAIL
+```
+
+---
+
+## ACTIVATION
+
+edit_rules_active=YES
+single_request_format_active=YES
+rollback_prevention_active=YES
+apply_to_future_requests=YES

@@ -1,0 +1,57 @@
+# ASSI REQUEST FORMAT PROTOCOL（リクエスト形式固定）
+
+protocol_version=SNOWPANIC_ASSI_V3
+
+## 目的
+
+Snow Panic 開発での ASSI へのリクエスト形式を統一し、
+操作ミス・分割コピー・巻き戻しを防ぐ。
+
+## SINGLE REQUEST FORMAT（全リクエストで必須）
+
+1. リクエストは **必ず1つのブロックにまとめる**
+2. コピーしやすい1つのコードブロック形式で出力する
+3. 複数ブロックは禁止
+4. 分割説明は禁止
+5. ユーザーはそのままコピーして ASSI に送るだけにする
+
+## OUTPUT FORMAT（必須構造）
+
+ASSI へのリクエストは必ず以下の構造で1ブロックのみ出力する:
+
+```
+BEGIN ASSI REQUEST
+
+SNOW PANIC - ASSI PROTOCOL
+
+目的
+(目的を書く)
+
+作業
+(修正内容)
+
+成功条件
+(成功条件)
+
+必須レポート
+(ASSI REPORT)
+
+END ASSI REQUEST
+```
+
+## 禁止事項
+
+- 複数コードブロック
+- 分割リクエスト
+- 解説付きリクエスト
+- コピーボタン無し形式
+
+## 必須要素
+
+- 単一コピー可能ブロック
+- BEGIN / END 構造
+- Snow Panic ASSI PROTOCOL を含む
+
+## 適用範囲
+
+Snow Panic のすべての ASSI リクエスト出力に自動適用する。
