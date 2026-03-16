@@ -63,13 +63,56 @@ public class SnowLoopLogCapture : MonoBehaviour
             Debug.Log($"[ASSI_BOOT] scene={scene} enabled={en} active={active}");
             BugOriginTracker.RecordSceneLoad(scene);
             ModifyTargetDeclaration.EmitToReport();
+            EmitDevModeHeader(scene);
         }
-        SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
-        ToolCooldownManager.EnsureBootstrapIfNeeded();
-        UnifiedHUD.EnsureBootstrap();
-        if (!UnifiedHUD.IsActive) { UIBootstrap.EnsureUIRootAndScoreText(); SnowScoreDisplayUI.EnsureBootstrap(); }
+
+        bool isBillboard = IsBillboardScene();
+        if (!isBillboard)
+        {
+            SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
+            ToolCooldownManager.EnsureBootstrapIfNeeded();
+            UnifiedHUD.EnsureBootstrap();
+            if (!UnifiedHUD.IsActive) { UIBootstrap.EnsureUIRootAndScoreText(); SnowScoreDisplayUI.EnsureBootstrap(); }
+        }
         DisableDebugGridVisuals();
         Invoke(nameof(InvokeEmitRenderVisibilitySnapshot), 0.02f);
+    }
+
+    static bool IsBillboardScene()
+    {
+        string s = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        return s.IndexOf("Billboard", System.StringComparison.OrdinalIgnoreCase) >= 0
+            || UnityEngine.Object.FindFirstObjectByType<RoofCalibrationController>() != null;
+    }
+
+    static void EmitDevModeHeader(string scene)
+    {
+        bool isBillboard = IsBillboardScene();
+        string devMode = isBillboard
+            ? "billboard_mock_ui_removed_calibration_first"
+            : "normal_snow_physics";
+
+        // レポート先頭に current_dev_mode を出力
+        Debug.Log($"[DEV_MODE] current_dev_mode={devMode} scene={scene}");
+        AppendToAssiReport($"=== DEV MODE ===");
+        AppendToAssiReport($"current_dev_mode={devMode}");
+        AppendToAssiReport($"scene={scene}");
+
+        if (isBillboard)
+        {
+            // Billboard mock scene: 現在の主要判定3項目
+            bool calibLoaded = System.IO.File.Exists("Assets/Art/RoofCalibrationData.json");
+            AppendToAssiReport("=== CURRENT FOCUS ITEMS ===");
+            AppendToAssiReport($"calibration_data_loaded={calibLoaded.ToString().ToLower()}");
+            AppendToAssiReport("calibration_to_collider_connected=pending");
+            AppendToAssiReport("roof_slide_verification_ready=pending");
+            // UI・preview 系は N/A
+            AppendToAssiReport("=== N/A ITEMS (billboard_mock) ===");
+            AppendToAssiReport("score_ui_check=N/A (ui_mode=background_removed_canvas_later)");
+            AppendToAssiReport("cooldown_meter_check=N/A (ui_mode=background_removed_canvas_later)");
+            AppendToAssiReport("preview_gif_pending=N/A (not_current_focus)");
+            Debug.Log($"[CALIB_STATUS] calibration_data_file_exists={calibLoaded.ToString().ToLower()} path=Assets/Art/RoofCalibrationData.json");
+        }
     }
 
     static void DisableDebugGridVisuals()
@@ -231,6 +274,9 @@ public class SnowLoopLogCapture : MonoBehaviour
 
     void OnDisable()
     {
+        // Stop 時に Console Snapshot（直近30行）をレポートに追記
+        EmitConsoleSnapshot();
+
         Application.logMessageReceived -= OnLogMessageReceived;
         try
         {
@@ -242,6 +288,19 @@ public class SnowLoopLogCapture : MonoBehaviour
             }
         }
         catch (Exception ex) { Debug.LogWarning($"[SnowLoopLogCapture] buffer write failed: {ex.Message}"); }
+    }
+
+    static void EmitConsoleSnapshot()
+    {
+        try
+        {
+            AppendToAssiReport("=== CONSOLE SNAPSHOT (last 30 lines) ===");
+            int start = Mathf.Max(0, _consoleBuffer.Count - 30);
+            for (int i = start; i < _consoleBuffer.Count; i++)
+                AppendToAssiReport(_consoleBuffer[i]);
+            AppendToAssiReport("=== END CONSOLE SNAPSHOT ===");
+        }
+        catch { }
     }
 
     static void OnLogMessageReceived(string condition, string stackTrace, LogType type)
