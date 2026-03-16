@@ -24,8 +24,13 @@ public class BillboardSnowKiller : MonoBehaviour
 
     void Awake() => KillAll();
 
-    // DontDestroyOnLoad 経由で後から生成される場合に備えて毎フレーム監視
-    void Update() => KillAll();
+    // [SNOW_DESTROY_TRACE] Update の KillAll は SnowDestroyTracer により停止済み
+    // ForceSnow_ / MinimalSnow_ を誤って破棄しないよう Update を無効化
+    void Update()
+    {
+        // KillAll() は呼ばない（SnowDestroyTracer が enabled=false にする）
+        Debug.Log("[SNOW_DESTROY_TRACE] BillboardSnowKiller.Update suppressed by SnowDestroyTracer");
+    }
 
     void KillAll()
     {

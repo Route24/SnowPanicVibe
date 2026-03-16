@@ -113,6 +113,7 @@
     <Compile Include="Assets/Scripts/RendererWatch.cs" />
     <Compile Include="Assets/Scripts/RoofDebugAutoSetup.cs" />
     <Compile Include="Assets/Scripts/SnowLoopLogCapture.cs" />
+    <Compile Include="Assets/Scripts/MinimalLandingTest.cs" />
     <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
     <Compile Include="Assets/Scripts/RoofSnowReportWriter.cs" />
     <Compile Include="Assets/Scripts/DebugScreenshotCapture.cs" />
@@ -124,6 +125,7 @@
     <Compile Include="Assets/Scripts/SnowDespawnLogger.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestorBehaviour.cs" />
     <Compile Include="Assets/Scripts/DebugDiagnostics.cs" />
+    <Compile Include="Assets/Scripts/SnowDestroyTracer.cs" />
     <Compile Include="Assets/Scripts/CorniceRuntimeSnowSetup.cs" />
     <Compile Include="Assets/Scripts/GroundSnowAccumulator.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyMinimalScene.cs" />

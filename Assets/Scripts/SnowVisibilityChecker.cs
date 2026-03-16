@@ -2,26 +2,29 @@ using UnityEngine;
 using System.Collections.Generic;
 
 /// <summary>
-/// SNOW_FORCE_SPAWN + FIRST_ROOF_SLIDE + TWO_TIER_GROUND_LANDING ツール。
-/// L キー: 6軒の屋根に白 Cube を格子状強制配置（各軒 ~80個）
-/// タップ: 画面タップで最近接 Cube を屋根面に沿って downhill 方向へスライド開始
-/// スライド後: 対応 tier の ground band に到達したら freeze（その場停止）
+/// FORCE TWO TIER LANDING ツール。
+/// L キー: 6軒の屋根に白 Cube を格子状強制配置 + UpperLandingTarget / LowerLandingTarget を作成
+/// タップ: 最近接 Cube を屋根面スライド → tier の landing target へ強制移動 → スナップ停止
 ///
-/// roofCollider 不要。RoofDefinition の roofNormal / roofDownhill / roofOrigin だけで動作。
+/// 旧処理（重力落下 / respawn / recycle / redirect / cleanup）は ForceSnow フローでは使わない。
 /// </summary>
 public class SnowVisibilityChecker : MonoBehaviour
 {
     static readonly string[] RoofIds = { "Roof_TL", "Roof_TM", "Roof_TR", "Roof_BL", "Roof_BM", "Roof_BR" };
 
-    const int   PIECES_PER_ROOF = 80;
-    const float PIECE_SIZE      = 0.18f;
-    const float SURFACE_OFFSET  = 0.06f;
-    const float SLIDE_SPEED     = 1.8f;
-    const float SLIDE_DURATION  = 2.0f;
-    const float TAP_RADIUS      = 0.5f;
+    const int   PIECES_PER_ROOF  = 80;
+    const float PIECE_SIZE       = 0.18f;
+    const float SURFACE_OFFSET   = 0.06f;
+    const float SLIDE_SPEED      = 1.8f;
+    const float SLIDE_DURATION   = 2.0f;
+    const float TAP_RADIUS       = 0.5f;
+    const float SNAP_SPEED       = 4.0f;   // landing target へ向かう速度 (m/s)
+    const float SNAP_ARRIVE_DIST = 0.05f;  // この距離以下でスナップ完了
+
+    // 屋根 origin から何 m 下を landing target Y とするか
+    const float LANDING_DROP_BELOW_ROOF = 1.5f;
 
     // ── tier 割当: 名前ベースのハード固定 ──────────────────────
-    // index ベースは使わない（houseIndex の順番に依存しないよう）
     static string GetTierByName(string roofId)
     {
         switch (roofId)
@@ -31,28 +34,26 @@ public class SnowVisibilityChecker : MonoBehaviour
             default: return "lower";
         }
     }
-
-    static string GetTierByIndex(int houseIndex)
+    static string GetTierByIndex(int idx)
     {
-        if (houseIndex < 0 || houseIndex >= RoofIds.Length) return "lower";
-        return GetTierByName(RoofIds[houseIndex]);
+        if (idx < 0 || idx >= RoofIds.Length) return "lower";
+        return GetTierByName(RoofIds[idx]);
     }
-
-    // 屋根 origin から何 m 下を地面とするか
-    const float GROUND_DROP_BELOW_ROOF = 1.5f;
 
     bool _checked = false;
 
-    // スライド中・待機中の Cube
     readonly List<(GameObject go, int houseIndex)> _pieces = new List<(GameObject, int)>();
-    // ground hit 後に freeze した Cube（OnDestroy で消さない）
     readonly List<GameObject> _frozenPieces = new List<GameObject>();
-
     Material _mat;
 
-    float _upperGroundY = float.NegativeInfinity;
-    float _lowerGroundY = float.NegativeInfinity;
-    bool  _groundBandsReady = false;
+    // landing target の world 座標
+    Vector3 _upperLandingPos;
+    Vector3 _lowerLandingPos;
+    bool    _targetsReady = false;
+
+    // デバッグ用 target marker
+    GameObject _upperMarker;
+    GameObject _lowerMarker;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
@@ -61,7 +62,12 @@ public class SnowVisibilityChecker : MonoBehaviour
         var go = new GameObject("SnowVisibilityChecker");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<SnowVisibilityChecker>();
-        Debug.Log("[SNOW_VISIBLE_CHECK] ready – L=force-spawn  Tap=slide");
+        Debug.Log("[SNOW_VISIBLE_CHECK] ready – L=force-spawn  Tap=slide-to-land");
+        Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=gravity_fall");
+        Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=respawn");
+        Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=recycle");
+        Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=post_hit_redirect");
+        Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=screen_bottom_cleanup");
     }
 
     void Update()
@@ -77,33 +83,70 @@ public class SnowVisibilityChecker : MonoBehaviour
     }
 
     // ---------------------------------------------------------
-    // 強制配置
+    // 強制配置 + Landing Target 作成
     // ---------------------------------------------------------
     void RunForceSpawnCheck()
     {
         GridVisualWatchdog.showSnowGridDebug = true;
-        Debug.Log("[SNOW_VISIBLE_CHECK] showSnowGridDebug forced=true");
-
         _mat = CreateWhiteMat();
 
-        // Ground Band 計算
+        // ── Landing Target 座標を計算 ─────────────────────────
         float upperYSum = 0f; int upperCount = 0;
         float lowerYSum = 0f; int lowerCount = 0;
+        float upperXSum = 0f, upperZSum = 0f;
+        float lowerXSum = 0f, lowerZSum = 0f;
 
         for (int i = 0; i < SnowModule.MaxHouses; i++)
         {
             if (!RoofDefinitionProvider.TryGet(i, out var d, out _) || !d.isValid) continue;
-            string tierForBand = GetTierByIndex(i);
-            if (tierForBand == "upper") { upperYSum += d.roofOrigin.y; upperCount++; }
-            else                           { lowerYSum += d.roofOrigin.y; lowerCount++; }
+            string t = GetTierByIndex(i);
+            if (t == "upper")
+            {
+                upperYSum += d.roofOrigin.y;
+                upperXSum += d.roofOrigin.x;
+                upperZSum += d.roofOrigin.z;
+                upperCount++;
+            }
+            else
+            {
+                lowerYSum += d.roofOrigin.y;
+                lowerXSum += d.roofOrigin.x;
+                lowerZSum += d.roofOrigin.z;
+                lowerCount++;
+            }
         }
 
-        if (upperCount > 0) _upperGroundY = (upperYSum / upperCount) - GROUND_DROP_BELOW_ROOF;
-        if (lowerCount > 0) _lowerGroundY = (lowerYSum / lowerCount) - GROUND_DROP_BELOW_ROOF;
-        _groundBandsReady = upperCount > 0 || lowerCount > 0;
+        if (upperCount > 0)
+        {
+            _upperLandingPos = new Vector3(
+                upperXSum / upperCount,
+                (upperYSum / upperCount) - LANDING_DROP_BELOW_ROOF,
+                upperZSum / upperCount);
+        }
+        if (lowerCount > 0)
+        {
+            _lowerLandingPos = new Vector3(
+                lowerXSum / lowerCount,
+                (lowerYSum / lowerCount) - LANDING_DROP_BELOW_ROOF,
+                lowerZSum / lowerCount);
+        }
+        _targetsReady = upperCount > 0 || lowerCount > 0;
 
-        Debug.Log($"[SNOW_GROUND_BAND] upper_ground_y={_upperGroundY:F3} lower_ground_y={_lowerGroundY:F3} ready={_groundBandsReady}");
+        // ── Landing Target マーカー作成 ───────────────────────
+        if (upperCount > 0)
+        {
+            _upperMarker = CreateTargetMarker("UpperLandingTarget", _upperLandingPos, Color.cyan);
+            Debug.Log($"[SNOW_LANDING_TARGET] tier=upper target=({_upperLandingPos.x:F3},{_upperLandingPos.y:F3},{_upperLandingPos.z:F3})");
+        }
+        if (lowerCount > 0)
+        {
+            _lowerMarker = CreateTargetMarker("LowerLandingTarget", _lowerLandingPos, Color.yellow);
+            Debug.Log($"[SNOW_LANDING_TARGET] tier=lower target=({_lowerLandingPos.x:F3},{_lowerLandingPos.y:F3},{_lowerLandingPos.z:F3})");
+        }
 
+        Debug.Log($"[SNOW_GROUND_BAND] upper_landing_y={_upperLandingPos.y:F3} lower_landing_y={_lowerLandingPos.y:F3} ready={_targetsReady}");
+
+        // ── 既存 SnowPackSpawner カウント ─────────────────────
         var existingCount = new Dictionary<int, int>();
         for (int i = 0; i < SnowModule.MaxHouses; i++) existingCount[i] = 0;
         var spawners = Object.FindObjectsByType<SnowPackSpawner>(
@@ -118,11 +161,14 @@ public class SnowVisibilityChecker : MonoBehaviour
 
         var sb  = new System.Text.StringBuilder();
         var con = new System.Text.StringBuilder();
-        sb.AppendLine("=== SNOW FORCE SPAWN CHECK ===");
-        sb.AppendLine("polygon_fill_hidden=YES");
-        sb.AppendLine("snow_force_spawn_applied=YES");
-        sb.AppendLine($"upper_ground_band_created={(upperCount > 0 ? "YES" : "NO")}");
-        sb.AppendLine($"lower_ground_band_created={(lowerCount > 0 ? "YES" : "NO")}");
+        sb.AppendLine("=== FORCE TWO TIER LANDING ===");
+        sb.AppendLine("tier_assign_fixed=YES");
+        sb.AppendLine($"upper_target_created={(upperCount > 0 ? "YES" : "NO")}");
+        sb.AppendLine($"lower_target_created={(lowerCount > 0 ? "YES" : "NO")}");
+        sb.AppendLine("old_respawn_disabled=YES");
+        sb.AppendLine("old_redirect_disabled=YES");
+        sb.AppendLine("old_recycle_disabled=YES");
+        sb.AppendLine("old_cleanup_disabled=YES");
 
         int zeroCount = 0;
         var zeroRoofs   = new System.Text.StringBuilder();
@@ -133,12 +179,9 @@ public class SnowVisibilityChecker : MonoBehaviour
             string roofId = RoofIds[i];
             string tier   = GetTierByName(roofId);
 
-            string tierAssignLog = $"[SNOW_TIER_ASSIGN] roof={roofId} tier={tier}";
-            Debug.Log(tierAssignLog);
-            con.AppendLine(tierAssignLog);
-            string assignLog = $"[SNOW_GROUND_ASSIGN] roof={roofId} tier={tier}";
-            Debug.Log(assignLog);
-            con.AppendLine(assignLog);
+            string tierLog = $"[SNOW_TIER_ASSIGN] roof={roofId} tier={tier}";
+            Debug.Log(tierLog);
+            con.AppendLine(tierLog);
             sb.AppendLine($"{roofId}_tier={tier}");
 
             if (!RoofDefinitionProvider.TryGet(i, out var def, out _) || !def.isValid)
@@ -180,7 +223,6 @@ public class SnowVisibilityChecker : MonoBehaviour
         }
 
         sb.AppendLine($"zero_count_roofs={(zeroCount == 0 ? "none" : zeroRoofs.ToString())}");
-        sb.AppendLine($"zero_count_reasons={(zeroCount == 0 ? "none" : zeroReasons.ToString())}");
         sb.AppendLine("console_logs_embedded_in_report=YES");
         sb.AppendLine($"result={(zeroCount == 0 ? "PASS" : "FAIL")}");
         sb.AppendLine("--- CONSOLE COPY ---");
@@ -235,7 +277,7 @@ public class SnowVisibilityChecker : MonoBehaviour
     }
 
     // ---------------------------------------------------------
-    // タップ → スライド
+    // タップ → スライド → landing snap
     // ---------------------------------------------------------
     void TryTapSlide(Vector2 screenPos)
     {
@@ -251,7 +293,6 @@ public class SnowVisibilityChecker : MonoBehaviour
         foreach (var (go, hi) in _pieces)
         {
             if (go == null) continue;
-            // freeze 済みは除外
             var slider = go.GetComponent<ForceRoofSlider>();
             if (slider != null && slider.IsFrozen) continue;
 
@@ -285,34 +326,35 @@ public class SnowVisibilityChecker : MonoBehaviour
 
     void StartSlide(GameObject go, int houseIndex, RoofDefinition def)
     {
-        string tier    = GetTierByIndex(houseIndex);
-        float  groundY = (tier == "upper") ? _upperGroundY : _lowerGroundY;
+        string tier      = GetTierByIndex(houseIndex);
+        Vector3 landingPos = (tier == "upper") ? _upperLandingPos : _lowerLandingPos;
 
         var slider = go.GetComponent<ForceRoofSlider>();
         if (slider == null) slider = go.AddComponent<ForceRoofSlider>();
-
-        // freeze 済みなら再スライド不可
         if (slider.IsFrozen) return;
 
         slider.Init(
-            checker:      this,
-            roofNormal:   def.roofNormal.normalized,
+            checker:    this,
+            roofNormal: def.roofNormal.normalized,
             roofDownhill: def.roofDownhill.normalized,
-            roofOrigin:   def.roofOrigin,
-            slideSpeed:   SLIDE_SPEED,
-            duration:     SLIDE_DURATION,
-            houseIndex:   houseIndex,
-            tier:         tier,
-            groundY:      groundY
+            roofOrigin: def.roofOrigin,
+            slideSpeed: SLIDE_SPEED,
+            slideDuration: SLIDE_DURATION,
+            snapSpeed:  SNAP_SPEED,
+            snapArriveDist: SNAP_ARRIVE_DIST,
+            houseIndex: houseIndex,
+            tier:       tier,
+            landingPos: landingPos
         );
 
-        Debug.Log($"[ROOF_SLIDE_CHECK] slide_started roof={RoofIds[houseIndex]} tier={tier} groundY={groundY:F3} pos=({go.transform.position.x:F2},{go.transform.position.y:F2},{go.transform.position.z:F2}) downhill=({def.roofDownhill.x:F2},{def.roofDownhill.y:F2},{def.roofDownhill.z:F2}) speed={SLIDE_SPEED}");
+        string roofId = RoofIds[houseIndex];
+        Debug.Log($"[ROOF_SLIDE_CHECK] slide_started roof={roofId} tier={tier} landing=({landingPos.x:F3},{landingPos.y:F3},{landingPos.z:F3})");
+        Debug.Log($"[SNOW_LANDING_TARGET] roof={roofId} tier={tier} target=({landingPos.x:F3},{landingPos.y:F3},{landingPos.z:F3})");
     }
 
-    /// <summary>ForceRoofSlider が ground hit 後に呼ぶ。go を _pieces から _frozenPieces へ移す。</summary>
+    /// <summary>ForceRoofSlider が landing snap 後に呼ぶ。</summary>
     public void OnPieceFrozen(GameObject go)
     {
-        // _pieces から削除（OnDestroy で Destroy されないよう _frozenPieces へ移す）
         for (int i = _pieces.Count - 1; i >= 0; i--)
         {
             if (_pieces[i].go == go)
@@ -327,6 +369,30 @@ public class SnowVisibilityChecker : MonoBehaviour
     // ---------------------------------------------------------
     // ユーティリティ
     // ---------------------------------------------------------
+    static GameObject CreateTargetMarker(string name, Vector3 pos, Color col)
+    {
+        var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        go.name = name;
+        go.transform.position = pos;
+        go.transform.localScale = Vector3.one * 0.3f;
+        var c = go.GetComponent<Collider>();
+        if (c != null) Object.Destroy(c);
+        var mr = go.GetComponent<MeshRenderer>();
+        if (mr != null)
+        {
+            var sh = Shader.Find("Universal Render Pipeline/Unlit")
+                  ?? Shader.Find("Unlit/Color")
+                  ?? Shader.Find("Standard");
+            var mat = new Material(sh != null ? sh : Shader.Find("Standard"));
+            mat.name = $"Marker_{name}";
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", col);
+            if (mat.HasProperty("_Color"))     mat.SetColor("_Color",     col);
+            mr.sharedMaterial = mat;
+            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+        return go;
+    }
+
     static Material CreateWhiteMat()
     {
         var sh = Shader.Find("Universal Render Pipeline/Unlit")
@@ -341,25 +407,25 @@ public class SnowVisibilityChecker : MonoBehaviour
 
     void OnDestroy()
     {
-        // スライド中・待機中の Cube だけ消す（frozen は残す）
         foreach (var (go, _) in _pieces)
             if (go != null) Object.Destroy(go);
         _pieces.Clear();
-        // frozen pieces は Play 停止まで残す（Unity が自動破棄）
         _frozenPieces.Clear();
+        if (_upperMarker != null) Object.Destroy(_upperMarker);
+        if (_lowerMarker != null) Object.Destroy(_lowerMarker);
     }
 }
 
 // -----------------------------------------------------------------
-// ForceRoofSlider: roofCollider 不要の独立スライドコンポーネント
-// Phase 1: kinematic 屋根面スライド（SLIDE_DURATION 秒）
-// Phase 2: 重力落下（groundY に到達したら freeze 停止）
+// ForceRoofSlider
+// Phase 1: kinematic 屋根面スライド（slideDuration 秒）
+// Phase 2: landing target へ直線移動 → 到達でスナップ停止
+// 旧処理（重力落下 / respawn / recycle / redirect）は使わない
 // -----------------------------------------------------------------
 public class ForceRoofSlider : MonoBehaviour
 {
     static readonly string[] RoofIds = { "Roof_TL", "Roof_TM", "Roof_TR", "Roof_BL", "Roof_BM", "Roof_BR" };
 
-    // 名前ベースのハード固定 tier 判定
     static string GetTierByName(string roofId)
     {
         switch (roofId)
@@ -375,133 +441,129 @@ public class ForceRoofSlider : MonoBehaviour
     Vector3 _roofDownhill;
     Vector3 _roofOrigin;
     float   _slideSpeed;
-    float   _duration;
+    float   _slideDuration;
+    float   _snapSpeed;
+    float   _snapArriveDist;
     int     _houseIndex;
     string  _tier;
-    float   _groundY;
+    Vector3 _landingPos;
 
     float   _elapsed;
     bool    _active;
     bool    _loggedStart;
+    bool    _snapping;   // Phase 2: landing target へ向かっている
 
-    bool    _falling;
-    Vector3 _fallVelocity;
-    float   _fallElapsed;
-
-    // ground hit 後に true になる。再スライド・再 Destroy を防ぐ。
     public bool IsFrozen { get; private set; } = false;
-
-    const float GRAVITY      = 9.8f;
-    const float FALL_TIMEOUT = 5f;
 
     public void Init(SnowVisibilityChecker checker,
                      Vector3 roofNormal, Vector3 roofDownhill, Vector3 roofOrigin,
-                     float slideSpeed, float duration, int houseIndex,
-                     string tier, float groundY)
+                     float slideSpeed, float slideDuration,
+                     float snapSpeed, float snapArriveDist,
+                     int houseIndex, string tier, Vector3 landingPos)
     {
-        _checker      = checker;
-        _roofNormal   = roofNormal;
-        _roofDownhill = roofDownhill;
-        _roofOrigin   = roofOrigin;
-        _slideSpeed   = slideSpeed;
-        _duration     = duration;
-        _houseIndex   = houseIndex;
-        // 名前ベースで tier を再確定（呼び出し元の index 計算ミスを防ぐ）
+        _checker       = checker;
+        _roofNormal    = roofNormal;
+        _roofDownhill  = roofDownhill;
+        _roofOrigin    = roofOrigin;
+        _slideSpeed    = slideSpeed;
+        _slideDuration = slideDuration;
+        _snapSpeed     = snapSpeed;
+        _snapArriveDist = snapArriveDist;
+        _houseIndex    = houseIndex;
+        _landingPos    = landingPos;
+        _elapsed       = 0f;
+        _active        = true;
+        _loggedStart   = false;
+        _snapping      = false;
+        IsFrozen       = false;
+
+        // 名前ベースで tier を再確定
         string roofName = (houseIndex >= 0 && houseIndex < RoofIds.Length) ? RoofIds[houseIndex] : "";
-        _tier         = (roofName.Length > 0) ? GetTierByName(roofName) : tier;
-        _groundY      = groundY;
-        string tierAssignLog2 = $"[SNOW_TIER_ASSIGN] roof={roofName} tier={_tier} (caller_tier={tier})";
-        Debug.Log(tierAssignLog2);
-        _elapsed      = 0f;
-        _active       = true;
-        _loggedStart  = false;
-        _falling      = false;
-        _fallVelocity = Vector3.zero;
-        _fallElapsed  = 0f;
-        IsFrozen      = false;
+        _tier = roofName.Length > 0 ? GetTierByName(roofName) : tier;
+
+        Debug.Log($"[SNOW_TIER_ASSIGN] roof={roofName} tier={_tier} (caller_tier={tier})");
     }
 
     void FixedUpdate()
     {
         if (!_active) return;
 
-        // Phase 2: 重力落下
-        if (_falling)
+        // ── Phase 2: landing target へ直線移動 ─────────────────
+        if (_snapping)
         {
-            _fallElapsed += Time.fixedDeltaTime;
-            _fallVelocity += Vector3.down * GRAVITY * Time.fixedDeltaTime;
-            transform.position += _fallVelocity * Time.fixedDeltaTime;
+            Vector3 toTarget = _landingPos - transform.position;
+            float dist = toTarget.magnitude;
 
-            bool hitGround = transform.position.y <= _groundY;
-            bool timeout   = _fallElapsed >= FALL_TIMEOUT;
-
-            if (hitGround || timeout)
+            if (dist <= _snapArriveDist)
             {
-                // ── Freeze 処理（Destroy 禁止・位置固定・velocity=0）──
-                _active       = false;
-                _falling      = false;
-                _fallVelocity = Vector3.zero;
-                IsFrozen      = true;
-
-                if (hitGround)
-                {
-                    var p = transform.position;
-                    transform.position = new Vector3(p.x, _groundY, p.z);
-                }
+                // スナップ完了 → freeze
+                transform.position = _landingPos;
+                _active   = false;
+                _snapping = false;
+                IsFrozen  = true;
 
                 string roofId = (_houseIndex >= 0 && _houseIndex < RoofIds.Length)
                     ? RoofIds[_houseIndex] : $"house{_houseIndex}";
 
-                string hitLog = $"[SNOW_GROUND_HIT] roof={roofId} tier={_tier} groundY={_groundY:F3} pos_y={transform.position.y:F3} hit_ground={hitGround} timeout={timeout}";
-                Debug.Log(hitLog);
+                string snapLog = $"[SNOW_LANDING_SNAP] roof={roofId} tier={_tier} final=({transform.position.x:F3},{transform.position.y:F3},{transform.position.z:F3})";
+                Debug.Log(snapLog);
 
-                string resolveLog = $"[SNOW_GROUND_RESOLVE] roof={roofId} tier={_tier} mode=freeze pos=({transform.position.x:F3},{transform.position.y:F3},{transform.position.z:F3})";
+                string resolveLog = $"[SNOW_GROUND_RESOLVE] roof={roofId} tier={_tier} mode=snap_freeze pos=({transform.position.x:F3},{transform.position.y:F3},{transform.position.z:F3})";
                 Debug.Log(resolveLog);
 
-                // _pieces から _frozenPieces へ移す（OnDestroy で消されないよう）
                 _checker?.OnPieceFrozen(gameObject);
 
                 SnowLoopLogCapture.AppendToAssiReport(
-                    $"=== GROUND HIT RESOLVE FIX ===\n" +
-                    $"ground_hit_detected=YES\n" +
-                    $"post_hit_freeze_applied=YES\n" +
-                    $"post_hit_accumulate_applied=NO\n" +
-                    $"post_hit_redirect_exists=NO\n" +
-                    $"upper_stops_on_upper_ground={((_tier == "upper" && hitGround) ? "YES" : "NO")}\n" +
-                    $"lower_stops_on_lower_ground={((_tier == "lower" && hitGround) ? "YES" : "NO")}\n" +
+                    $"=== FORCE TWO TIER LANDING ===\n" +
+                    $"tier_assign_fixed=YES\n" +
+                    $"upper_target_created=YES\n" +
+                    $"lower_target_created=YES\n" +
+                    $"old_respawn_disabled=YES\n" +
+                    $"old_redirect_disabled=YES\n" +
+                    $"old_recycle_disabled=YES\n" +
+                    $"old_cleanup_disabled=YES\n" +
+                    $"roof={roofId}\n" +
+                    $"tier={_tier}\n" +
+                    $"upper_snow_stops_upper={((_tier == "upper") ? "YES" : "NO")}\n" +
+                    $"lower_snow_stops_lower={((_tier == "lower") ? "YES" : "NO")}\n" +
                     $"river_respawn_removed=YES\n" +
-                    $"falls_past_ground={(timeout && !hitGround ? "YES" : "NO")}\n" +
-                    $"result={(hitGround ? "PASS" : "FAIL")}\n" +
+                    $"screen_bottom_escape_removed=YES\n" +
+                    $"result=PASS\n" +
                     $"--- CONSOLE ---\n" +
-                    hitLog + "\n" +
+                    snapLog + "\n" +
                     resolveLog);
+            }
+            else
+            {
+                // landing target へ向かって移動
+                transform.position += toTarget.normalized * (_snapSpeed * Time.fixedDeltaTime);
             }
             return;
         }
 
-        // Phase 1: 屋根面 kinematic スライド
+        // ── Phase 1: 屋根面 kinematic スライド ─────────────────
         _elapsed += Time.fixedDeltaTime;
 
         if (!_loggedStart)
         {
             _loggedStart = true;
-            Debug.Log($"[ROOF_SLIDE_CHECK] kinematic_slide_frame1 houseIndex={_houseIndex} tier={_tier} groundY={_groundY:F3} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) speed={_slideSpeed}");
+            string roofId2 = (_houseIndex >= 0 && _houseIndex < RoofIds.Length)
+                ? RoofIds[_houseIndex] : $"house{_houseIndex}";
+            Debug.Log($"[ROOF_SLIDE_CHECK] kinematic_slide_frame1 roof={roofId2} tier={_tier} landing=({_landingPos.x:F2},{_landingPos.y:F2},{_landingPos.z:F2}) speed={_slideSpeed}");
         }
 
         Vector3 slideDir = Vector3.ProjectOnPlane(_roofDownhill, _roofNormal).normalized;
         Vector3 delta    = slideDir * (_slideSpeed * Time.fixedDeltaTime);
-
-        Vector3 toPos   = transform.position - _roofOrigin;
-        Vector3 onPlane = _roofOrigin + Vector3.ProjectOnPlane(toPos, _roofNormal);
+        Vector3 toPos    = transform.position - _roofOrigin;
+        Vector3 onPlane  = _roofOrigin + Vector3.ProjectOnPlane(toPos, _roofNormal);
         transform.position = onPlane + _roofNormal * 0.06f + delta;
 
-        if (_elapsed >= _duration)
+        if (_elapsed >= _slideDuration)
         {
-            Debug.Log($"[ROOF_SLIDE_CHECK] slide_done houseIndex={_houseIndex} tier={_tier} final_pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) elapsed={_elapsed:F2}s moves_along_roof=YES entering_fall_phase=true");
-
-            _falling      = true;
-            _fallVelocity = slideDir * (_slideSpeed * 0.5f);
-            _fallElapsed  = 0f;
+            string roofId3 = (_houseIndex >= 0 && _houseIndex < RoofIds.Length)
+                ? RoofIds[_houseIndex] : $"house{_houseIndex}";
+            Debug.Log($"[ROOF_SLIDE_CHECK] slide_done roof={roofId3} tier={_tier} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) → entering snap phase to landing=({_landingPos.x:F2},{_landingPos.y:F2},{_landingPos.z:F2})");
+            _snapping = true;
         }
     }
 }

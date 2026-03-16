@@ -509,6 +509,7 @@ public class SnowPackFallingPiece : MonoBehaviour
     void ReturnFromFall(string reason)
     {
         if (this == null || gameObject == null) return;
+        UnityEngine.Debug.Log($"[SNOW_DESTROY_CALL] reason={reason} state={_state} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) go={gameObject.name}");
         DetachedSnowRegistry.UnregisterFalling(this);
         var state = _state == State.Falling ? SnowDespawnLogger.SnowState.Falling
             : _state == State.Grounded ? SnowDespawnLogger.SnowState.Grounded
