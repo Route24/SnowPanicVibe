@@ -93,6 +93,7 @@
     <Compile Include="Assets/Scripts/ScoreUiCheckEmitter.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/TapToSlideOnRoof.cs" />
+    <Compile Include="Assets/Scripts/BillboardRoofMapOverlay.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyFixedScene.cs" />
     <Compile Include="Assets/Scripts/SnowTestSlideAssist.cs" />
     <Compile Include="Assets/Scripts/UIBootstrap.cs" />
