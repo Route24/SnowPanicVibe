@@ -17,6 +17,9 @@ public class SnowLoopLogCapture : MonoBehaviour
     const int MaxBufferLines = 800;
     static readonly List<string> _consoleBuffer = new List<string>();
 
+    // GROUND_PIPE_ONLY モード時は [GROUND_PIPE_ で始まるログだけを通す
+    public static bool GroundPipeOnlyMode = false;
+
     static bool _assiBootEmitted;
     static bool _assiDiagnostic2sEmitted;
 
@@ -386,6 +389,8 @@ public class SnowLoopLogCapture : MonoBehaviour
     {
         if (VideoPipelineSelfTestMode.IsActive) return;
         if (string.IsNullOrEmpty(_latestLogPath)) return;
+        // GROUND_PIPE_ONLY フィルター: 該当ログ以外は書き込まない
+        if (GroundPipeOnlyMode && !line.Contains("[GROUND_PIPE_")) return;
         try
         {
             string ts = DateTime.Now.ToString("HH:mm:ss");

@@ -113,7 +113,47 @@ public class SnowFallSystem : MonoBehaviour
                 }
                 else if (((1 << hit.collider.gameObject.layer) & groundMask.value) != 0 || hit.collider.name.Contains("Ground") || hit.collider.name.Contains("Plane"))
                 {
-                    if (groundSnowSystem != null) groundSnowSystem.SpawnPileAt(hit.point, addPerGroundHit);
+                    // ── GROUND PIPE: tier 別 ground Y に差し替えて配置 ──
+                    string tier = GroundPipeTier.GetTierByPosition(hit.point);
+                    float groundY = GroundPipeTier.GetGroundY(tier);
+                    Vector3 resolvedPos = float.IsNegativeInfinity(groundY)
+                        ? hit.point
+                        : new Vector3(hit.point.x, groundY, hit.point.z);
+
+                    string inputLog = "[GROUND_PIPE_INPUT] tier=" + tier
+                        + " resolved_pos=(" + resolvedPos.x.ToString("F3") + "," + resolvedPos.y.ToString("F3") + "," + resolvedPos.z.ToString("F3") + ")"
+                        + " amount=" + addPerGroundHit.ToString("F3");
+                    Debug.Log(inputLog);
+                    SnowLoopLogCapture.AppendToAssiReport(inputLog);
+
+                    if (groundSnowSystem != null)
+                    {
+                        bool wasEnabled = groundSnowSystem.enabled;
+                        groundSnowSystem.enabled = true;
+                        float origLife  = groundSnowSystem.groundPileLifetimeSec;
+                        float origBlink = groundSnowSystem.groundPileBlinkDurationSec;
+                        groundSnowSystem.groundPileLifetimeSec      = 99999f;
+                        groundSnowSystem.groundPileBlinkDurationSec = 0f;
+                        groundSnowSystem.SpawnPileAt(resolvedPos, addPerGroundHit);
+                        groundSnowSystem.groundPileLifetimeSec      = origLife;
+                        groundSnowSystem.groundPileBlinkDurationSec = origBlink;
+                        groundSnowSystem.enabled = wasEnabled;
+
+                        int vc = groundSnowSystem.GetActivePileCount();
+                        string applyLog = "[GROUND_PIPE_APPLY] tier=" + tier
+                            + " spawn_pos=(" + resolvedPos.x.ToString("F3") + "," + resolvedPos.y.ToString("F3") + "," + resolvedPos.z.ToString("F3") + ")"
+                            + " forceSnowIndex=pile visibleCount=" + vc;
+                        Debug.Log(applyLog);
+                        SnowLoopLogCapture.AppendToAssiReport(applyLog);
+
+                        string upperOk = (tier == "upper") ? "YES" : "N/A";
+                        string lowerOk = (tier == "lower") ? "YES" : "N/A";
+                        string resultLog = "[GROUND_PIPE_RESULT] upper_visible=" + upperOk
+                            + " lower_visible=" + lowerOk
+                            + " river_respawn=NO offscreen_fall=NO";
+                        Debug.Log(resultLog);
+                        SnowLoopLogCapture.AppendToAssiReport(resultLog);
+                    }
                     _groundHits++;
                     Deactivate(ref p);
                 }
