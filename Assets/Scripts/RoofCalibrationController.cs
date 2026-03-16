@@ -230,9 +230,9 @@ public class RoofCalibrationController : MonoBehaviour
 
                 if (polyValid)
                 {
-                    // ① ポリゴン fill（TL→TR→BR→BL、2三角形分割）
-                    DrawQuadNorm(r.topLeft, r.topRight, r.bottomRight, r.bottomLeft, col);
-                    // ② 4点マーカー（fill の上に重ねる）
+                    // ① ポリゴン fill 一時非表示（SNOW_VISIBILITY_ISOLATION）
+                    // DrawQuadNorm(r.topLeft, r.topRight, r.bottomRight, r.bottomLeft, col);
+                    // ② 4点マーカー（残す）
                     DrawPointMarker(r.topLeft,     col, "TL");
                     DrawPointMarker(r.topRight,    col, "TR");
                     DrawPointMarker(r.bottomRight, col, "BR");

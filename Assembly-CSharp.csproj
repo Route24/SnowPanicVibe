@@ -91,6 +91,7 @@
     <Compile Include="Assets/Scripts/RollbackVerification.cs" />
     <Compile Include="Assets/Scripts/SnowVisual.cs" />
     <Compile Include="Assets/Scripts/ScoreUiCheckEmitter.cs" />
+    <Compile Include="Assets/Scripts/SnowVisibilityChecker.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/TapToSlideOnRoof.cs" />
     <Compile Include="Assets/Scripts/BillboardRoofMapOverlay.cs" />
