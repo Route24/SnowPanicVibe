@@ -131,7 +131,6 @@ public class RoofCalibrationController : MonoBehaviour
             if (_clickCount == 4)
             {
                 _roofs[_activeRoof].confirmed = true;
-                NormalizePoints(_roofs[_activeRoof]);
                 var r = _roofs[_activeRoof];
                 Debug.Log($"[ROOF_CAPTURE_DONE] roof={r.id} points=4 TL=({r.topLeft.x:F3},{r.topLeft.y:F3}) TR=({r.topRight.x:F3},{r.topRight.y:F3}) BR=({r.bottomRight.x:F3},{r.bottomRight.y:F3}) BL=({r.bottomLeft.x:F3},{r.bottomLeft.y:F3})");
             }
@@ -363,7 +362,6 @@ public class RoofCalibrationController : MonoBehaviour
             {
                 _roofs[i] = loaded;
                 _roofs[i].confirmed = true;
-                NormalizePoints(_roofs[i]);
                 loaded_count++;
             }
             else if (loaded != null)
@@ -401,161 +399,9 @@ public class RoofCalibrationController : MonoBehaviour
         _saveStatus = $"LOADED  {loaded_count}/6  →  {SavePath}";
         _saveStatusTimer = 5f;
         _renderLogDone = false; // 次の OnGUI で描画ログを出す
-        BuildAndInjectRoofDefinitions();
-    }
-
-
-    // ── Polygon → RoofDefinition 注入 ──────────────────────
-    // キャリブレーション済み4点から RoofDefinition を生成し
-    // RoofDefinitionProvider に注入する。
-    // BackgroundImage の3Dワールド座標を使って normalized → world 変換を行う。
-    void BuildAndInjectRoofDefinitions()
-    {
-        // BackgroundImage の4隅ワールド座標を取得
-        var bgGo = GameObject.Find("BackgroundImage");
-        var cam = Camera.main;
-        if (bgGo == null || cam == null)
-        {
-            Debug.LogWarning("[POLYGON_ROOF_SHAPE] BackgroundImage not found – cannot inject RoofDefinitions");
-            return;
-        }
-
-        var t = bgGo.transform;
-        // BackgroundImage の4隅（ローカル座標 ±0.5）をワールド座標に変換
-        Vector3 wTL = t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
-        Vector3 wTR = t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
-        Vector3 wBL = t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
-        Vector3 wBR = t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
-
-        // normalized (u,v) → ワールド座標（双線形補間）
-        // u=0→左端, u=1→右端, v=0→上端, v=1→下端
-        System.Func<Vector2, Vector3> normToWorld = (n) =>
-        {
-            Vector3 top    = Vector3.Lerp(wTL, wTR, n.x);
-            Vector3 bottom = Vector3.Lerp(wBL, wBR, n.x);
-            return Vector3.Lerp(top, bottom, n.y);
-        };
-
-        // 屋根面の法線（BackgroundImage の forward）
-        Vector3 roofNormal = -t.forward; // 手前向き（カメラ方向）
-        if (Vector3.Dot(roofNormal, Vector3.up) < 0f) roofNormal = -roofNormal;
-
-        int injected = 0;
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("=== POLYGON TO ROOF SHAPE ===");
-        sb.AppendLine("calibration_pipeline_confirmed=YES");
-        sb.AppendLine("polygon_verified=YES");
-
-        string[] roofLabels = { "TL", "TM", "TR", "BL", "BM", "BR" };
-
-        for (int i = 0; i < 6; i++)
-        {
-            var r = _roofs[i];
-            bool hasData = r.confirmed &&
-                           r.topLeft != Vector2.zero && r.topRight != Vector2.zero &&
-                           r.bottomRight != Vector2.zero && r.bottomLeft != Vector2.zero;
-
-            string label = roofLabels[i];
-
-            if (!hasData)
-            {
-                sb.AppendLine($"roof_shape_bound_to_{label}=NO");
-                Debug.LogWarning($"[POLYGON_ROOF_SHAPE] roof={r.id} skipped=no_data");
-                continue;
-            }
-
-            // 4点をワールド座標に変換
-            Vector3 wPtTL = normToWorld(r.topLeft);
-            Vector3 wPtTR = normToWorld(r.topRight);
-            Vector3 wPtBR = normToWorld(r.bottomRight);
-            Vector3 wPtBL = normToWorld(r.bottomLeft);
-
-            // 中心
-            Vector3 origin = (wPtTL + wPtTR + wPtBR + wPtBL) * 0.25f;
-
-            // 幅: top edge の長さ と bottom edge の長さの平均
-            float topW    = Vector3.Distance(wPtTL, wPtTR);
-            float bottomW = Vector3.Distance(wPtBL, wPtBR);
-            float width   = (topW + bottomW) * 0.5f;
-
-            // 奥行き: left edge と right edge の長さの平均
-            float leftD  = Vector3.Distance(wPtTL, wPtBL);
-            float rightD = Vector3.Distance(wPtTR, wPtBR);
-            float depth  = (leftD + rightD) * 0.5f;
-
-            // R 方向（横方向）: top edge の向き
-            Vector3 roofR = (wPtTR - wPtTL).normalized;
-            if (roofR.sqrMagnitude < 1e-6f) roofR = Vector3.right;
-
-            // 傾斜方向: top → bottom（downhill）
-            Vector3 topCenter    = (wPtTL + wPtTR) * 0.5f;
-            Vector3 bottomCenter = (wPtBL + wPtBR) * 0.5f;
-            Vector3 downhill     = (bottomCenter - topCenter).normalized;
-            if (downhill.sqrMagnitude < 1e-6f) downhill = Vector3.forward;
-
-            // slopeAngle: downhill と水平面のなす角
-            float slopeAngle = Vector3.Angle(downhill, Vector3.ProjectOnPlane(downhill, Vector3.up).normalized);
-
-            var def = new RoofDefinition
-            {
-                width         = Mathf.Max(0.1f, width),
-                depth         = Mathf.Max(0.1f, depth),
-                slopeAngle    = slopeAngle,
-                slopeDirection = downhill,
-                roofOrigin    = origin,
-                roofNormal    = roofNormal,
-                roofR         = roofR,
-                roofF         = Vector3.Cross(roofNormal, roofR).normalized,
-                roofDownhill  = downhill,
-                isValid       = true,
-                useExactRoofSize = true,
-            };
-
-            RoofDefinitionProvider.SetFromExternal(i, def);
-            injected++;
-
-            Debug.Log($"[POLYGON_ROOF_SHAPE] roof={r.id} houseIndex={i} origin=({origin.x:F2},{origin.y:F2},{origin.z:F2}) width={width:F3} depth={depth:F3} slopeAngle={slopeAngle:F1} injected=true");
-            sb.AppendLine($"roof_shape_bound_to_{label}=YES");
-        }
-
-        sb.AppendLine($"snow_spawn_inside_polygon_only={(injected > 0 ? "YES" : "NO")}");
-        sb.AppendLine($"all_6_ok={(injected == 6 ? "YES" : "NO")}");
-        sb.AppendLine($"result={(injected > 0 ? "PASS" : "FAIL")}");
-
-        SnowLoopLogCapture.AppendToAssiReport(sb.ToString());
-        Debug.Log($"[POLYGON_ROOF_SHAPE] inject_done={injected}/6 all_ok={(injected == 6)}");
-
-        // SnowPackSpawner を全軒リビルド
-        var spawners = UnityEngine.Object.FindObjectsByType<SnowPackSpawner>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        foreach (var sp in spawners)
-        {
-            if (sp != null && sp.isActiveAndEnabled)
-            {
-                sp.Rebuild();
-                Debug.Log($"[POLYGON_ROOF_SHAPE] spawner_rebuilt houseIndex={sp.houseIndex}");
-            }
-        }
     }
 
     // ── ユーティリティ ───────────────────────────────────────
-    // ── 4点正規化 ──────────────────────────────────────────
-    // top 2点: x が小さい方を TL、大きい方を TR
-    // bottom 2点: x が小さい方を BL、大きい方を BR
-    static void NormalizePoints(RoofPoints r)
-    {
-        // top pair
-        if (r.topLeft.x > r.topRight.x)
-        {
-            var tmp = r.topLeft; r.topLeft = r.topRight; r.topRight = tmp;
-        }
-        // bottom pair
-        if (r.bottomLeft.x > r.bottomRight.x)
-        {
-            var tmp = r.bottomLeft; r.bottomLeft = r.bottomRight; r.bottomRight = tmp;
-        }
-        Debug.Log($"[CALIB_POINTS_NORMALIZED] roof={r.id} tl=({r.topLeft.x:F3},{r.topLeft.y:F3}) tr=({r.topRight.x:F3},{r.topRight.y:F3}) br=({r.bottomRight.x:F3},{r.bottomRight.y:F3}) bl=({r.bottomLeft.x:F3},{r.bottomLeft.y:F3})");
-    }
-
     static void SetPoint(RoofPoints r, int idx, Vector2 v)
     {
         switch (idx) {
@@ -570,18 +416,44 @@ public class RoofCalibrationController : MonoBehaviour
         new[] { r.topLeft, r.topRight, r.bottomRight, r.bottomLeft };
 
     // ── ポリゴン検証 ─────────────────────────────────────────
-    // 正規化済み前提。ゼロ点チェックのみ。
+    // 戻り値: true=有効  false=無効（skipReason に理由）
     static bool ValidateQuad(RoofPoints r, out string skipReason)
     {
+        // ゼロ点チェック（未設定値 = Vector2.zero）
         if (r.topLeft == Vector2.zero || r.topRight == Vector2.zero ||
             r.bottomRight == Vector2.zero || r.bottomLeft == Vector2.zero)
         {
             skipReason = "zero_point";
             return false;
         }
+        // 自己交差チェック: TL-BR 対角線 と TR-BL 対角線が交差しないこと
+        // （正しい台形なら2対角線は内部で交差する → 辺の交差を見る）
+        // 辺: TL-TR, TR-BR, BR-BL, BL-TL の隣接しない辺ペアを確認
+        // 隣接しない辺ペア: (TL-TR, BR-BL) と (TR-BR, BL-TL)
+        if (SegmentsIntersect(r.topLeft, r.topRight, r.bottomRight, r.bottomLeft) ||
+            SegmentsIntersect(r.topRight, r.bottomRight, r.bottomLeft, r.topLeft))
+        {
+            skipReason = "self_intersection";
+            return false;
+        }
         skipReason = "";
         return true;
     }
+
+    // 線分 AB と線分 CD が交差するか（端点共有は除く）
+    static bool SegmentsIntersect(Vector2 a, Vector2 b, Vector2 c, Vector2 d)
+    {
+        float d1 = Cross(d - c, a - c);
+        float d2 = Cross(d - c, b - c);
+        float d3 = Cross(b - a, c - a);
+        float d4 = Cross(b - a, d - a);
+        if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+            ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))
+            return true;
+        return false;
+    }
+
+    static float Cross(Vector2 a, Vector2 b) => a.x * b.y - a.y * b.x;
 
     // 4点を比較用文字列キーに変換（F4精度）
     static string MakeKey(RoofPoints r) =>
