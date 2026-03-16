@@ -31,25 +31,51 @@ public static class BillboardBackgroundSceneCreator
     const float BgWidth  = 15.0f;
     const float BgHeight =  8.5f;
 
-    // 2D RoofGuide: normalized (0..1, 左上原点) → anchorMin/Max で配置
-    // 背景画像 BillboardBackground.png の屋根位置に対応
+    // 2D RoofGuide: 4-point trapezoid (normalized 0..1, 左上原点)
+    // 画像解析 (clean_background.png 1536x1024) から自動算出した値
     struct GuideRect
     {
         public string name;
-        public float xMin, xMax, yMin, yMax; // 0..1, 左上原点
+        public float xMin, xMax, yMin, yMax; // bounding box (anchorMin/Max 用)
         public Color color;
+        // 台形4点 (normalized, 左上原点)
+        public Vector2 topLeft, topRight, bottomLeft, bottomRight;
     }
 
+    // 台形4点: clean_background.png (1536x1024) 画像解析から算出
+    // normalized screen-space (0..1, 左上原点)
     static readonly GuideRect[] GuideRects = new GuideRect[]
     {
-        // 上段3軒（clean_background.png テンプレ初期値）
-        new GuideRect { name="RoofGuide_TL", xMin=0.145f, xMax=0.305f, yMin=0.215f, yMax=0.365f, color=new Color(1.0f, 0.3f, 0.6f, 0.45f) },
-        new GuideRect { name="RoofGuide_TM", xMin=0.400f, xMax=0.600f, yMin=0.205f, yMax=0.365f, color=new Color(0.3f, 0.8f, 1.0f, 0.45f) },
-        new GuideRect { name="RoofGuide_TR", xMin=0.690f, xMax=0.855f, yMin=0.205f, yMax=0.365f, color=new Color(0.3f, 1.0f, 0.5f, 0.45f) },
-        // 下段3軒（clean_background.png テンプレ初期値）
-        new GuideRect { name="RoofGuide_BL", xMin=0.120f, xMax=0.330f, yMin=0.565f, yMax=0.735f, color=new Color(1.0f, 0.8f, 0.2f, 0.45f) },
-        new GuideRect { name="RoofGuide_BM", xMin=0.405f, xMax=0.610f, yMin=0.565f, yMax=0.735f, color=new Color(0.8f, 0.3f, 1.0f, 0.45f) },
-        new GuideRect { name="RoofGuide_BR", xMin=0.690f, xMax=0.900f, yMin=0.565f, yMax=0.735f, color=new Color(1.0f, 0.5f, 0.2f, 0.45f) },
+        new GuideRect {
+            name="RoofGuide_TL", color=new Color(1.0f,0.3f,0.6f,0.45f),
+            topLeft    =new Vector2(0.083f,0.210f), topRight    =new Vector2(0.326f,0.209f),
+            bottomLeft =new Vector2(0.083f,0.466f), bottomRight =new Vector2(0.326f,0.459f),
+            xMin=0.083f, xMax=0.326f, yMin=0.209f, yMax=0.466f },
+        new GuideRect {
+            name="RoofGuide_TM", color=new Color(0.3f,0.8f,1.0f,0.45f),
+            topLeft    =new Vector2(0.382f,0.210f), topRight    =new Vector2(0.617f,0.210f),
+            bottomLeft =new Vector2(0.382f,0.465f), bottomRight =new Vector2(0.617f,0.465f),
+            xMin=0.382f, xMax=0.617f, yMin=0.210f, yMax=0.465f },
+        new GuideRect {
+            name="RoofGuide_TR", color=new Color(0.3f,1.0f,0.5f,0.45f),
+            topLeft    =new Vector2(0.674f,0.210f), topRight    =new Vector2(0.935f,0.184f),
+            bottomLeft =new Vector2(0.674f,0.463f), bottomRight =new Vector2(0.935f,0.466f),
+            xMin=0.674f, xMax=0.935f, yMin=0.184f, yMax=0.466f },
+        new GuideRect {
+            name="RoofGuide_BL", color=new Color(1.0f,0.8f,0.2f,0.45f),
+            topLeft    =new Vector2(0.065f,0.446f), topRight    =new Vector2(0.354f,0.445f),
+            bottomLeft =new Vector2(0.065f,0.867f), bottomRight =new Vector2(0.354f,0.867f),
+            xMin=0.065f, xMax=0.354f, yMin=0.445f, yMax=0.867f },
+        new GuideRect {
+            name="RoofGuide_BM", color=new Color(0.8f,0.3f,1.0f,0.45f),
+            topLeft    =new Vector2(0.382f,0.449f), topRight    =new Vector2(0.617f,0.442f),
+            bottomLeft =new Vector2(0.382f,0.849f), bottomRight =new Vector2(0.617f,0.857f),
+            xMin=0.382f, xMax=0.617f, yMin=0.442f, yMax=0.857f },
+        new GuideRect {
+            name="RoofGuide_BR", color=new Color(1.0f,0.5f,0.2f,0.45f),
+            topLeft    =new Vector2(0.656f,0.450f), topRight    =new Vector2(0.953f,0.444f),
+            bottomLeft =new Vector2(0.656f,0.847f), bottomRight =new Vector2(0.953f,0.844f),
+            xMin=0.656f, xMax=0.953f, yMin=0.444f, yMax=0.847f },
     };
 
     [MenuItem("SnowPanic/Billboard: Create Avalanche_Billboard_Test", false, 50)]
@@ -132,8 +158,7 @@ public static class BillboardBackgroundSceneCreator
             go.transform.SetParent(canvasGo.transform, false);
 
             var rt = go.AddComponent<RectTransform>();
-            // anchorMin/Max で normalized 座標を直接指定
-            // Unity の anchorMin.y は下から → yMin_unity = 1 - yMax_img
+            // bounding box を anchorMin/Max で指定（Unity y は下から）
             rt.anchorMin = new Vector2(g.xMin, 1f - g.yMax);
             rt.anchorMax = new Vector2(g.xMax, 1f - g.yMin);
             rt.offsetMin = Vector2.zero;
@@ -141,10 +166,20 @@ public static class BillboardBackgroundSceneCreator
 
             var img = go.AddComponent<Image>();
             img.color = g.color;
-            // sprite は null のまま（白矩形として描画される）
 
-            Debug.Log($"[BillboardBG] guide_rect_created=true name={g.name} xMin={g.xMin:F3} xMax={g.xMax:F3} yMin={g.yMin:F3} yMax={g.yMax:F3}");
+            // 台形4点データをログ出力（後で RoofCollider 生成に使用）
+            Debug.Log($"[ROOF_POLY] name={g.name} " +
+                $"TL=({g.topLeft.x:F3},{g.topLeft.y:F3}) " +
+                $"TR=({g.topRight.x:F3},{g.topRight.y:F3}) " +
+                $"BL=({g.bottomLeft.x:F3},{g.bottomLeft.y:F3}) " +
+                $"BR=({g.bottomRight.x:F3},{g.bottomRight.y:F3})");
         }
+
+        // ── Roof Calibration Controller ───────────────────────
+        // キー1〜6で屋根選択、左クリックで4点入力、S保存、L読み込み
+        var calibGo = new GameObject("RoofCalibrationController");
+        calibGo.AddComponent<RoofCalibrationController>();
+        Debug.Log("[BillboardBG] calibration_mode_added=true");
 
         // ── SnowKiller ────────────────────────────────────────
         var killerGo = new GameObject("BillboardSnowKiller");

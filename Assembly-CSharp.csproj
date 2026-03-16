@@ -100,6 +100,7 @@
     <Compile Include="Assets/Scripts/SnowClump.cs" />
     <Compile Include="Assets/Scripts/RoofSnowPlaceholder.cs" />
     <Compile Include="Assets/Scripts/UnifiedHUD.cs" />
+    <Compile Include="Assets/Scripts/RoofCalibrationController.cs" />
     <Compile Include="Assets/Scripts/RoofSnowSystem.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/RoofSnowMaskController.cs" />
