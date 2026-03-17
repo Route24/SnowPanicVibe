@@ -14,6 +14,115 @@
 
 ---
 
+# 0. Core Design Axis（判断軸 / Core Axis）
+
+> **このセクションは Snow Panic の面白さの中心を定義する。**
+> **開発中に方向を見失いそうになったら、必ずここに戻ること。**
+
+---
+
+### 日本語
+
+#### Snow Panic のコアは「物理の気持ちよさ × シンプル入力」
+
+Snow Panic の面白さの本質は、**Angry Birds** と同じ構造にある。
+
+- プレイヤーは**原因だけを作る**
+- 結果は**物理が返す**
+
+プレイヤーの入力は3つだけ：
+
+```
+どこを叩くか
+どの道具で叩くか
+どれくらいの強さで叩くか
+```
+
+その結果として物理が返すもの：
+
+```
+雪がどれだけ崩れるか
+連鎖がどれだけ起きるか
+一気にどれだけ落ちるか
+```
+
+#### 説明不要の設計
+
+- **見ればわかる**
+- **触れば気持ちいい**
+- 全世界の老若男女が、説明なしに理解できることを最優先にする
+
+#### 面白さの優先順位
+
+| 順位 | 項目 |
+|------|------|
+| 1 | 叩いた時の気持ちよさ |
+| 2 | 雪の崩れ方の気持ちよさ |
+| 3 | 見た目 |
+| 4 | UI |
+| 5 | その他 |
+
+#### 判断軸：Angry Birds
+
+今後、このゲームの面白さを見失いそうになったら **Angry Birds** を判断軸として参照する。
+
+- Angry Birds は「どこに鳥を飛ばすか」だけが入力
+- 崩れ方・連鎖・物理の結果がすべて面白さ
+- Snow Panic も同じ構造：「どこをどう叩くか」が入力、「雪の崩れ方」が面白さ
+
+---
+
+### English
+
+#### Snow Panic's Core: "Physics Feel × Simple Input"
+
+The essence of Snow Panic's fun is the same structure as **Angry Birds**.
+
+- The player only **creates the cause**
+- The **physics returns the result**
+
+Player input is only three things:
+
+```
+Where to hit
+What tool to use
+How hard to hit
+```
+
+What physics returns as a result:
+
+```
+How much snow collapses
+How much chain reaction occurs
+How much falls all at once
+```
+
+#### No-Explanation Design
+
+- **Understandable just by looking**
+- **Fun just by touching**
+- Prioritize that people of all ages and backgrounds worldwide can understand without any explanation
+
+#### Fun Priority Order
+
+| Priority | Item |
+|----------|------|
+| 1 | The satisfaction of hitting |
+| 2 | The satisfaction of snow collapsing |
+| 3 | Visual appearance |
+| 4 | UI |
+| 5 | Other |
+
+#### Reference Axis: Angry Birds
+
+Whenever the fun of this game seems lost, refer to **Angry Birds** as the judgment axis.
+
+- Angry Birds: only input is "where to shoot the bird"
+- The collapse, chain reaction, and physics results are all the fun
+- Snow Panic: same structure — "where and how to hit" is input, "how snow collapses" is the fun
+
+---
+
 # 1. Game Overview
 
 ### 日本語
