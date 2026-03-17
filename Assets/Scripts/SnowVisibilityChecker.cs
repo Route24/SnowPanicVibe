@@ -241,6 +241,10 @@ public class SnowVisibilityChecker : MonoBehaviour
         float   halfW  = def.width  * 0.5f;
         float   halfD  = def.depth  * 0.5f;
 
+        // tier に対応する地面着地点（SNOW_GROUND_RESOLVE の pos）を初期表示位置として使う
+        string tier = GetTierByIndex(houseIndex);
+        Vector3 groundPos = (tier == "upper") ? _upperLandingPos : _lowerLandingPos;
+
         int nx = Mathf.Max(2, Mathf.RoundToInt(Mathf.Sqrt(PIECES_PER_ROOF * def.width / Mathf.Max(0.01f, def.depth))));
         int nz = Mathf.Max(2, Mathf.RoundToInt((float)PIECES_PER_ROOF / nx));
 
@@ -251,7 +255,11 @@ public class SnowVisibilityChecker : MonoBehaviour
             {
                 float u = -halfW + (ix + 0.5f) / nx * def.width;
                 float v = -halfD + (iz + 0.5f) / nz * def.depth;
-                Vector3 pos = origin + r * u + f * v + n * SURFACE_OFFSET;
+                // XZ は屋根面格子をそのまま使い、Y は tier の地面着地点 Y を使う
+                Vector3 pos = new Vector3(
+                    groundPos.x + r.x * u + f.x * v,
+                    groundPos.y,
+                    groundPos.z + r.z * u + f.z * v);
 
                 var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 go.name = $"ForceSnow_{houseIndex}_{ix}_{iz}";
