@@ -134,6 +134,7 @@
     <Compile Include="Assets/Scripts/GroundSnowAccumulator.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyMinimalScene.cs" />
     <Compile Include="Assets/Scripts/DebugSnowVisibility.cs" />
+    <Compile Include="Assets/Scripts/InitialRoofSnowForcer.cs" />
     <Compile Include="Assets/Scripts/CorniceHitter.cs" />
     <Compile Include="Assets/Scripts/SnowTestCube.cs" />
     <Compile Include="Assets/Scripts/AssiDebugUI.cs" />
