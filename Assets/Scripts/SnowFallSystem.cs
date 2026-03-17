@@ -113,9 +113,9 @@ public class SnowFallSystem : MonoBehaviour
                 }
                 else if (((1 << hit.collider.gameObject.layer) & groundMask.value) != 0 || hit.collider.name.Contains("Ground") || hit.collider.name.Contains("Plane"))
                 {
-                    // ── GROUND PIPE: tier 別 ground Y に差し替えて配置 ──
+                    // ── GROUND PIPE: hit.collider の bounds.max.y を地面 Y として使用 ──
                     string tier = GroundPipeTier.GetTierByPosition(hit.point);
-                    float groundY = GroundPipeTier.GetGroundY(tier);
+                    float groundY = GroundPipeTier.GetGroundY(tier, hit.collider);
                     Vector3 resolvedPos = float.IsNegativeInfinity(groundY)
                         ? hit.point
                         : new Vector3(hit.point.x, groundY, hit.point.z);
@@ -165,7 +165,8 @@ public class SnowFallSystem : MonoBehaviour
             else
             {
                 p.t.position = next;
-                if (p.t.position.y < -3f) Deactivate(ref p);
+                // 画面外フレームアウト防止: 十分に低い Y でのみ除去（地面 Y より大幅に下）
+                if (p.t.position.y < -8f) Deactivate(ref p);
             }
             _pieces[i] = p;
         }

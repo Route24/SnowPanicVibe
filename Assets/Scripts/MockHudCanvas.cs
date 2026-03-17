@@ -273,21 +273,30 @@ public class MockHudCanvas : MonoBehaviour
 
     // ─────────────────────────────────────────────────
     // 顔ワイプ（専用Canvas・最前面・sortingOrder=300）
-    // 別 Canvas に分離して他の全UIより確実に前面に出す
+    // 重複防止: 既存の FaceWipeCanvas を全削除してから1つ生成
     // ─────────────────────────────────────────────────
     void BuildFaceWipe()
     {
         const float SIZE   = 240f;
-        const float MARGIN =  14f;
+        const float MARGIN =   8f;  // 左上に寄せて SCORE と干渉しないよう余白を詰める
 
-        // ── 顔ワイプ専用 Canvas（最前面） ─────────────────
+        // ── 既存の FaceWipeCanvas を全削除（重複防止） ────
+        var existing = Object.FindObjectsByType<Canvas>(
+            FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var c in existing)
+        {
+            if (c != null && c.gameObject.name == "FaceWipeCanvas")
+                Object.DestroyImmediate(c.gameObject);
+        }
+
+        // ── 顔ワイプ専用 Canvas（最前面・1つだけ） ────────
         var canvasGo = new GameObject("FaceWipeCanvas");
-        canvasGo.transform.SetParent(transform.parent, false);  // MockHudCanvas の兄弟に配置
+        canvasGo.transform.SetParent(transform.parent, false);
         var faceCanvas = canvasGo.AddComponent<Canvas>();
         faceCanvas.renderMode   = RenderMode.ScreenSpaceOverlay;
-        faceCanvas.sortingOrder = 300;  // 他全UIより前面（MockHudCanvas=200, UnifiedHUD=150）
+        faceCanvas.sortingOrder = 300;
         var scaler = canvasGo.AddComponent<CanvasScaler>();
-        scaler.uiScaleMode        = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.uiScaleMode         = CanvasScaler.ScaleMode.ScaleWithScreenSize;
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight  = 0.5f;
         canvasGo.AddComponent<GraphicRaycaster>();
@@ -321,25 +330,7 @@ public class MockHudCanvas : MonoBehaviour
         rt.anchoredPosition = new Vector2(MARGIN, -MARGIN);
         rt.sizeDelta        = new Vector2(SIZE, SIZE);
 
-        // ── キャラ名ラベル ────────────────────────────────
-        var nameGo = new GameObject("FaceWipeName");
-        nameGo.transform.SetParent(canvasGo.transform, false);
-        var nameText = nameGo.AddComponent<Text>();
-        nameText.font      = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        nameText.text      = "YUKI";
-        nameText.fontSize  = 26;
-        nameText.color     = ColCyan;
-        nameText.fontStyle = FontStyle.Bold;
-        nameText.alignment = TextAnchor.UpperCenter;
-        var nameShadow = nameGo.AddComponent<Shadow>();
-        nameShadow.effectColor    = new Color(0f, 0f, 0f, 0.8f);
-        nameShadow.effectDistance = new Vector2(1f, -1f);
-        var nameRt = nameGo.GetComponent<RectTransform>();
-        nameRt.anchorMin        = new Vector2(0f, 1f);
-        nameRt.anchorMax        = new Vector2(0f, 1f);
-        nameRt.pivot            = new Vector2(0f, 1f);
-        nameRt.anchoredPosition = new Vector2(MARGIN, -(MARGIN + SIZE + 2f));
-        nameRt.sizeDelta        = new Vector2(SIZE, 32f);
+        // YUKI ラベルは非表示（生成しない）
     }
 
     // Assets フォルダから直接テクスチャを読み込む（Editor / Runtime 両対応）
