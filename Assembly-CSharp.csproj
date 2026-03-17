@@ -66,6 +66,7 @@
     <Compile Include="Assets/Scripts/SnowVerifyB2Debug.cs" />
     <Compile Include="Assets/Scripts/AvalancheFeedback.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowSegment.cs" />
+    <Compile Include="Assets/Scripts/RoofSnowVisToggle.cs" />
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
     <Compile Include="Assets/Scripts/SnowMvpBootstrap.cs" />
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
@@ -107,6 +108,7 @@
     <Compile Include="Assets/Scripts/RoofSnowSystem.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/RoofSnowMaskController.cs" />
+    <Compile Include="Assets/Scripts/MockHudCanvas.cs" />
     <Compile Include="Assets/Scripts/DevelopmentStepTracker.cs" />
     <Compile Include="Assets/Scripts/SnowScoreDisplayUI.cs" />
     <Compile Include="Assets/Scripts/RoofSnowAngleProbe.cs" />

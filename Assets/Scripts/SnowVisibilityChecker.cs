@@ -62,7 +62,7 @@ public class SnowVisibilityChecker : MonoBehaviour
         var go = new GameObject("SnowVisibilityChecker");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<SnowVisibilityChecker>();
-        Debug.Log("[SNOW_VISIBLE_CHECK] ready – L=force-spawn  Tap=slide-to-land");
+        Debug.Log("[SNOW_VISIBLE_CHECK] ready – L=calibration_load_only  V=roof_snow_vis_toggle  Tap=slide-to-land");
         Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=gravity_fall");
         Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=respawn");
         Debug.Log("[SNOW_OLD_FLOW_DISABLED] feature=recycle");

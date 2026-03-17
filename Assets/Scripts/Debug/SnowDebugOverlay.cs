@@ -17,14 +17,6 @@ public class SnowDebugOverlay : MonoBehaviour
 
     void OnGUI()
     {
-        var rect = new Rect(Screen.width - 420, 20, 400, 140);
-
-        var style = new GUIStyle(GUI.skin.box);
-        style.fontSize = 28;
-        style.fontStyle = FontStyle.Bold;
-        style.alignment = TextAnchor.UpperLeft;
-        style.normal.textColor = Color.white;
-
-        GUI.Box(rect, "SNOW DEBUG OVERLAY\nVISIBLE TEST", style);
+        // 企画書モック確認のため表示を無効化
     }
 }
