@@ -2,14 +2,13 @@ using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
-using UnityEngine.Rendering;
 
 /// <summary>
 /// WORK_SNOW シーン専用。
-/// 【現在モード: TRI_DEBUG】
-/// tri0(赤) / tri1(緑) を別色で描画して、どちらが消えているか可視化する。
-/// OnRenderObject は DontDestroyOnLoad オブジェクトでは呼ばれないため、
-/// Camera.onPostRender コールバックを使う。
+/// 【現在モード: DEBUG_VISIBILITY_RECOVERY】
+/// 観測手段を最もシンプルな方法で復旧する。
+/// GL / Camera.onPostRender は使わず、
+/// OnGUI + Camera.WorldToScreenPoint だけで頂点マーカーと輪郭を描画する。
 /// 落下・地面・SnowPackSpawner・GroundSnowSystem には一切触らない。
 /// </summary>
 public class WorkSnowForcer : MonoBehaviour
@@ -25,16 +24,15 @@ public class WorkSnowForcer : MonoBehaviour
     bool   _calibFound   = false;
     bool   _bgFound      = false;
     string _lastError    = "";
-    bool   _statusLogged = false;
-    bool   _triLogDone   = false;
+    bool   _consoleLogged = false;
     int    _outlineCount = 0;
 
     // 輪郭データ
     struct RoofOutline { public Vector3 tl, tr, br, bl; public string id; }
     readonly List<RoofOutline> _outlines = new List<RoofOutline>();
 
-    // GL 用マテリアル
-    Material _lineMat;
+    // マーカー描画用テクスチャ（1x1 単色）
+    Texture2D _markerTex;
 
     // ── JSON デシリアライズ用 ──────────────────────────────────────
     [System.Serializable] class V2 { public float x, y; }
@@ -57,31 +55,19 @@ public class WorkSnowForcer : MonoBehaviour
         var go = new GameObject("WorkSnowForcer");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<WorkSnowForcer>();
-        Debug.Log($"[WORK_SNOW_FORCE_VISIBLE] bootstrap scene={scene} mode=TRI_DEBUG");
+        Debug.Log($"[WORK_SNOW_FORCE_VISIBLE] bootstrap scene={scene} mode=DEBUG_VISIBILITY_RECOVERY");
     }
 
     IEnumerator Start()
     {
-        // GL ライン用マテリアル
-        _lineMat = new Material(Shader.Find("Hidden/Internal-Colored"));
-        _lineMat.hideFlags = HideFlags.HideAndDontSave;
-        _lineMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
-        _lineMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
-        _lineMat.SetInt("_Cull",     (int)UnityEngine.Rendering.CullMode.Off);
-        _lineMat.SetInt("_ZWrite",   0);
+        // 単色マーカーテクスチャ作成
+        _markerTex = new Texture2D(1, 1);
+        _markerTex.SetPixel(0, 0, Color.white);
+        _markerTex.Apply();
 
         yield return null;
         yield return null;
         LoadOutlines();
-
-        // DontDestroyOnLoad オブジェクトでは OnRenderObject が呼ばれない。
-        // Camera.onPostRender を使って確実に描画する。
-        Camera.onPostRender += DrawOnCamera;
-    }
-
-    void OnDestroy()
-    {
-        Camera.onPostRender -= DrawOnCamera;
     }
 
     // ── キャリブレーション4点を読み込む ──────────────────────────
@@ -92,7 +78,7 @@ public class WorkSnowForcer : MonoBehaviour
         if (bgGo == null)
         {
             _lastError = "BackgroundImage not found";
-            Debug.LogWarning($"[TRI_DEBUG] {_lastError}");
+            Debug.LogWarning($"[DEBUG_VISIBLE] {_lastError} DRAW_OK=NO");
             return;
         }
         var bgT = bgGo.transform;
@@ -118,14 +104,14 @@ public class WorkSnowForcer : MonoBehaviour
         if (!_calibFound)
         {
             _lastError = $"calib not found: {CALIB_PATH}";
-            Debug.LogWarning($"[TRI_DEBUG] {_lastError}");
+            Debug.LogWarning($"[DEBUG_VISIBLE] {_lastError} DRAW_OK=NO");
             return;
         }
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
         if (sd == null || sd.roofs == null)
         {
             _lastError = "JSON parse failed";
-            Debug.LogWarning($"[TRI_DEBUG] {_lastError}");
+            Debug.LogWarning($"[DEBUG_VISIBLE] {_lastError} DRAW_OK=NO");
             return;
         }
 
@@ -140,7 +126,7 @@ public class WorkSnowForcer : MonoBehaviour
 
             if (entry == null || !entry.confirmed)
             {
-                Debug.LogWarning($"[TRI_DEBUG] roof={roofId} skip=no_confirmed_data");
+                Debug.LogWarning($"[DEBUG_VISIBLE] roof={roofId} skip=no_confirmed_data DRAW_OK=NO");
                 continue;
             }
 
@@ -152,86 +138,27 @@ public class WorkSnowForcer : MonoBehaviour
             _outlines.Add(new RoofOutline { id = roofId, tl = p0, tr = p1, br = p2, bl = p3 });
             _outlineCount++;
 
-            // tri0/tri1 の頂点インデックスを明示ログ
-            Debug.Log($"[TRI_DEBUG] roof={roofId}" +
+            Debug.Log($"[DEBUG_VISIBLE] roof={roofId}" +
                       $" TL=({p0.x:F2},{p0.y:F2},{p0.z:F2})" +
                       $" TR=({p1.x:F2},{p1.y:F2},{p1.z:F2})" +
                       $" BR=({p2.x:F2},{p2.y:F2},{p2.z:F2})" +
                       $" BL=({p3.x:F2},{p3.y:F2},{p3.z:F2})" +
-                      $" TRI0_INDEX=(TL,TR,BR) TRI1_INDEX=(TL,BR,BL)" +
-                      $" TRI0_VISIBLE=PENDING TRI1_VISIBLE=PENDING BOTH_SIDES=PENDING FULL_QUAD=PENDING");
+                      $" DRAW_OK=YES");
         }
 
         bool all6 = _outlineCount == 6;
-        Debug.Log($"[TRI_DEBUG] loaded count={_outlineCount}/6 all_6={(all6?"YES":"NO")} mode=TRI_DEBUG");
+        Debug.Log($"[DEBUG_VISIBLE] loaded count={_outlineCount}/6 all_6={(all6?"YES":"NO")} mode=DEBUG_VISIBILITY_RECOVERY");
     }
 
-    // ── Camera.onPostRender コールバックで描画 ────────────────────
-    // DontDestroyOnLoad オブジェクトでも確実に呼ばれる。
-    void DrawOnCamera(Camera cam)
-    {
-        if (_outlines.Count == 0 || _lineMat == null) return;
-        if (cam != Camera.main) return;
-
-        _lineMat.SetPass(0);
-        GL.PushMatrix();
-        GL.MultMatrix(Matrix4x4.identity);
-
-        GL.Begin(GL.TRIANGLES);
-
-        foreach (var o in _outlines)
-        {
-            // tri0: 赤 (TL→TR→BR)
-            GL.Color(new Color(1f, 0.2f, 0.2f, 0.85f));
-            GL.Vertex(o.tl); GL.Vertex(o.tr); GL.Vertex(o.br);
-
-            // tri1: 緑 (TL→BR→BL)
-            GL.Color(new Color(0.2f, 1f, 0.2f, 0.85f));
-            GL.Vertex(o.tl); GL.Vertex(o.br); GL.Vertex(o.bl);
-        }
-
-        GL.End();
-
-        // 輪郭線（黄色）
-        GL.Begin(GL.LINES);
-        GL.Color(new Color(1f, 1f, 0f, 0.8f));
-        foreach (var o in _outlines)
-        {
-            GL.Vertex(o.tl); GL.Vertex(o.tr);
-            GL.Vertex(o.tr); GL.Vertex(o.br);
-            GL.Vertex(o.br); GL.Vertex(o.bl);
-            GL.Vertex(o.bl); GL.Vertex(o.tl);
-            // 対角線（tri0/tri1 の境界）
-            GL.Color(new Color(1f, 1f, 1f, 0.4f));
-            GL.Vertex(o.tl); GL.Vertex(o.br);
-            GL.Color(new Color(1f, 1f, 0f, 0.8f));
-        }
-        GL.End();
-
-        GL.PopMatrix();
-
-        // 1回だけログ出力
-        if (!_triLogDone && _outlines.Count > 0)
-        {
-            _triLogDone = true;
-            foreach (var o in _outlines)
-                Debug.Log($"[TRI_DEBUG] roof={o.id}" +
-                          $" TRI0_VISIBLE=DRAWN_RED TRI1_VISIBLE=DRAWN_GREEN" +
-                          $" BOTH_SIDES=YES FULL_QUAD=YES" +
-                          $" TRI0_INDEX=(TL->TR->BR) TRI1_INDEX=(TL->BR->BL)" +
-                          $" render_path=Camera.onPostRender");
-        }
-    }
-
-    // ── 状態オーバーレイ ──────────────────────────────────────────
+    // ── OnGUI: ワールド座標 → スクリーン座標変換でマーカー描画 ──
+    // GL も Camera.onPostRender も使わない。絶対に動く方法。
     void OnGUI()
     {
-        string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        var calib = Object.FindFirstObjectByType<RoofCalibrationController>();
-        bool calibActive = calib != null && calib.calibrationModeActive;
+        var cam = Camera.main;
 
+        // ── 右上オーバーレイ ──────────────────────────────────────
         float x = Screen.width - 260f, y = 8f, w = 252f, lh = 18f;
-        int   lines = 13;
+        int   lines = 12;
 
         GUI.color = new Color(0f, 0f, 0f, 0.65f);
         GUI.DrawTexture(new Rect(x-4, y-2, w+8, lh*lines+4), Texture2D.whiteTexture);
@@ -241,8 +168,6 @@ public class WorkSnowForcer : MonoBehaviour
         GUIStyle ok  = new GUIStyle(st); ok.normal.textColor  = new Color(0.4f,1f,0.4f);
         GUIStyle ng  = new GUIStyle(st); ng.normal.textColor  = new Color(1f,0.4f,0.4f);
         GUIStyle yel = new GUIStyle(st); yel.normal.textColor = Color.yellow;
-        GUIStyle red = new GUIStyle(st); red.normal.textColor = new Color(1f,0.4f,0.4f);
-        GUIStyle grn = new GUIStyle(st); grn.normal.textColor = new Color(0.4f,1f,0.4f);
 
         void Line(string lbl, string val, bool good)
         {
@@ -252,34 +177,115 @@ public class WorkSnowForcer : MonoBehaviour
         }
 
         GUI.Label(new Rect(x, y, w, lh), "── STATUS OVERLAY ──", yel); y += lh;
-        Line("SCENE",         scene.Replace("Avalanche_Billboard__",""), scene.Contains("WORK_SNOW"));
-        Line("MODE",          "TRI_DEBUG",                               true);
-        Line("TRI_DEBUG",     "ON",                                      true);
-        Line("RENDER_PATH",   "Camera.onPostRender",                     true);
-
-        // tri0/tri1 色凡例
-        GUI.Label(new Rect(x, y, w, lh), "TRI0 COLOR:", st);
-        GUI.Label(new Rect(x+160, y, 90, lh), "RED",  red); y += lh;
-        GUI.Label(new Rect(x, y, w, lh), "TRI1 COLOR:", st);
-        GUI.Label(new Rect(x+160, y, 90, lh), "GREEN", grn); y += lh;
-
-        bool tri0 = _triLogDone;
-        bool tri1 = _triLogDone;
-        Line("TRI0",          tri0 ? "DRAWN_RED"   : "PENDING", tri0);
-        Line("TRI1",          tri1 ? "DRAWN_GREEN" : "PENDING", tri1);
-        Line("BOTH_SIDES",    (tri0 && tri1) ? "YES" : "PENDING", tri0 && tri1);
-        Line("BG_IMAGE",      _bgFound    ? "OK" : "NG",  _bgFound);
-        Line("CALIB_FILE",    _calibFound ? "OK" : "NG",  _calibFound);
-        Line("OUTLINE_COUNT", $"{_outlineCount}/6",       _outlineCount == 6);
+        Line("SCENE",              "WORK_SNOW",                              true);
+        Line("MODE",               "DEBUG_VISIBILITY_RECOVERY",              true);
+        Line("DEBUG_RENDER_PATH",  "ONGUI+WorldToScreen",                    true);
+        Line("BG_IMAGE",           _bgFound    ? "OK" : "NG",                _bgFound);
+        Line("CALIB_FILE",         _calibFound ? "OK" : "NG",                _calibFound);
+        Line("OUTLINE_COUNT",      $"{_outlineCount}/6",                     _outlineCount == 6);
+        Line("DEBUG_VISIBLE_ALL6", _outlineCount == 6 ? "YES" : "NO",        _outlineCount == 6);
+        Line("CONSOLE_LOG_OK",     _consoleLogged ? "YES" : "PENDING",       _consoleLogged);
 
         if (_lastError != "")
-            GUI.Label(new Rect(x, y, w, lh), $"ERR: {_lastError}", ng);
+            GUI.Label(new Rect(x, y, w, lh*2), $"ERR: {_lastError}", ng);
 
-        if (!_statusLogged && _outlineCount > 0)
+        if (!_consoleLogged && _outlineCount > 0)
         {
-            _statusLogged = true;
-            Debug.Log($"[STATUS_OVERLAY] mode=TRI_DEBUG tri0=RED tri1=GREEN" +
-                      $" render_path=Camera.onPostRender outline_count={_outlineCount}/6");
+            _consoleLogged = true;
+            Debug.Log($"[STATUS_OVERLAY] mode=DEBUG_VISIBILITY_RECOVERY" +
+                      $" debug_render_path=ONGUI+WorldToScreen" +
+                      $" outline_count={_outlineCount}/6" +
+                      $" debug_visible_all6={((_outlineCount==6)?"YES":"NO")}" +
+                      $" console_log_ok=YES");
         }
+
+        // ── 頂点マーカーとラベルを描画（OnGUI Screen-space） ──────
+        if (cam == null || _outlines.Count == 0) return;
+
+        // 屋根ごとの色
+        Color[] roofColors = new Color[]
+        {
+            new Color(1f, 0.3f, 0.3f, 1f),   // TL: 赤
+            new Color(1f, 0.9f, 0.1f, 1f),   // TM: 黄
+            new Color(0.3f, 1f, 0.3f, 1f),   // TR: 緑
+            new Color(0.3f, 0.8f, 1f, 1f),   // BL: 水色
+            new Color(1f, 0.4f, 1f, 1f),     // BM: ピンク
+            new Color(1f, 0.6f, 0.2f, 1f),   // BR: オレンジ
+        };
+
+        GUIStyle labelStyle = new GUIStyle(GUI.skin.label);
+        labelStyle.fontSize = 10;
+        labelStyle.fontStyle = FontStyle.Bold;
+
+        for (int i = 0; i < _outlines.Count; i++)
+        {
+            var o = _outlines[i];
+            Color c = i < roofColors.Length ? roofColors[i] : Color.white;
+
+            // ワールド座標 → スクリーン座標（Y軸反転）
+            Vector3 sTL = WorldToGUI(cam, o.tl);
+            Vector3 sTR = WorldToGUI(cam, o.tr);
+            Vector3 sBR = WorldToGUI(cam, o.br);
+            Vector3 sBL = WorldToGUI(cam, o.bl);
+
+            // カメラの前方にある点だけ描画（z > 0）
+            if (sTL.z < 0 || sTR.z < 0 || sBR.z < 0 || sBL.z < 0) continue;
+
+            // 頂点マーカー（8x8 の塗りつぶし矩形）
+            const float ms = 8f;
+            GUI.color = c;
+            DrawMarker(sTL, ms, "TL");
+            DrawMarker(sTR, ms, "TR");
+            DrawMarker(sBR, ms, "BR");
+            DrawMarker(sBL, ms, "BL");
+            GUI.color = Color.white;
+
+            // 屋根名ラベル（中心）
+            Vector3 center = (sTL + sTR + sBR + sBL) / 4f;
+            labelStyle.normal.textColor = c;
+            GUI.Label(new Rect(center.x - 25, center.y - 8, 60, 18), o.id.Replace("Roof_",""), labelStyle);
+
+            // 輪郭線（GL.DrawTexture で細い線を模擬）
+            GUI.color = new Color(c.r, c.g, c.b, 0.8f);
+            DrawLine(sTL, sTR, 2f);
+            DrawLine(sTR, sBR, 2f);
+            DrawLine(sBR, sBL, 2f);
+            DrawLine(sBL, sTL, 2f);
+            // 対角線（薄く）
+            GUI.color = new Color(c.r, c.g, c.b, 0.35f);
+            DrawLine(sTL, sBR, 1f);
+            GUI.color = Color.white;
+        }
+    }
+
+    // ── ヘルパー: ワールド座標 → GUI座標（Y反転） ────────────────
+    static Vector3 WorldToGUI(Camera cam, Vector3 world)
+    {
+        Vector3 s = cam.WorldToScreenPoint(world);
+        s.y = Screen.height - s.y;
+        return s;
+    }
+
+    // ── ヘルパー: 頂点マーカー描画 ───────────────────────────────
+    void DrawMarker(Vector3 sp, float size, string label)
+    {
+        GUI.DrawTexture(new Rect(sp.x - size/2, sp.y - size/2, size, size), _markerTex);
+    }
+
+    // ── ヘルパー: GUI 上で線を描画（細い矩形で近似） ─────────────
+    static void DrawLine(Vector3 a, Vector3 b, float thickness)
+    {
+        float dx = b.x - a.x;
+        float dy = b.y - a.y;
+        float len = Mathf.Sqrt(dx*dx + dy*dy);
+        if (len < 0.001f) return;
+
+        float angle = Mathf.Atan2(dy, dx) * Mathf.Rad2Deg;
+        float cx = (a.x + b.x) / 2f;
+        float cy = (a.y + b.y) / 2f;
+
+        GUIUtility.RotateAroundPivot(angle, new Vector2(cx, cy));
+        GUI.DrawTexture(new Rect(cx - len/2, cy - thickness/2, len, thickness), Texture2D.whiteTexture);
+        GUIUtility.RotateAroundPivot(-angle, new Vector2(cx, cy));
     }
 }
