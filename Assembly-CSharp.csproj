@@ -61,6 +61,7 @@
     <Compile Include="Assets/Scripts/CameraOrbit.cs" />
     <Compile Include="Assets/Scripts/SnowPhysicsScoreManager.cs" />
     <Compile Include="Assets/Scripts/SnowFallSystem.cs" />
+    <Compile Include="Assets/Scripts/WorkSnowForcer.cs" />
     <Compile Include="Assets/Scripts/RunStructureManager.cs" />
     <Compile Include="Assets/Scripts/DirectDropDebug.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyB2Debug.cs" />

@@ -26,6 +26,11 @@ public class RoofCalibrationController : MonoBehaviour
     static readonly string[] RoofIds = { "Roof_TL","Roof_TM","Roof_TR","Roof_BL","Roof_BM","Roof_BR" };
     static readonly string SavePath = "Assets/Art/RoofCalibrationData.json";
 
+    // ── キャリブレーションモード切替 ─────────────────────────
+    [Header("Calibration Mode")]
+    [Tooltip("false = ゲームモード（UI非表示・クリック無効）。true = キャリブレーション作業時のみONにする。")]
+    public bool calibrationModeActive = false;
+
     // ── 状態 ────────────────────────────────────────────────
     RoofPoints[] _roofs;
     int _activeRoof = 0;   // 0〜5
@@ -74,6 +79,9 @@ public class RoofCalibrationController : MonoBehaviour
 
     void Update()
     {
+        // ゲームモード時はキャリブレーション入力を完全スキップ
+        if (!calibrationModeActive) return;
+
         // BackgroundImage の投影矩形を毎フレーム更新（OnGUI より前に確定させる）
         Update_BgRect();
 
@@ -178,6 +186,9 @@ public class RoofCalibrationController : MonoBehaviour
     // ── OnGUI ────────────────────────────────────────────────
     void OnGUI()
     {
+        // ゲームモード時はキャリブレーションUIを一切表示しない
+        if (!calibrationModeActive) return;
+
         // Update_BgRect は Update() で呼び済み。OnGUI では呼ばない。
         float sw = Screen.width, sh = Screen.height;
 
