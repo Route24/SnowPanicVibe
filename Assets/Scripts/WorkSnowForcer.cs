@@ -5,11 +5,12 @@ using UnityEngine.UI;
 
 /// <summary>
 /// WORK_SNOW シーン専用。
-/// 【モード: ALL_6_ROOFS + ALL_6_UNDER_EAVE_LANDING + ALL_6_THICK_SNOW】
+/// 【モード: ALL_6_ROOFS + ALL_6_UNDER_EAVE_LANDING + ALL_6_THICK_SNOW + DOWNHILL_SLIDE】
 ///
 /// ① 6軒の屋根雪表示（Canvas Image anchor fit）
 /// ② 6軒すべて: タップ検出 → 屋根雪縮小 → 白い雪片が OnGUI で落下 → 各軒下で停止
 /// ③ 6軒すべて: OnGUI で屋根上端に厚雪帯を追加描画（叩くと縮む）
+/// ④ 落雪は downhill 方向（片流れ屋根の手前方向）に初速を与えて滑走
 ///
 /// 着地 Y は各屋根の calib maxY + UNDER_EAVE_OFFSET_CALIB から直接計算。
 /// </summary>
@@ -19,12 +20,7 @@ public class WorkSnowForcer : MonoBehaviour
     const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
 
     // 屋根下端からの軒下オフセット（calib 座標、0〜1）
-    // 0.14 → 0.04 に減少: 軒下停止位置を屋根直下に近づける（水辺落下を防ぐ）
-    const float UNDER_EAVE_OFFSET_CALIB = 0.04f;
-
-    // 積雪帯の上端オフセット（calib 座標、0〜1）
-    // 0.03 → 0.0 に戻す: 積雪は minY 基準（屋根上端）から描画するのが正しい
-    const float SNOW_TOP_OFFSET_CALIB = 0.0f;
+    const float UNDER_EAVE_OFFSET_CALIB = 0.08f;
 
     // THICK 状態の thickRatio 値（屋根高さに対する厚雪帯の割合）
     // RoofData.thickRatio に設定する。0 = NORMAL、この値 = THICK
@@ -54,8 +50,11 @@ public class WorkSnowForcer : MonoBehaviour
         public float   anchorMinY0;   // 初期 anchorMin.y
         public float   anchorMaxY0;   // 初期 anchorMax.y
         // GDD Snow State: thickRatio > 0 なら THICK 状態（ID ハードコード禁止）
-        // 0 = NORMAL（厚雪帯なし）、0.6 = THICK（屋根高さの60%分の帯）
+        // 0 = NORMAL（厚雪帯なし）、0.65 = THICK（屋根高さの65%分の帯）
         public float   thickRatio;
+        // downhill 方向の X 成分（片流れ屋根の手前方向、OnGUI 座標系）
+        // 正 = 右方向、負 = 左方向。calib の top→bottom X 差から算出
+        public float   downhillVelX;
         public bool    ready;
     }
     RoofData[] _roofs = new RoofData[6];
@@ -148,11 +147,24 @@ public class WorkSnowForcer : MonoBehaviour
     }
 
     // ── 6軒の屋根雪 Canvas Image を更新 ─────────────────────────
+    // 非アクティブなオブジェクトも含めて名前で検索する
+    static GameObject FindIncludeInactive(string name)
+    {
+        // まず通常検索（アクティブのみ）
+        var go = GameObject.Find(name);
+        if (go != null) return go;
+        // 非アクティブも含めて全検索
+        foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (t.gameObject.name == name) return t.gameObject;
+        return null;
+    }
+
     void Apply()
     {
         // Edit モードでは RoofGuideCanvas を非表示にして白板が見えないようにする
         // Play 中のみ Canvas を表示・操作する
-        var canvas = GameObject.Find("RoofGuideCanvas");
+        // ※ RoofGuideCanvas は m_IsActive:0 で保存されているため FindIncludeInactive を使う
+        var canvas = FindIncludeInactive("RoofGuideCanvas");
         if (!Application.isPlaying)
         {
             if (canvas != null && canvas.activeSelf) canvas.SetActive(false);
@@ -193,6 +205,7 @@ public class WorkSnowForcer : MonoBehaviour
 
             var img = guideGo.GetComponent<Image>();
             if (img == null) img = guideGo.AddComponent<Image>();
+            // 全6軒に白板表示（ALL_6_THICK_SNOW モード）
             img.color         = SnowWhite;
             img.raycastTarget = false;
 
@@ -211,60 +224,12 @@ public class WorkSnowForcer : MonoBehaviour
         Debug.Log($"[ALL6_SNOW_FIT] count={ok}/6 all_6={(_applied ? "YES" : "NO")}");
     }
 
-    // ── BackgroundImage の OnGUI 投影矩形を取得 ─────────────────
-    // キャリブデータは BackgroundImage 内の正規化座標なので、
-    // OnGUI 座標への変換は bgRect 基準で行う必要がある
-    bool TryGetBgRect(out Rect bgRect)
-    {
-        bgRect = new Rect(0, 0, Screen.width, Screen.height);
-        var cam  = Camera.main;
-        var bgGo = GameObject.Find("BackgroundImage");
-        if (cam == null || bgGo == null) return false;
-
-        var t = bgGo.transform;
-        Vector3 wTL = t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
-        Vector3 wTR = t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
-        Vector3 wBL = t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
-        Vector3 wBR = t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
-
-        float sh = Screen.height;
-        Vector2 sTL = cam.WorldToScreenPoint(wTL); sTL.y = sh - sTL.y;
-        Vector2 sTR = cam.WorldToScreenPoint(wTR); sTR.y = sh - sTR.y;
-        Vector2 sBL = cam.WorldToScreenPoint(wBL); sBL.y = sh - sBL.y;
-        Vector2 sBR = cam.WorldToScreenPoint(wBR); sBR.y = sh - sBR.y;
-
-        float minX = Mathf.Min(sTL.x, sBL.x);
-        float maxX = Mathf.Max(sTR.x, sBR.x);
-        float minY = Mathf.Min(sTL.y, sTR.y);
-        float maxY = Mathf.Max(sBL.y, sBR.y);
-
-        if (maxX - minX < 1f || maxY - minY < 1f) return false;
-        bgRect = new Rect(minX, minY, maxX - minX, maxY - minY);
-        return true;
-    }
-
-    // normalized (0〜1) → OnGUI screen pixel（bgRect 基準）
-    Vector2 CalibToGui(float nx, float ny, Rect bgRect)
-    {
-        return new Vector2(
-            bgRect.x + nx * bgRect.width,
-            bgRect.y + ny * bgRect.height);
-    }
-
     // ── 6軒分の guiRect / eaveGuiY を計算（Play 開始後1回のみ）──
     void BuildRoofData()
     {
         if (!File.Exists(CALIB_PATH)) return;
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
         if (sd == null || sd.roofs == null) return;
-
-        // BackgroundImage の投影矩形を取得（キャリブ座標変換の基準）
-        if (!TryGetBgRect(out Rect bgRect))
-        {
-            Debug.LogWarning("[WorkSnowForcer] BackgroundImage not found – using screen as fallback");
-            bgRect = new Rect(0, 0, Screen.width, Screen.height);
-        }
-        Debug.Log($"[WorkSnowForcer] bgRect=({bgRect.x:F1},{bgRect.y:F1},{bgRect.width:F1},{bgRect.height:F1})");
 
         int readyCount = 0;
         for (int ri = 0; ri < RoofPairs.Length; ri++)
@@ -277,38 +242,33 @@ public class WorkSnowForcer : MonoBehaviour
 
             float minX = Mathf.Min(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
             float maxX = Mathf.Max(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
+            float minY = Mathf.Min(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
+            float maxY = Mathf.Max(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
 
-            // 片流れ屋根の正確なY基準点（bgRect 基準で変換）:
-            // 積雪上端 = 上端2点(topLeft/topRight)のY平均 → 棟ライン
-            // 軒先基準 = 下端2点(bottomLeft/bottomRight)のY平均 → 軒先ライン
-            float topY    = (entry.topLeft.y    + entry.topRight.y)    * 0.5f;
-            float bottomY = (entry.bottomLeft.y + entry.bottomRight.y) * 0.5f;
+            float eaveCalibY  = maxY + UNDER_EAVE_OFFSET_CALIB;
+            float eaveCenterX = (minX + maxX) * 0.5f;
 
-            // bgRect 基準で OnGUI 座標に変換
-            Vector2 guiTopLeft  = CalibToGui(minX, topY,    bgRect);
-            Vector2 guiTopRight = CalibToGui(maxX, topY,    bgRect);
-            Vector2 guiBotLeft  = CalibToGui(minX, bottomY, bgRect);
+            // downhill 方向: 片流れ屋根の top 中央 → bottom 中央 の X 差分
+            // calib 座標で topCenter.x と bottomCenter.x を比較し、OnGUI スケールで速度化
+            float topCenterX    = (entry.topLeft.x    + entry.topRight.x)    * 0.5f;
+            float bottomCenterX = (entry.bottomLeft.x + entry.bottomRight.x) * 0.5f;
+            // downhill X 方向（正=右、負=左）。屋根幅に対する比率 × 基準速度
+            float downhillDx    = (bottomCenterX - topCenterX) * Screen.width;
 
-            float guiRoofW = guiTopRight.x - guiTopLeft.x;
-            float guiRoofH = guiBotLeft.y  - guiTopLeft.y;
-
-            // 軒下停止Y: 軒先ラインから UNDER_EAVE_OFFSET_CALIB 分だけ下（bgRect スケール）
-            float eaveGuiY  = guiBotLeft.y  + UNDER_EAVE_OFFSET_CALIB * bgRect.height;
-            float eaveCenterX = (guiTopLeft.x + guiTopRight.x) * 0.5f;
-
-            _roofs[ri].id        = calibId;
-            _roofs[ri].guideId   = guideId;
-            // 積雪帯: bgRect 基準で変換した棟ラインから描画
-            _roofs[ri].guiRect   = new Rect(
-                guiTopLeft.x,
-                guiTopLeft.y + SNOW_TOP_OFFSET_CALIB * bgRect.height,
-                guiRoofW,
-                guiRoofH);
-            _roofs[ri].eaveGuiY  = eaveGuiY;
-            _roofs[ri].eaveGuiX  = eaveCenterX;
-            // GDD Snow State: 全6軒 = THICK
-            // ID ハードコード禁止。thickRatio パラメータで制御（全軒同値）
-            _roofs[ri].thickRatio = THICK_SNOW_RATIO;
+            _roofs[ri].id           = calibId;
+            _roofs[ri].guideId      = guideId;
+            _roofs[ri].guiRect      = new Rect(
+                minX * Screen.width,
+                minY * Screen.height,
+                (maxX - minX) * Screen.width,
+                (maxY - minY) * Screen.height);
+            _roofs[ri].eaveGuiY     = eaveCalibY  * Screen.height;
+            _roofs[ri].eaveGuiX     = eaveCenterX * Screen.width;
+            // downhill 速度 X: 屋根の傾斜方向に初速を与える（真下落下禁止）
+            // downhillDx が小さい場合は最低限の横速度を保証
+            _roofs[ri].downhillVelX = (Mathf.Abs(downhillDx) > 5f) ? downhillDx * 0.8f : 20f;
+            // GDD Snow State: 全6軒 THICK（ID ハードコード禁止、パラメータで制御）
+            _roofs[ri].thickRatio   = THICK_SNOW_RATIO;
             _roofs[ri].ready      = true;
             readyCount++;
 
@@ -363,20 +323,25 @@ public class WorkSnowForcer : MonoBehaviour
             _roofs[ri].snowFill = Mathf.Max(0f, _roofs[ri].snowFill - 0.15f);
             UpdateSnowVisual(ri);
 
-            // spawn 位置: 屋根中央下端
+            // spawn 位置: 屋根中央下端（軒先ライン）
             float spawnX = _roofs[ri].guiRect.x + _roofs[ri].guiRect.width  * 0.5f;
             float spawnY = _roofs[ri].guiRect.y + _roofs[ri].guiRect.height;
 
-            // 小さめの雪片を3〜5個生成（巨大1個ブロックを廃止）
+            // downhill 方向の初速（片流れ屋根の傾斜方向に滑走）
+            float dvx = _roofs[ri].downhillVelX;
+
+            // 塊感のある雪片を3〜5個生成
             int spawnCount = Random.Range(3, 6);
             for (int si = 0; si < spawnCount; si++)
             {
-                float jx = Random.Range(-_roofs[ri].guiRect.width * 0.25f, _roofs[ri].guiRect.width * 0.25f);
+                float jx = Random.Range(-_roofs[ri].guiRect.width * 0.35f, _roofs[ri].guiRect.width * 0.35f);
+                float jvy = Random.Range(40f, 80f);   // 下方向の初速（重力補助）
+                float jvx = dvx + Random.Range(-12f, 12f); // downhill + ばらつき
                 _pieces.Add(new FallingPiece
                 {
                     pos     = new Vector2(spawnX + jx, spawnY),
-                    vel     = new Vector2(Random.Range(-15f, 15f), Random.Range(60f, 100f)),
-                    size    = Random.Range(8f, 16f),
+                    vel     = new Vector2(jvx, jvy),
+                    size    = Random.Range(10f, 20f),  // 塊感のある大きさ
                     life    = 8f,
                     roofIdx = ri,
                 });
