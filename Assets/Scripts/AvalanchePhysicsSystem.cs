@@ -202,7 +202,7 @@ public class AvalanchePhysicsSystem : MonoBehaviour
             var pieces = kv.Value;
             if (pieces.Count == 0) continue;
 
-            var cluster = new SnowCluster { cluster_id = _clusterIdCounter++ };
+            var cluster = new SnowCluster { cluster_id = _clusterIdCounter++, cellX = kv.Key.Item1, cellZ = kv.Key.Item2 };
             foreach (var p in pieces)
                 cluster.piece_list.Add(p.t);
 
@@ -316,11 +316,11 @@ public class AvalanchePhysicsSystem : MonoBehaviour
         }
         if (toDetach.Count == 0) return;
 
-        if (fromWeakPoint && SnowPhysicsScoreManager.Instance != null)
+        if (fromWeakPoint && SnowPhysicsScoreManager.Instance != null && weakPointScoreMultiplier > 1f)
         {
             int scoreBefore = SnowPhysicsScoreManager.Instance.Score;
             UnityEngine.Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object=cluster_pieces_count={toDetach.Count} script=AvalanchePhysicsSystem.cs time={UnityEngine.Time.time:F2} current_score={scoreBefore}");
-            SnowPhysicsScoreManager.Instance.Add(toDetach.Count);
+            SnowPhysicsScoreManager.Instance.Add(Mathf.RoundToInt(toDetach.Count * (weakPointScoreMultiplier - 1f)));
         }
 
         Vector3 slideDir = snowPackSpawner.RoofDownhill;
@@ -362,26 +362,12 @@ public class AvalanchePhysicsSystem : MonoBehaviour
     {
         _neighborsBuffer.Clear();
         if (cluster.piece_list.Count == 0) return _neighborsBuffer;
-        var first = cluster.piece_list[0];
-        if (first == null) return _neighborsBuffer;
-
-        snowPackSpawner.CollectPackedPiecesWithGrid(_pieceBuffer);
-        (int, int)? firstKey = null;
-        foreach (var p in _pieceBuffer)
-        {
-            if (p.t == first)
-            {
-                firstKey = (p.ix / 2, p.iz / 2);
-                break;
-            }
-        }
-        if (!firstKey.HasValue) return _neighborsBuffer;
 
         for (int dz = -1; dz <= 1; dz++)
             for (int dx = -1; dx <= 1; dx++)
             {
                 if (dx == 0 && dz == 0) continue;
-                var k = (firstKey.Value.Item1 + dx, firstKey.Value.Item2 + dz);
+                var k = (cluster.cellX + dx, cluster.cellZ + dz);
                 if (_cellToCluster.TryGetValue(k, out var nc) && nc != cluster && !_detachedThisHit.Contains(nc))
                     _neighborsBuffer.Add(nc);
             }

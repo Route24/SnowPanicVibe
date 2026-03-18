@@ -9,6 +9,8 @@ public class SnowCluster
 {
     public int cluster_id;
     public readonly List<Transform> piece_list = new List<Transform>();
+    public int cellX;
+    public int cellZ;
     public float support_value;
     /// <summary>観測用: 隣接セル数（RebuildClustersで設定）</summary>
     public float edge_contact;

@@ -81,7 +81,7 @@ public class SnowPackSpawner : MonoBehaviour
     public bool rebuildOnPlay = true;
 
     [Header("Material")]
-    public Color snowColor = new Color(0.93f, 0.96f, 1f, 1f);
+    public Color snowColor = Color.red;
     [Tooltip("PoolReturn発生元特定用。ONで初回のみthrow")]
     public bool throwOnFirstPoolReturn = false;
     [Header("Debug (水平積雪切り分け)")]
