@@ -36,6 +36,8 @@ public class MinimalLandingTest : MonoBehaviour
     static void Bootstrap()
     {
         if (!Application.isPlaying) return;
+        // WORK_SNOW シーンでは MinimalLandingTest を起動しない
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
         var go = new GameObject("MinimalLandingTest");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<MinimalLandingTest>();

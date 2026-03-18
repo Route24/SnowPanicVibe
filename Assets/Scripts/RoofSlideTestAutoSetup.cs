@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using System.Collections;
 
 #if UNITY_EDITOR
@@ -78,6 +79,9 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnsureRuntimeBootstrap()
     {
+        // WORK_SNOW シーンではデバッグ自動起動を完全停止する
+        if (SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
+
         var setup = FindFirstObjectByType<RoofSlideTestAutoSetup>();
         if (setup == null)
         {

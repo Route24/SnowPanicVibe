@@ -21,10 +21,9 @@ public class WorkSnowForcer : MonoBehaviour
     // 屋根下端からの軒下オフセット（calib 座標、0〜1）
     const float UNDER_EAVE_OFFSET_CALIB = 0.08f;
 
-    // TL 厚雪: 屋根上端から上方向に描く帯の最大高さ（px）
-    // 屋根の高さの約 60% を「積もった雪の厚み」として表示する
-    const float TL_THICK_SNOW_MAX_PX = 0f; // BuildRoofData() で屋根高さから動的計算
-    const float TL_THICK_SNOW_RATIO  = 0.6f; // 屋根高さに対する厚雪の割合
+    // THICK 状態の thickRatio 値（屋根高さに対する厚雪帯の割合）
+    // RoofData.thickRatio に設定する。0 = NORMAL、この値 = THICK
+    const float THICK_SNOW_RATIO = 0.65f;
 
     static readonly (string calibId, string guideId)[] RoofPairs =
     {
@@ -49,6 +48,9 @@ public class WorkSnowForcer : MonoBehaviour
         public float   snowFill;      // 0〜1
         public float   anchorMinY0;   // 初期 anchorMin.y
         public float   anchorMaxY0;   // 初期 anchorMax.y
+        // GDD Snow State: thickRatio > 0 なら THICK 状態（ID ハードコード禁止）
+        // 0 = NORMAL（厚雪帯なし）、0.6 = THICK（屋根高さの60%分の帯）
+        public float   thickRatio;
         public bool    ready;
     }
     RoofData[] _roofs = new RoofData[6];
@@ -74,15 +76,7 @@ public class WorkSnowForcer : MonoBehaviour
     }
     readonly List<LandedPiece> _landedPieces = new List<LandedPiece>();
 
-    // ── TL 厚雪パラメータ ─────────────────────────────────────
-    // 屋根上端の上に重ねる白い帯（OnGUI 描画）
-    // 高さ = thickMaxPx * snowFill（叩くと縮む）
-    float _tlThickMaxPx = 0f;  // BuildRoofData() で屋根高さ * RATIO から計算
-
-    // ── spawn マーカー ────────────────────────────────────────
-    Vector2 _lastSpawnPos;
-    bool    _hasSpawnMarker  = false;
-    float   _spawnMarkerLife = 0f;
+    // spawn マーカーは廃止（中央巨大塊の一因だったため削除）
 
     bool      _applied  = false;
     bool      _roofsReady = false;
@@ -123,7 +117,6 @@ public class WorkSnowForcer : MonoBehaviour
         _roofsReady = false;
         _pieces.Clear();
         _landedPieces.Clear();
-        _hasSpawnMarker = false;
         for (int i = 0; i < _roofs.Length; i++)
         {
             _roofs[i].snowFill    = 1f;
@@ -239,14 +232,20 @@ public class WorkSnowForcer : MonoBehaviour
                 (maxY - minY) * Screen.height);
             _roofs[ri].eaveGuiY  = eaveCalibY  * Screen.height;
             _roofs[ri].eaveGuiX  = eaveCenterX * Screen.width;
-            _roofs[ri].ready     = true;
+            // GDD Snow State: Roof_TL = THICK、他5軒 = NORMAL
+            // ID ハードコードではなく thickRatio パラメータで制御
+            _roofs[ri].thickRatio = (calibId == "Roof_TL") ? THICK_SNOW_RATIO : 0f;
+            _roofs[ri].ready      = true;
             readyCount++;
 
-            // TL のみ: 厚雪の最大高さを屋根高さから計算
-            if (calibId == "Roof_TL")
+            if (_roofs[ri].thickRatio > 0f)
             {
-                _tlThickMaxPx = _roofs[ri].guiRect.height * TL_THICK_SNOW_RATIO;
-                Debug.Log($"[TL_THICK_SNOW] max_px={_tlThickMaxPx:F1} roof_h={_roofs[ri].guiRect.height:F1} ratio={TL_THICK_SNOW_RATIO}");
+                float thickPx = _roofs[ri].guiRect.height * _roofs[ri].thickRatio;
+                Debug.Log($"[SNOW_STATE] roof={calibId} state=THICK thickRatio={_roofs[ri].thickRatio} thickPx={thickPx:F1}");
+            }
+            else
+            {
+                Debug.Log($"[SNOW_STATE] roof={calibId} state=NORMAL");
             }
 
             Debug.Log($"[UNDER_EAVE_TARGET] roof={calibId} created=YES" +
@@ -294,18 +293,20 @@ public class WorkSnowForcer : MonoBehaviour
             float spawnX = _roofs[ri].guiRect.x + _roofs[ri].guiRect.width  * 0.5f;
             float spawnY = _roofs[ri].guiRect.y + _roofs[ri].guiRect.height;
 
-            _pieces.Add(new FallingPiece
+            // 小さめの雪片を3〜5個生成（巨大1個ブロックを廃止）
+            int spawnCount = Random.Range(3, 6);
+            for (int si = 0; si < spawnCount; si++)
             {
-                pos     = new Vector2(spawnX, spawnY),
-                vel     = new Vector2(0f, 80f),
-                size    = 40f,
-                life    = 10f,
-                roofIdx = ri,
-            });
-
-            _lastSpawnPos    = new Vector2(spawnX, spawnY);
-            _hasSpawnMarker  = true;
-            _spawnMarkerLife = 3f;
+                float jx = Random.Range(-_roofs[ri].guiRect.width * 0.25f, _roofs[ri].guiRect.width * 0.25f);
+                _pieces.Add(new FallingPiece
+                {
+                    pos     = new Vector2(spawnX + jx, spawnY),
+                    vel     = new Vector2(Random.Range(-15f, 15f), Random.Range(60f, 100f)),
+                    size    = Random.Range(8f, 16f),
+                    life    = 8f,
+                    roofIdx = ri,
+                });
+            }
 
             Debug.Log($"[DETACH] roof={_roofs[ri].id} tap_detected=YES" +
                       $" spawn_gui=({spawnX:F1},{spawnY:F1})" +
@@ -333,12 +334,6 @@ public class WorkSnowForcer : MonoBehaviour
     {
         float dt = Time.deltaTime;
 
-        if (_hasSpawnMarker)
-        {
-            _spawnMarkerLife -= dt;
-            if (_spawnMarkerLife <= 0f) _hasSpawnMarker = false;
-        }
-
         for (int i = _landedPieces.Count - 1; i >= 0; i--)
         {
             var lp = _landedPieces[i];
@@ -361,8 +356,8 @@ public class WorkSnowForcer : MonoBehaviour
                 _landedPieces.Add(new LandedPiece
                 {
                     pos        = p.pos,
-                    size       = p.size,
-                    remainLife = 30f,
+                    size       = p.size,  // 小さいまま残留（8〜16px）
+                    remainLife = 8f,      // 8秒後に消える（巨大塊蓄積を防ぐ）
                     roofIdx    = ri,
                 });
                 Debug.Log($"[UNDER_EAVE_LANDING] roof={_roofs[ri].id} under_eave_hit=YES" +
@@ -378,82 +373,52 @@ public class WorkSnowForcer : MonoBehaviour
         }
     }
 
-    // ── OnGUI: 全デバッグ描画 ─────────────────────────────────
+    // ── OnGUI: 描画 ──────────────────────────────────────────
     void OnGUI()
     {
         if (!Application.isPlaying) return;
         if (_whiteTex == null) return;
 
-        // ① 各軒下マーカー（シアンの短いバー）
+        // ① 厚雪帯: thickRatio > 0 の屋根のみ描画（GDD Snow State: THICK）
+        // 屋根 guiRect の上端から下向きに snowFill × thickRatio × 屋根高さ の白い帯を重ねる
         if (_roofsReady)
         {
-            GUI.color = new Color(0f, 1f, 1f, 0.85f);
             for (int ri = 0; ri < _roofs.Length; ri++)
             {
-                if (!_roofs[ri].ready) continue;
-                float barW = _roofs[ri].guiRect.width * 1.1f;
-                float barX = _roofs[ri].eaveGuiX - barW * 0.5f;
-                GUI.DrawTexture(new Rect(barX, _roofs[ri].eaveGuiY - 3f, barW, 6f), _whiteTex);
-            }
-        }
+                if (!_roofs[ri].ready || _roofs[ri].thickRatio <= 0f) continue;
 
-        // ① TL 厚雪帯: 屋根上端から上方向に snowFill に比例した高さの白い帯を描く
-        // 屋根の guiRect.y = 屋根上端（OnGUI 左上原点）
-        // 帯は屋根上端から上に伸びる（y が小さい方向）
-        if (_roofsReady && _tlThickMaxPx > 0f)
-        {
-            int tlIdx = 0; // RoofPairs[0] = Roof_TL
-            if (_roofs[tlIdx].ready)
-            {
-                float fill       = _roofs[tlIdx].snowFill;
-                float thickH     = _tlThickMaxPx * fill;
-                float roofTop    = _roofs[tlIdx].guiRect.y;       // 屋根上端 Y
-                float roofLeft   = _roofs[tlIdx].guiRect.x;
-                float roofWidth  = _roofs[tlIdx].guiRect.width;
+                float fill     = _roofs[ri].snowFill;
+                float thickH   = _roofs[ri].guiRect.height * _roofs[ri].thickRatio * fill;
+                float roofTop  = _roofs[ri].guiRect.y;
+                float roofLeft = _roofs[ri].guiRect.x;
+                float roofW    = _roofs[ri].guiRect.width;
 
-                // 帯の上端 = 屋根上端 - 厚み
-                float bandTop    = roofTop - thickH;
+                if (thickH < 1f) continue;
 
-                // 白い帯（不透明・雪色）
+                // 本体（雪色・不透明）
                 GUI.color = new Color(0.93f, 0.96f, 1.0f, 0.97f);
-                GUI.DrawTexture(new Rect(roofLeft, bandTop, roofWidth, thickH), _whiteTex);
+                GUI.DrawTexture(new Rect(roofLeft, roofTop, roofW, thickH), _whiteTex);
 
-                // 帯の下端に影色（立体感）
-                if (thickH > 4f)
+                // 下端に影帯（立体感）
+                if (thickH > 6f)
                 {
-                    GUI.color = new Color(0.75f, 0.82f, 0.92f, 0.6f);
-                    GUI.DrawTexture(new Rect(roofLeft, roofTop - 4f, roofWidth, 4f), _whiteTex);
+                    GUI.color = new Color(0.68f, 0.78f, 0.92f, 0.80f);
+                    GUI.DrawTexture(new Rect(roofLeft, roofTop + thickH - 6f, roofW, 6f), _whiteTex);
                 }
             }
         }
 
-        // ② 落下中の雪片（白・不透明）
-        GUI.color = Color.white;
+        // ② 落下中の雪片（小さめ・半透明）
+        // size=40 の巨大ブロックを廃止し、小さな複数片に変更済み
+        GUI.color = new Color(0.95f, 0.97f, 1f, 0.9f);
         foreach (var p in _pieces)
             GUI.DrawTexture(new Rect(p.pos.x - p.size * 0.5f, p.pos.y - p.size * 0.5f, p.size, p.size), _whiteTex);
 
-        // ③ 着地済み雪片（白・不透明・残留）
-        GUI.color = new Color(0.9f, 0.95f, 1f, 1f);
+        // ③ 着地済み雪片（小さめ・軒下に残留）
+        // 中央巨大塊の原因だった大サイズ残留を廃止
+        GUI.color = new Color(0.93f, 0.96f, 1f, 0.85f);
         foreach (var lp in _landedPieces)
             GUI.DrawTexture(new Rect(lp.pos.x - lp.size * 0.5f, lp.pos.y - lp.size * 0.5f, lp.size, lp.size), _whiteTex);
-
-        // ④ spawn マーカー（黄色の十字）
-        if (_hasSpawnMarker)
-        {
-            GUI.color = Color.yellow;
-            float mx = _lastSpawnPos.x, my = _lastSpawnPos.y;
-            GUI.DrawTexture(new Rect(mx - 12f, my - 2f, 24f, 4f), _whiteTex);
-            GUI.DrawTexture(new Rect(mx - 2f, my - 12f, 4f, 24f), _whiteTex);
-        }
-
-        // ⑤ 最新 landing マーカー（緑の十字）
-        if (_landedPieces.Count > 0)
-        {
-            GUI.color = Color.green;
-            var lp = _landedPieces[_landedPieces.Count - 1];
-            GUI.DrawTexture(new Rect(lp.pos.x - 12f, lp.pos.y - 2f, 24f, 4f), _whiteTex);
-            GUI.DrawTexture(new Rect(lp.pos.x - 2f, lp.pos.y - 12f, 4f, 24f), _whiteTex);
-        }
 
         GUI.color = Color.white;
     }

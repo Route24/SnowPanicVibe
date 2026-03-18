@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 /// <summary>雪と屋根の角度を毎秒ログ。原因切り分け・任意で自動補正。DebugTools か RoofRoot にアタッチ。</summary>
 [DefaultExecutionOrder(100)]
@@ -18,6 +19,8 @@ public class RoofSnowAngleProbe : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoAttach()
     {
+        // WORK_SNOW シーンではデバッグ自動アタッチを停止する
+        if (SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
         if (VideoPipelineSelfTestMode.IsActive) return;
         if (Object.FindFirstObjectByType<RoofSnowAngleProbe>() != null) return;
         var go = GameObject.Find("DebugTools");

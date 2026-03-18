@@ -45,6 +45,18 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         if (!Application.isPlaying) return;
         string scene = SceneManager.GetActiveScene().name;
         if (!scene.Contains("WORK_SNOW")) return;
+
+        // SnowTest を RuntimeInitialize タイミングで即無効化する
+        // SnowPackSpawner.Awake()/Start() が走る前に SetActive(false) することで
+        // roofCollider=null での RebuildSnowPack → 赤いキューブ生成を防ぐ
+        // （WorkSnowGameBootstrap.Start() では遅すぎる）
+        var snowTest = GameObject.Find("SnowTest");
+        if (snowTest != null)
+        {
+            snowTest.SetActive(false);
+            Debug.Log("[WORK_SNOW_GAME] SnowTest disabled at Bootstrap (prevents red cube spawn)");
+        }
+
         if (Object.FindFirstObjectByType<WorkSnowGameBootstrap>() != null) return;
 
         var go = new GameObject("WorkSnowGameBootstrap");
@@ -89,24 +101,7 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         box.size   = new Vector3(1f, GROUND_THICKNESS / BG_SCALE_Y, GROUND_DEPTH);
         box.center = Vector3.zero;
 
-        // 視覚確認用の薄い板
-        var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        quad.name = name + "_Visual";
-        quad.transform.SetParent(go.transform, false);
-        quad.transform.localPosition = Vector3.zero;
-        quad.transform.localRotation = Quaternion.identity;
-        quad.transform.localScale    = new Vector3(1f, GROUND_THICKNESS / BG_SCALE_Y * 2f, 1f);
-        var col = quad.GetComponent<Collider>();
-        if (col != null) Destroy(col);
-        var mr = quad.GetComponent<MeshRenderer>();
-        if (mr != null)
-        {
-            var mat = new Material(Shader.Find("Unlit/Color"));
-            mat.color = tier == "upper"
-                ? new Color(0.8f, 0.9f, 1f, 0.4f)
-                : new Color(0.7f, 0.85f, 1f, 0.4f);
-            mr.material = mat;
-        }
+        // 視覚確認用 Quad は非表示（画面に白い板が出る原因になるため）
 
         Debug.Log($"[WORK_SNOW_GAME] ground_created name={name} tier={tier}" +
                   $" localY={localY:F3} parent={parent.name}");
@@ -194,77 +189,13 @@ public class WorkSnowGameBootstrap : MonoBehaviour
     }
 
     // ── ゲームシステムを起動 ──────────────────────────────────────
+    // WORK_SNOW では WorkSnowForcer の OnGUI システムが全て代替するため
+    // SnowPackSpawner / GroundSnowSystem / RoofSnowSystem / SnowFallSystem は起動しない。
+    // これらが起動すると groundCollider=null で GroundSnowLayer Cube が画面中央に生成され、
+    // SnowPackSpawner(rebuildOnPlay=true) が roofCollider=null で赤いキューブを中央に生成する。
     void SetupGameSystems()
     {
-        var upperGround = GameObject.Find("WorkSnow_Ground_Upper");
-        var lowerGround = GameObject.Find("WorkSnow_Ground_Lower");
-
-        if (Object.FindFirstObjectByType<SnowPackSpawner>() != null)
-        {
-            Debug.Log("[WORK_SNOW_GAME] SnowPackSpawner already exists – skip setup");
-            EnsureTapToSlide();
-            EnsureGroundSnowSystem();
-            return;
-        }
-
-        var root = new GameObject("SnowMVP");
-
-        // GroundSnowSystem（上段・下段共用）
-        var ground = root.AddComponent<GroundSnowSystem>();
-        ground.groundPileLifetimeSec      = 99999f;
-        ground.groundPileBlinkDurationSec = 0f;
-        ground.maxGroundPiles             = 200;
-        ground.pileScalePerAmount         = 0.3f;
-        if (upperGround != null)
-            ground.groundCollider = upperGround.GetComponent<Collider>();
-
-        // RoofSnowSystem
-        var roofSys = root.AddComponent<RoofSnowSystem>();
-        roofSys.groundSnowSystem    = ground;
-        roofSys.roofSnowDepthMeters = 0.5f;
-
-        // SnowPackSpawner（houseIndex=0 をメインに）
-        var pack = root.AddComponent<SnowPackSpawner>();
-        pack.roofSnowSystem    = roofSys;
-        pack.targetDepthMeters = 0.5f;
-        pack.packDepthMeters   = 0.5f;
-        pack.rebuildOnPlay     = true;
-        pack.houseIndex        = 0;
-        roofSys.snowPackSpawner = pack;
-
-        // SnowFallSystem
-        var fall = root.AddComponent<SnowFallSystem>();
-        fall.roofSnowSystem         = roofSys;
-        fall.groundSnowSystem       = ground;
-        fall.addPerGroundHit        = 0.05f;
-        fall.snowfallEnabledAtStart = false;
-
-        EnsureTapToSlide();
-
-        Debug.Log($"[WORK_SNOW_GAME] game_systems_started" +
-                  $" SnowPackSpawner=YES GroundSnowSystem=YES SnowFallSystem=YES" +
-                  $" upper_ground={(upperGround != null ? "YES" : "NO")}" +
-                  $" lower_ground={(lowerGround != null ? "YES" : "NO")}");
-    }
-
-    void EnsureTapToSlide()
-    {
-        var cam = Camera.main;
-        if (cam == null) return;
-        if (cam.GetComponent<TapToSlideOnRoof>() != null) return;
-        cam.gameObject.AddComponent<TapToSlideOnRoof>();
-        Debug.Log("[WORK_SNOW_GAME] TapToSlideOnRoof attached to Main Camera");
-    }
-
-    void EnsureGroundSnowSystem()
-    {
-        if (Object.FindFirstObjectByType<GroundSnowSystem>() != null) return;
-        var go = new GameObject("GroundSnowSystem");
-        var ground = go.AddComponent<GroundSnowSystem>();
-        ground.groundPileLifetimeSec      = 99999f;
-        ground.groundPileBlinkDurationSec = 0f;
-        ground.maxGroundPiles             = 200;
-        ground.pileScalePerAmount         = 0.3f;
-        Debug.Log("[WORK_SNOW_GAME] GroundSnowSystem created");
+        Debug.Log("[WORK_SNOW_GAME] SetupGameSystems SKIPPED" +
+                  " – WorkSnowForcer handles all snow visuals in WORK_SNOW scene");
     }
 }
