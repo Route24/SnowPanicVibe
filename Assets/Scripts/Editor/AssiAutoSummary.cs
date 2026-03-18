@@ -34,11 +34,43 @@ public static class AssiAutoSummary
         if (state == PlayModeStateChange.EnteredPlayMode) { _sawPlay = true; return; }
         if (state != PlayModeStateChange.EnteredEditMode || !_sawPlay) return;
         _sawPlay = false;
-        EditorApplication.delayCall += GenerateSummary;
+        // レポート書き込み完了を待つため3秒後に実行
+        var stopTime = DateTime.Now;
+        EditorApplication.update += WaitAndGenerate;
+
+        void WaitAndGenerate()
+        {
+            if ((DateTime.Now - stopTime).TotalSeconds < 3.0) return;
+            EditorApplication.update -= WaitAndGenerate;
+            GenerateSummary();
+        }
     }
 
     [MenuItem("SnowPanicVibe/Generate Latest Summary", false, 400)]
     public static void GenerateSummaryManual() => GenerateSummary();
+
+    /// <summary>アシがコーディング完了時に呼ぶ。mark_ready.py を実行して READY_FOR_UNITY_PLAY に遷移する。</summary>
+    [MenuItem("SnowPanicVibe/Coding Done (Mark Ready)", false, 403)]
+    public static void CodingDone()
+    {
+        var runner = Path.GetFullPath(Path.Combine("Automation", "mark_ready.py"));
+        if (!File.Exists(runner))
+        {
+            Debug.LogWarning("[AssiAutoSummary] mark_ready.py が見つかりません: " + runner);
+            return;
+        }
+        var proc = new System.Diagnostics.Process();
+        proc.StartInfo.FileName = "python3";
+        proc.StartInfo.Arguments = "\"" + runner + "\"";
+        proc.StartInfo.UseShellExecute = false;
+        proc.StartInfo.RedirectStandardOutput = true;
+        proc.StartInfo.RedirectStandardError = true;
+        proc.Start();
+        string output = proc.StandardOutput.ReadToEnd();
+        proc.WaitForExit();
+        Debug.Log("[AssiAutoSummary] " + output.Trim());
+        Debug.Log("[AssiAutoSummary] status=READY_FOR_UNITY_PLAY → Unity で Play してください");
+    }
 
     public static void GenerateSummary()
     {
@@ -48,7 +80,8 @@ public static class AssiAutoSummary
 
             // --- 基本 ---
             string generatedAt   = Pick(r, "生成日時") ?? Pick(r, "generated_at") ?? DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
-            string sceneName     = Pick(r, "scene") ?? "UNKNOWN";
+            // "scene=" を全マッチから探し、"(no Cornice" を含まない有効値を優先する
+            string sceneName     = PickValid(r, "scene", "(no Cornice") ?? Pick(r, "scene") ?? "UNKNOWN";
             string compileResult = Pick(r, "compile_result") ?? "UNKNOWN";
             string errorCount    = Pick(r, "console_error_count") ?? "-1";
             string warningCount  = Pick(r, "console_warning_count") ?? "-1";
@@ -107,7 +140,7 @@ public static class AssiAutoSummary
 
             var dir = Path.GetDirectoryName(SummaryPath);
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(SummaryPath, sb.ToString(), Encoding.UTF8);
+            File.WriteAllText(SummaryPath, sb.ToString(), new System.Text.UTF8Encoding(false));
 
             Debug.Log("[AssiAutoSummary] latest_summary.txt 生成完了 → " + SummaryPath);
 
@@ -128,6 +161,17 @@ public static class AssiAutoSummary
     {
         var m = Regex.Match(text, @"(?m)^" + Regex.Escape(key) + @"=(.+)$");
         return m.Success ? m.Groups[1].Value.Trim() : null;
+    }
+
+    /// <summary>key=value の全マッチから excludeSubstr を含まない最初の値を返す</summary>
+    static string PickValid(string text, string key, string excludeSubstr)
+    {
+        foreach (Match m in Regex.Matches(text, @"(?m)^" + Regex.Escape(key) + @"=(.+)$"))
+        {
+            var val = m.Groups[1].Value.Trim();
+            if (!val.Contains(excludeSubstr)) return val;
+        }
+        return null;
     }
 
     static bool Has(string text, string keyword) =>

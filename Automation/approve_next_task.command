@@ -1,6 +1,6 @@
 #!/bin/bash
 # approve_next_task.command
-# ダブルクリックするだけで承認＋実行まで完結。追加メッセージ不要。
+# ダブルクリックするだけで承認＋Cursorへ自動送信まで完結。追加メッセージ不要。
 
 AUTOMATION_DIR="$(cd "$(dirname "$0")" && pwd)"
 STATUS_FILE="$AUTOMATION_DIR/current_status.txt"
@@ -50,7 +50,6 @@ if [ -n "$MODULE" ]; then
 fi
 
 # --- プロトコル種別を判定 ---
-# 「実装対象: - なし」または「今回触るモジュール: - なし」なら確認系
 IMPL_TARGET=$(awk '/^実装対象:/{found=1; next} found && /^$/{exit} found{print $0}' "$PROTOCOL_FILE")
 MODULE_CONTENT=$(awk '/^今回触るモジュール:/{found=1; next} found && /^$/{exit} found{print $0}' "$PROTOCOL_FILE")
 
@@ -84,17 +83,14 @@ echo "  WAITING_APPROVAL → RUNNING"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-# --- 確認系プロトコルはそのまま手順を表示して完了 ---
+# --- 確認系：手順を表示して READY_FOR_UNITY_PLAY へ ---
 if [ "$IS_CHECK_ONLY" = true ]; then
-    echo "👀 確認系タスクです。以下の手順で確認してください:"
+    echo "👀 確認系タスクです:"
     echo ""
     awk '/^確認手順:/{found=1; next} found && /^$/{exit} found{print "   " $0}' "$PROTOCOL_FILE"
     echo ""
-    echo "完了条件:"
     awk '/^完了条件:/{found=1; next} found && /^$/{exit} found{print "   " $0}' "$PROTOCOL_FILE"
     echo ""
-
-    # READY_FOR_UNITY_PLAY に遷移
     {
         echo "status=READY_FOR_UNITY_PLAY"
         echo "updated_at=$NOW"
@@ -102,56 +98,48 @@ if [ "$IS_CHECK_ONLY" = true ]; then
         echo "last_protocol_at=$LAST_PROTOCOL"
         echo "last_approved_at=$NOW"
     } > "$STATUS_FILE"
-
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  RUNNING → READY_FOR_UNITY_PLAY"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "🎮 Unity で Play してください"
     echo ""
-    sleep 3; exit 0
+    sleep 2; exit 0
 fi
 
-# --- 実装系プロトコルは protocol_runner.py を呼ぶ ---
-RUNNER="$AUTOMATION_DIR/protocol_runner.py"
-if [ ! -f "$RUNNER" ]; then
-    echo "⚠️  実装系タスクですが protocol_runner.py が見つかりません"
-    echo "   Cursor のアシに以下を送ってください:"
-    echo ""
-    echo "   「approved.flag を確認して current_protocol.txt を実行して」"
-    echo ""
-    sleep 5; exit 1
-fi
-
-echo "⚙️  実装系タスクを実行中..."
+# --- 実装系：Cursor に自動送信 ---
+echo "⚙️  実装系タスクです。Cursor のアシに自動送信します..."
 echo ""
-python3 "$RUNNER" "$PROTOCOL_FILE" "$STATUS_FILE"
-EXIT_CODE=$?
 
-if [ $EXIT_CODE -eq 0 ]; then
-    {
-        echo "status=READY_FOR_UNITY_PLAY"
-        echo "updated_at=$(date '+%Y-%m-%d %H:%M:%S')"
-        echo "last_summary_at=$LAST_SUMMARY"
-        echo "last_protocol_at=$LAST_PROTOCOL"
-        echo "last_approved_at=$NOW"
-    } > "$STATUS_FILE"
+# Cursor を前面に出してチャットに送信
+osascript <<APPLESCRIPT
+tell application "Cursor"
+    activate
+end tell
+delay 1
+tell application "System Events"
+    tell process "Cursor"
+        keystroke "Automation/current_protocol.txt を読んで実行して"
+        delay 0.3
+        key code 36
+    end tell
+end tell
+APPLESCRIPT
+
+OSASCRIPT_EXIT=$?
+if [ $OSASCRIPT_EXIT -eq 0 ]; then
+    echo "✅ Cursor のアシに送信しました"
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  RUNNING → READY_FOR_UNITY_PLAY"
+    echo "  アシが current_protocol.txt を処理開始"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "🎮 Unity で Play して確認してください"
+    echo "完了後に READY_FOR_UNITY_PLAY になります"
 else
-    {
-        echo "status=ERROR"
-        echo "updated_at=$(date '+%Y-%m-%d %H:%M:%S')"
-        echo "last_summary_at=$LAST_SUMMARY"
-        echo "last_protocol_at=$LAST_PROTOCOL"
-        echo "last_approved_at=$NOW"
-    } > "$STATUS_FILE"
-    echo "❌ 実行失敗 (exit=$EXIT_CODE)"
-    echo "   Cursor のアシに確認を依頼してください"
+    echo "⚠️  Cursor への自動送信に失敗しました"
+    echo "   Cursor のアシに手動で以下を送ってください:"
+    echo ""
+    echo "   「Automation/current_protocol.txt を読んで実行して」"
 fi
 
 echo ""

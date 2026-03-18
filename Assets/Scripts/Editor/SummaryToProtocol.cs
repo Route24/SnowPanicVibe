@@ -26,7 +26,7 @@ public static class SummaryToProtocol
             SetStatus("SUMMARY_READY");
             string summary = File.Exists(SummaryPath) ? File.ReadAllText(SummaryPath) : "";
             string protocol = GenerateProtocol(summary);
-            File.WriteAllText(ProtocolPath, protocol, Encoding.UTF8);
+            File.WriteAllText(ProtocolPath, protocol, new System.Text.UTF8Encoding(false));
             SetStatus("WAITING_APPROVAL");
             Debug.Log("[SummaryToProtocol] current_protocol.txt 生成完了 → " + ProtocolPath);
             Debug.Log("[SummaryToProtocol] current_status=WAITING_APPROVAL");
@@ -381,7 +381,7 @@ SAFEは維持したまま、雪崩の気持ちよさをさらに強化する。
             sb.AppendLine("last_protocol_at=" + lastProtocol);
             sb.AppendLine("last_approved_at=" + lastApproved);
 
-            File.WriteAllText(StatusPath, sb.ToString(), Encoding.UTF8);
+            File.WriteAllText(StatusPath, sb.ToString(), new System.Text.UTF8Encoding(false));
         }
         catch (Exception ex)
         {

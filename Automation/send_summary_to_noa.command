@@ -20,9 +20,29 @@ fi
 
 # --- クリップボードに入れるテキストを組み立てる ---
 SUMMARY=$(cat "$SUMMARY_FILE")
-CLIP_TEXT="latest_summary.txt を見て、次の一手を1つだけ決めて。
+CLIP_TEXT="【Snow Panic - Play/Stop レポート】
 
-$SUMMARY"
+$SUMMARY
+
+---
+【ノアへの指示】
+・上記は最新の自動生成 summary です
+・noa_next_check は参考情報です（自動判定）
+・以下の形式だけで返してください：
+
+next_action=（次にやること1行）
+ok=YES
+（自動生成プロトコルで進めてよい場合）
+
+または
+
+next_action=（次にやること1行）
+override=（変更点1行のみ）
+（プロトコルを変えたい場合のみ）
+
+・長文プロトコルは不要です
+・ゲーム挙動の詳細説明も不要です
+・判断だけ返してください"
 
 # --- クリップボードへコピー ---
 echo "$CLIP_TEXT" | pbcopy

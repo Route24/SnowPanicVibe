@@ -1,4 +1,4 @@
-﻿SNOW PANIC - ASSI PROTOCOL
+SNOW PANIC - ASSI PROTOCOL
 
 目的:
 軒下停止（under_eave_stop）が YES か NO かを確認する。
@@ -6,7 +6,7 @@
 
 前提:
 - under_eave_stop=UNKNOWN
-- scene=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A
+- scene=Avalanche_Billboard__WORK_SNOW
 
 今回触るモジュール:
 - なし（確認のみ）
@@ -23,4 +23,4 @@
 完了条件:
 - under_eave_stop が YES / NO / PARTIAL のいずれかに更新される
 
-生成日時: 2026-03-19 06:01:12
+生成日時: 2026-03-19 07:08:44

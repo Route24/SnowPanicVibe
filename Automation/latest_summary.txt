@@ -1,6 +1,6 @@
-﻿=== SUMMARY ===
-generated_at=2026-03-19 06:01:12
-scene_name=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A
+=== SUMMARY ===
+generated_at=2026-03-19 07:08:44
+scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
 error_count=0
@@ -17,7 +17,7 @@ white_panel=NO
 score_ui=PASS
 
 gif_status=NG
-mp4_status=NG
+mp4_status=OK
 
 result=NEED_CHECK
 
