@@ -137,7 +137,7 @@ public class SnowVisual : MonoBehaviour
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         var mat = new Material(sh);
         if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", Color.red);
+            mat.SetColor("_BaseColor", Color.blue);
         if (mat.HasProperty("_BlueTint"))
             mat.SetFloat("_BlueTint", 0.08f);
         if (mat.HasProperty("_Softness"))

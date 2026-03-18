@@ -42,7 +42,7 @@ public class WorkSnowForcer : MonoBehaviour
         ("Roof_BR", "RoofGuide_BR"),
     };
 
-    static readonly Color SnowWhite = new Color(0.93f, 0.96f, 1.0f, 0.95f);
+    static readonly Color SnowWhite = Color.blue;
 
     // ── 屋根ごとのデータ ──────────────────────────────────────
     struct RoofData
@@ -211,9 +211,10 @@ public class WorkSnowForcer : MonoBehaviour
 
             var img = guideGo.GetComponent<Image>();
             if (img == null) img = guideGo.AddComponent<Image>();
-            // 全6軒に白板表示（ALL_6_THICK_SNOW モード）
+            // 全6軒に白板表示（ALL_6_THICK_SNOW モード）-> 2系統をまとめるため非表示に
             img.color         = SnowWhite;
             img.raycastTarget = false;
+            img.enabled       = false;
 
             // 初期 anchor を保存
             if (_roofs[ri].anchorMinY0 < 0f)
@@ -473,13 +474,13 @@ public class WorkSnowForcer : MonoBehaviour
                 if (thickH < 1f) continue;
 
                 // 本体（雪色・不透明）
-                GUI.color = new Color(0.93f, 0.96f, 1.0f, 0.97f);
+                GUI.color = SnowWhite;
                 GUI.DrawTexture(new Rect(roofLeft, roofTop, roofW, thickH), _whiteTex);
 
                 // 下端に影帯（立体感）
                 if (thickH > 6f)
                 {
-                    GUI.color = new Color(0.68f, 0.78f, 0.92f, 0.80f);
+                    GUI.color = new Color(SnowWhite.r * 0.73f, SnowWhite.g * 0.81f, SnowWhite.b * 0.92f, 0.80f);
                     GUI.DrawTexture(new Rect(roofLeft, roofTop + thickH - 6f, roofW, 6f), _whiteTex);
                 }
             }
@@ -487,13 +488,13 @@ public class WorkSnowForcer : MonoBehaviour
 
         // ② 落下中の雪片（小さめ・半透明）
         // size=40 の巨大ブロックを廃止し、小さな複数片に変更済み
-        GUI.color = new Color(0.95f, 0.97f, 1f, 0.9f);
+        GUI.color = SnowWhite;
         foreach (var p in _pieces)
             GUI.DrawTexture(new Rect(p.pos.x - p.size * 0.5f, p.pos.y - p.size * 0.5f, p.size, p.size), _whiteTex);
 
         // ③ 着地済み雪片（小さめ・軒下に残留）
         // 中央巨大塊の原因だった大サイズ残留を廃止
-        GUI.color = new Color(0.93f, 0.96f, 1f, 0.85f);
+        GUI.color = SnowWhite;
         foreach (var lp in _landedPieces)
             GUI.DrawTexture(new Rect(lp.pos.x - lp.size * 0.5f, lp.pos.y - lp.size * 0.5f, lp.size, lp.size), _whiteTex);
 

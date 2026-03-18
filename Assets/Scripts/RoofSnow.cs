@@ -302,7 +302,7 @@ public class RoofSnow : MonoBehaviour
             p.transform.localScale = new Vector3(sz, sz * 1.1f, sz); // 雪らしく少し縦長
             var pr = p.GetComponent<Renderer>();
             var snowMat = new Material(pr.sharedMaterial);
-            MaterialColorHelper.SetColorSafe(snowMat, new Color(1f, 1f, 1f, Random.Range(0.9f, 1f)));
+            MaterialColorHelper.SetColorSafe(snowMat, new Color(0f, 0f, 1f, Random.Range(0.9f, 1f)));
             pr.sharedMaterial = snowMat;
             pr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
             pr.receiveShadows = true;

@@ -81,7 +81,7 @@ public class SnowPackSpawner : MonoBehaviour
     public bool rebuildOnPlay = true;
 
     [Header("Material")]
-    public Color snowColor = Color.red;
+    public Color snowColor = Color.blue;
     [Tooltip("PoolReturn発生元特定用。ONで初回のみthrow")]
     public bool throwOnFirstPoolReturn = false;
     [Header("Debug (水平積雪切り分け)")]
@@ -2679,10 +2679,10 @@ public class SnowPackSpawner : MonoBehaviour
     }
 
     enum PieceVisualState { Accumulating, Sliding, Cooldown, Returning, Pooled }
-    static readonly Color _colorAccum = Color.white;       // Normal
-    static readonly Color _colorSliding = Color.white;     // Sliding: 本番は白（debug着色を停止）
-    static readonly Color _colorCooldown = Color.white;    // Cooldown: 本番は白（debug着色を停止）
-    static readonly Color _colorReturning = Color.white;   // Returning: 本番は白（debug着色を停止）
+    static readonly Color _colorAccum = Color.blue;       // Normal (テスト表示用)
+    static readonly Color _colorSliding = Color.blue;     // Sliding: 本番は白（debug着色を停止）
+    static readonly Color _colorCooldown = Color.blue;    // Cooldown: 本番は白（debug着色を停止）
+    static readonly Color _colorReturning = Color.blue;   // Returning: 本番は白（debug着色を停止）
     static readonly Color _colorPooled = Color.black;      // Pooled (非表示)
 
     int _pieceStateLogThrottle;
