@@ -22,7 +22,13 @@ public class BillboardSnowKiller : MonoBehaviour
         "SnowPackPiecesRoot", "SnowPackAnchor",
     };
 
-    void Awake() => KillAll();
+    void Awake()
+    {
+        // WORK_SNOW シーンでは雪ゲームシステムを使うため KillAll しない
+        string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (scene.Contains("WORK_SNOW")) return;
+        KillAll();
+    }
 
     // [SNOW_DESTROY_TRACE] Update の KillAll は SnowDestroyTracer により停止済み
     // ForceSnow_ / MinimalSnow_ を誤って破棄しないよう Update を無効化
