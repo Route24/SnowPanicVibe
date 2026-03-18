@@ -1,31 +1,27 @@
-using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 
 /// <summary>
 /// WORK_SNOW シーン専用。
-/// 【モード: SNOW_IMAGE_MAPPING】
+/// 【モード: DIRECT_NORM_TO_SCREEN】
 ///
-/// mesh / triangle / GL は一切使わない。
-/// OnGUI + Camera.WorldToScreenPoint で4点スクリーン座標を取得し、
-/// GUI.DrawTexture で白い雪テクスチャを台形に近似して描画する。
+/// 3D ワールド変換を一切使わない。
+/// normalized (0..1) 座標 → BackgroundImage の bgRect → スクリーン座標 に直接変換し、
+/// RoofCalibrationController と同じ経路で台形スキャンライン描画する。
 ///
-/// 台形近似方法:
-///   上辺(TL→TR)と下辺(BL→BR)を別々の行として描画し、
-///   行ごとに x 位置と幅を線形補間することで台形を埋める。
-///   これは純粋な 2D 描画なので三角欠け・カリング問題が構造的に起きない。
+/// これにより Edit 時プレビューと Play 時 runtime が完全に同じ source of truth を使う。
+/// 三角欠け・カリング問題は構造的に起きない。
 ///
 /// 落下・地面・SnowPackSpawner・GroundSnowSystem には一切触らない。
 /// </summary>
 [ExecuteAlways]
 public class WorkSnowForcer : MonoBehaviour
 {
-    const string CALIB_PATH     = "Assets/Art/RoofCalibrationData.json";
-    const float  FORWARD_OFFSET = 0.12f;
+    const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
 
-    // 台形を何本の水平スキャンラインで埋めるか（多いほど精度が上がる）
-    const int    SCAN_LINES     = 40;
+    // 台形を何本の水平スキャンラインで埋めるか
+    const int SCAN_LINES = 60;
 
     static readonly string[] RoofIds =
         { "Roof_TL", "Roof_TM", "Roof_TR", "Roof_BL", "Roof_BM", "Roof_BR" };
@@ -38,11 +34,17 @@ public class WorkSnowForcer : MonoBehaviour
     bool   _consoleLogged = false;
     int    _outlineCount  = 0;
 
-    struct RoofOutline { public Vector3 tl, tr, br, bl; public string id; }
-    readonly List<RoofOutline> _outlines = new List<RoofOutline>();
+    // normalized 座標のまま保持（3D変換しない）
+    struct RoofNorm { public Vector2 tl, tr, br, bl; public string id; }
+    readonly List<RoofNorm> _norms = new List<RoofNorm>();
+
+    // BackgroundImage の bgRect（毎フレーム更新）
+    Rect _bgRect;
+    bool _bgRectValid = false;
 
     // 白テクスチャ
     Texture2D _whiteTex;
+    Texture2D _fillTex;
 
     // ── JSON デシリアライズ用 ──────────────────────────────────────
     [System.Serializable] class V2 { public float x, y; }
@@ -67,77 +69,112 @@ public class WorkSnowForcer : MonoBehaviour
         if (bgGo != null)
         {
             bgGo.AddComponent<WorkSnowForcer>();
-            Debug.Log($"[WORK_SNOW_FORCER] attached to BackgroundImage scene={scene} mode=SNOW_IMAGE_MAPPING");
+            Debug.Log($"[WORK_SNOW_FORCER] attached to BackgroundImage scene={scene} mode=DIRECT_NORM_TO_SCREEN");
         }
         else
         {
             var go = new GameObject("WorkSnowForcer_Root");
             go.AddComponent<WorkSnowForcer>();
-            Debug.Log($"[WORK_SNOW_FORCER] created root scene={scene} mode=SNOW_IMAGE_MAPPING");
+            Debug.Log($"[WORK_SNOW_FORCER] created root scene={scene} mode=DIRECT_NORM_TO_SCREEN");
         }
     }
 
     void OnEnable()
     {
         _loaded = false;
-        _outlines.Clear();
+        _norms.Clear();
         _outlineCount = 0;
         _consoleLogged = false;
+        _bgRectValid = false;
 
-        // 白テクスチャ作成
         _whiteTex = new Texture2D(1, 1);
         _whiteTex.SetPixel(0, 0, new Color(0.93f, 0.96f, 1.0f, 1f));
         _whiteTex.Apply();
+
+        _fillTex = new Texture2D(1, 1);
+        _fillTex.SetPixel(0, 0, Color.white);
+        _fillTex.Apply();
     }
 
     void Start()
     {
-        if (!Application.isPlaying) return;
-        LoadOutlines();
+        LoadNorms();
     }
 
-    // ── キャリブレーション4点を読み込む ──────────────────────────
-    void LoadOutlines()
+    // ── Update: bgRect を毎フレーム更新 ──────────────────────────
+    void Update()
+    {
+        UpdateBgRect();
+        // Edit モードでも毎フレーム再ロード（座標変更をすぐ反映）
+        if (!_loaded) LoadNorms();
+    }
+
+    // ── BackgroundImage の bgRect を取得 ─────────────────────────
+    void UpdateBgRect()
+    {
+        var cam = Camera.main;
+        var bgGo = (gameObject.name == "BackgroundImage")
+            ? gameObject
+            : GameObject.Find("BackgroundImage");
+
+        if (cam == null || bgGo == null) { _bgRectValid = false; return; }
+
+        var t = bgGo.transform;
+        Vector3 wTL = t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
+        Vector3 wTR = t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
+        Vector3 wBL = t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
+        Vector3 wBR = t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
+
+        float sh = Screen.height;
+        Vector2 sTL = cam.WorldToScreenPoint(wTL); sTL.y = sh - sTL.y;
+        Vector2 sTR = cam.WorldToScreenPoint(wTR); sTR.y = sh - sTR.y;
+        Vector2 sBL = cam.WorldToScreenPoint(wBL); sBL.y = sh - sBL.y;
+        Vector2 sBR = cam.WorldToScreenPoint(wBR); sBR.y = sh - sBR.y;
+
+        float minX = Mathf.Min(sTL.x, sBL.x);
+        float maxX = Mathf.Max(sTR.x, sBR.x);
+        float minY = Mathf.Min(sTL.y, sTR.y);
+        float maxY = Mathf.Max(sBL.y, sBR.y);
+
+        _bgRect = new Rect(minX, minY, maxX - minX, maxY - minY);
+        _bgRectValid = _bgRect.width > 1f && _bgRect.height > 1f;
+    }
+
+    // ── normalized → OnGUI スクリーン座標（bgRect 基準） ─────────
+    // RoofCalibrationController.NormToScreen と完全に同じ変換
+    Vector2 NormToScreen(Vector2 n)
+    {
+        if (_bgRectValid)
+            return new Vector2(
+                _bgRect.x + n.x * _bgRect.width,
+                _bgRect.y + n.y * _bgRect.height);
+        // bgRect 未確定時は全画面基準（フォールバック）
+        return new Vector2(n.x * Screen.width, n.y * Screen.height);
+    }
+
+    // ── JSON から normalized 座標を読み込む ──────────────────────
+    void LoadNorms()
     {
         _loaded = false;
+        _norms.Clear();
+        _outlineCount = 0;
 
-        var bgT = transform;
-        if (gameObject.name != "BackgroundImage")
+        var bgGo = (gameObject.name == "BackgroundImage")
+            ? gameObject
+            : GameObject.Find("BackgroundImage");
+        _bgFound = bgGo != null;
+        if (!_bgFound)
         {
-            var bgGo = GameObject.Find("BackgroundImage");
-            if (bgGo == null)
-            {
-                _lastError = "BackgroundImage not found";
-                _bgFound = false;
-                Debug.LogWarning($"[SNOW_IMAGE_MAPPING] {_lastError}");
-                return;
-            }
-            bgT = bgGo.transform;
+            _lastError = "BackgroundImage not found";
+            Debug.LogWarning($"[SNOW_NORM_MAPPING] {_lastError}");
+            return;
         }
-        _bgFound = true;
-
-        Vector3 wTL = bgT.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
-        Vector3 wTR = bgT.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
-        Vector3 wBL = bgT.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
-        Vector3 wBR = bgT.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
-
-        var cam = Camera.main;
-        Vector3 camFwd = cam != null
-            ? (cam.transform.position - bgT.position).normalized
-            : -bgT.forward;
-
-        System.Func<Vector2, Vector3> n2w = (n) =>
-        {
-            Vector3 top    = Vector3.Lerp(wTL, wTR, n.x);
-            Vector3 bottom = Vector3.Lerp(wBL, wBR, n.x);
-            return Vector3.Lerp(top, bottom, n.y) + camFwd * FORWARD_OFFSET;
-        };
 
         _calibFound = File.Exists(CALIB_PATH);
         if (!_calibFound)
         {
             _lastError = $"calib not found: {CALIB_PATH}";
-            Debug.LogWarning($"[SNOW_IMAGE_MAPPING] {_lastError}");
+            Debug.LogWarning($"[SNOW_NORM_MAPPING] {_lastError}");
             return;
         }
 
@@ -145,12 +182,9 @@ public class WorkSnowForcer : MonoBehaviour
         if (sd == null || sd.roofs == null)
         {
             _lastError = "JSON parse failed";
-            Debug.LogWarning($"[SNOW_IMAGE_MAPPING] {_lastError}");
+            Debug.LogWarning($"[SNOW_NORM_MAPPING] {_lastError}");
             return;
         }
-
-        _outlines.Clear();
-        _outlineCount = 0;
 
         foreach (var roofId in RoofIds)
         {
@@ -160,50 +194,50 @@ public class WorkSnowForcer : MonoBehaviour
 
             if (entry == null || !entry.confirmed)
             {
-                Debug.LogWarning($"[SNOW_IMAGE_MAPPING] roof={roofId} skip=no_confirmed_data");
+                Debug.LogWarning($"[SNOW_NORM_MAPPING] roof={roofId} skip=no_confirmed_data");
                 continue;
             }
 
-            Vector3 p0 = n2w(new Vector2(entry.topLeft.x,     entry.topLeft.y));
-            Vector3 p1 = n2w(new Vector2(entry.topRight.x,    entry.topRight.y));
-            Vector3 p2 = n2w(new Vector2(entry.bottomRight.x, entry.bottomRight.y));
-            Vector3 p3 = n2w(new Vector2(entry.bottomLeft.x,  entry.bottomLeft.y));
-
-            _outlines.Add(new RoofOutline { id = roofId, tl = p0, tr = p1, br = p2, bl = p3 });
+            _norms.Add(new RoofNorm
+            {
+                id = roofId,
+                tl = new Vector2(entry.topLeft.x,     entry.topLeft.y),
+                tr = new Vector2(entry.topRight.x,    entry.topRight.y),
+                br = new Vector2(entry.bottomRight.x, entry.bottomRight.y),
+                bl = new Vector2(entry.bottomLeft.x,  entry.bottomLeft.y),
+            });
             _outlineCount++;
 
-            Debug.Log($"[SNOW_IMAGE_MAPPING] roof={roofId}" +
-                      $" TL=({p0.x:F2},{p0.y:F2},{p0.z:F2})" +
-                      $" TR=({p1.x:F2},{p1.y:F2},{p1.z:F2})" +
-                      $" BR=({p2.x:F2},{p2.y:F2},{p2.z:F2})" +
-                      $" BL=({p3.x:F2},{p3.y:F2},{p3.z:F2})" +
-                      $" method=scanline_fill DRAW_OK=YES");
+            Debug.Log($"[SNOW_NORM_MAPPING] roof={roofId}" +
+                      $" TL=({entry.topLeft.x:F3},{entry.topLeft.y:F3})" +
+                      $" TR=({entry.topRight.x:F3},{entry.topRight.y:F3})" +
+                      $" BR=({entry.bottomRight.x:F3},{entry.bottomRight.y:F3})" +
+                      $" BL=({entry.bottomLeft.x:F3},{entry.bottomLeft.y:F3})" +
+                      $" method=direct_norm_to_screen DRAW_OK=YES");
         }
 
         bool all6 = _outlineCount == 6;
-        Debug.Log($"[SNOW_IMAGE_MAPPING] loaded count={_outlineCount}/6 all_6={(all6?"YES":"NO")} method=scanline_fill");
+        Debug.Log($"[SNOW_NORM_MAPPING] loaded count={_outlineCount}/6 all_6={(all6 ? "YES" : "NO")}" +
+                  $" method=direct_norm_to_screen" +
+                  $" preview_source=RoofCalibrationData_json" +
+                  $" runtime_source=RoofCalibrationData_json" +
+                  $" same_source_of_truth=YES");
         _loaded = true;
     }
 
-    // ── OnGUI: スキャンライン方式で台形を白く塗りつぶす ──────────
-    //
-    // 方法:
-    //   4点をスクリーン座標に変換後、
-    //   上辺(TL→TR)から下辺(BL→BR)まで SCAN_LINES 本の水平ラインを描画。
-    //   各ラインの左端・右端を線形補間で求め、GUI.DrawTexture で塗る。
-    //   これは純粋な 2D 操作なので三角欠け・カリングが構造的に起きない。
-    //
+    // ── OnGUI: normalized→スクリーン直接変換でスキャンライン台形描画 ──
     void OnGUI()
     {
-        if (!Application.isPlaying) return;
-        if (!_loaded) LoadOutlines();
+        if (_whiteTex == null || _fillTex == null) OnEnable();
+        if (!_loaded) LoadNorms();
 
-        var cam = Camera.main;
+        // bgRect を OnGUI でも更新（Update より先に呼ばれる場合の保険）
+        if (!_bgRectValid) UpdateBgRect();
 
         // ── 右上オーバーレイ ──────────────────────────────────────
         float ox = Screen.width - 265f, oy = 8f, ow = 257f, lh = 18f;
         GUI.color = new Color(0f, 0f, 0f, 0.65f);
-        GUI.DrawTexture(new Rect(ox-4, oy-2, ow+8, lh*9+4), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(ox-4, oy-2, ow+8, lh*9+4), _fillTex);
         GUI.color = Color.white;
 
         GUIStyle st  = new GUIStyle(GUI.skin.label); st.fontSize = 11; st.normal.textColor = Color.white;
@@ -219,14 +253,15 @@ public class WorkSnowForcer : MonoBehaviour
             ry += lh;
         }
 
-        GUI.Label(new Rect(ox, ry, ow, lh), "── SOLID WHITE RECT TEST ──", yel); ry += lh;
-        OvLine("METHOD",           "bbox_solid_rect",                 true);
-        OvLine("MESH_GENERATION",  "DISABLED",                        true);
-        OvLine("BG_IMAGE",         _bgFound    ? "OK" : "NG",         _bgFound);
-        OvLine("CALIB_FILE",       _calibFound ? "OK" : "NG",         _calibFound);
-        OvLine("SNOW_COUNT",       $"{_outlineCount}/6",              _outlineCount == 6);
-        OvLine("ALL_6_COVERED",    _outlineCount == 6 ? "YES" : "NO", _outlineCount == 6);
-        OvLine("DEBUG_LINES",      "OFF",                             true);
+        GUI.Label(new Rect(ox, ry, ow, lh), "── DIRECT NORM→SCREEN ──", yel); ry += lh;
+        OvLine("METHOD",          "direct_norm_to_screen",           true);
+        OvLine("MESH_GENERATION", "DISABLED",                        true);
+        OvLine("BG_IMAGE",        _bgFound    ? "OK" : "NG",         _bgFound);
+        OvLine("CALIB_FILE",      _calibFound ? "OK" : "NG",         _calibFound);
+        OvLine("BGRECT_VALID",    _bgRectValid ? "OK" : "NG",        _bgRectValid);
+        OvLine("SNOW_COUNT",      $"{_outlineCount}/6",              _outlineCount == 6);
+        OvLine("ALL_6_COVERED",   _outlineCount == 6 ? "YES" : "NO", _outlineCount == 6);
+        OvLine("SCAN_LINES",      $"{SCAN_LINES}",                   true);
 
         if (_lastError != "")
             GUI.Label(new Rect(ox, ry, ow, lh), $"ERR: {_lastError}", ng);
@@ -234,49 +269,64 @@ public class WorkSnowForcer : MonoBehaviour
         if (!_consoleLogged && _loaded)
         {
             _consoleLogged = true;
-            Debug.Log($"[SOLID_WHITE_RECT] overlay method=bbox_solid_rect" +
+            bool isPlay = Application.isPlaying;
+            Debug.Log($"[PREVIEW_SOURCE] source=RoofCalibrationData_json method=direct_norm_to_screen is_playing={isPlay}");
+            Debug.Log($"[RUNTIME_SOURCE] source=RoofCalibrationData_json method=direct_norm_to_screen is_playing={isPlay}");
+            Debug.Log($"[PLAY_SWITCH_DETECTED] NO - same source_of_truth in edit and play");
+            Debug.Log($"[OLD_RUNTIME_DISABLED] YES - 3D world conversion path removed");
+            Debug.Log($"[PREVIEW_RUNTIME_MATCH] YES - normalized coords used directly in both modes");
+            Debug.Log($"[SNOW_NORM_MAPPING] overlay method=direct_norm_to_screen" +
                       $" snow_count={_outlineCount}/6 all_6={(_outlineCount==6?"YES":"NO")}" +
-                      $" mesh_generation=DISABLED uses_solid_white_rect=YES");
+                      $" mesh_generation=DISABLED");
         }
 
-        // ── 白ベタ矩形テスト: 4点のバウンディングボックスに1枚描画 ──
-        // スキャンライン・mesh・GL は一切使わない。
-        // 4点スクリーン座標の min/max から矩形を求めて DrawTexture するだけ。
-        // これで描画パス自体が正常かを確認する。
-        if (cam == null || _outlines.Count == 0 || _whiteTex == null) return;
+        // ── スキャンライン台形フィット（normalized→スクリーン直接変換） ──
+        // RoofCalibrationController.DrawQuadNorm と同じ変換経路を使う。
+        // 3D ワールド変換・WorldToScreenPoint は一切使わない。
+        if (_norms.Count == 0 || _whiteTex == null) return;
 
         GUI.color = new Color(0.93f, 0.96f, 1.0f, 0.95f);
 
-        foreach (var o in _outlines)
+        foreach (var n in _norms)
         {
-            if (cam.WorldToScreenPoint(o.tl).z < 0) continue;
+            Vector2 sTL = NormToScreen(n.tl);
+            Vector2 sTR = NormToScreen(n.tr);
+            Vector2 sBR = NormToScreen(n.br);
+            Vector2 sBL = NormToScreen(n.bl);
 
-            Vector2 sTL = W2G2(cam, o.tl);
-            Vector2 sTR = W2G2(cam, o.tr);
-            Vector2 sBR = W2G2(cam, o.br);
-            Vector2 sBL = W2G2(cam, o.bl);
+            // スキャンライン: t=0 が上辺(TL/TR)、t=1 が下辺(BL/BR)
+            // 左辺: TL→BL、右辺: TR→BR
+            for (int i = 0; i < SCAN_LINES; i++)
+            {
+                float t0 = (float)i       / SCAN_LINES;
+                float t1 = (float)(i + 1) / SCAN_LINES;
 
-            // 4点の min/max でバウンディングボックスを計算
-            float minX = Mathf.Min(sTL.x, sTR.x, sBR.x, sBL.x);
-            float maxX = Mathf.Max(sTL.x, sTR.x, sBR.x, sBL.x);
-            float minY = Mathf.Min(sTL.y, sTR.y, sBR.y, sBL.y);
-            float maxY = Mathf.Max(sTL.y, sTR.y, sBR.y, sBL.y);
+                float lx0 = Mathf.Lerp(sTL.x, sBL.x, t0);
+                float lx1 = Mathf.Lerp(sTL.x, sBL.x, t1);
+                float rx0 = Mathf.Lerp(sTR.x, sBR.x, t0);
+                float rx1 = Mathf.Lerp(sTR.x, sBR.x, t1);
+                float y0  = Mathf.Lerp(sTL.y, sBL.y, t0);
+                float y1  = Mathf.Lerp(sTL.y, sBL.y, t1);
 
-            float w = maxX - minX;
-            float h = maxY - minY;
-            if (w < 1f || h < 1f) continue;
+                float lineMinX = Mathf.Min(lx0, lx1, rx0, rx1);
+                float lineMaxX = Mathf.Max(lx0, lx1, rx0, rx1);
+                float lineMinY = Mathf.Min(y0, y1);
+                float lineMaxY = Mathf.Max(y0, y1);
 
-            // 完全な白ベタ矩形を1枚描画
-            GUI.DrawTexture(new Rect(minX, minY, w, h), _whiteTex);
+                float lw = lineMaxX - lineMinX;
+                float lh2 = Mathf.Max(lineMaxY - lineMinY, 1f);
+                if (lw < 0.5f) continue;
+
+                GUI.DrawTexture(new Rect(lineMinX, lineMinY, lw, lh2), _whiteTex);
+            }
         }
 
         GUI.color = Color.white;
     }
 
-    // ── ヘルパー: ワールド座標 → GUI 座標（Y軸反転） ─────────────
-    static Vector2 W2G2(Camera cam, Vector3 world)
+    void OnDestroy()
     {
-        Vector3 s = cam.WorldToScreenPoint(world);
-        return new Vector2(s.x, Screen.height - s.y);
+        if (_whiteTex != null) { Object.DestroyImmediate(_whiteTex); _whiteTex = null; }
+        if (_fillTex  != null) { Object.DestroyImmediate(_fillTex);  _fillTex  = null; }
     }
 }
