@@ -1,6 +1,6 @@
-=== SUMMARY ===
-generated_at=2026-03-19 05:01:52
-scene_name=Avalanche_Billboard__WORK_SNOW
+﻿=== SUMMARY ===
+generated_at=2026-03-19 06:01:12
+scene_name=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A
 
 compile_result=PASS
 error_count=0
@@ -16,13 +16,13 @@ white_panel=NO
 
 score_ui=PASS
 
-gif_status=OK
-mp4_status=OK
+gif_status=NG
+mp4_status=NG
 
-result=PASS
+result=NEED_CHECK
 
 gif_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.gif
 mp4_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.mp4
 report_path=ASSI_REPORT_CURRENT
 
-noa_next_check=SAFEは維持。次は雪崩の滑走気持ちよさ（屋根沿い挙動）を強化
+noa_next_check=軒下停止が未確認。Play→タップ→目視で確認。

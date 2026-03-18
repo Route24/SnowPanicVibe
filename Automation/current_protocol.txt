@@ -1,10 +1,26 @@
-=== SNOW PANIC - CURRENT PROTOCOL ===
-# ノアからのプロトコルをここに貼り付けて保存する
-# アシはこのファイルを読み取って実行する
+﻿SNOW PANIC - ASSI PROTOCOL
 
-last_updated=
-protocol_version=
-task=
-target=
-success_condition=
-notes=
+目的:
+軒下停止（under_eave_stop）が YES か NO かを確認する。
+今回は確認のみ。修正は次のタスクにする。
+
+前提:
+- under_eave_stop=UNKNOWN
+- scene=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A
+
+今回触るモジュール:
+- なし（確認のみ）
+
+実装対象:
+- なし
+
+確認手順:
+1. Play する
+2. 屋根をタップして雪を落とす
+3. 雪が軒下で止まるか目視確認する
+4. Stop → latest_summary.txt の under_eave_stop を確認
+
+完了条件:
+- under_eave_stop が YES / NO / PARTIAL のいずれかに更新される
+
+生成日時: 2026-03-19 06:01:12

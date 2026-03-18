@@ -1,0 +1,5 @@
+﻿status=WAITING_APPROVAL
+updated_at=2026-03-19 06:01:12
+last_summary_at=2026-03-19 06:01:12
+last_protocol_at=2026-03-19 06:01:12
+last_approved_at=2026-03-19 05:49:07

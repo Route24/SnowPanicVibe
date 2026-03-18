@@ -17,10 +17,10 @@ public static class AssiAutoSummary
         Path.Combine("Assets", "Logs", "noa_report_latest.txt"));
 
     static readonly string SummaryPath = Path.GetFullPath(
-        Path.Combine("..", "Automation", "latest_summary.txt"));
+        Path.Combine("Automation", "latest_summary.txt"));
 
     static readonly string RecordingsDir = Path.GetFullPath(
-        Path.Combine("..", "Recordings"));
+        Path.Combine("Recordings"));
 
     static bool _sawPlay = false;
 
@@ -110,6 +110,9 @@ public static class AssiAutoSummary
             File.WriteAllText(SummaryPath, sb.ToString(), Encoding.UTF8);
 
             Debug.Log("[AssiAutoSummary] latest_summary.txt 生成完了 → " + SummaryPath);
+
+            // summary 生成後に protocol を自動生成する
+            SummaryToProtocol.RunAfterSummary();
         }
         catch (Exception ex)
         {
@@ -183,14 +186,11 @@ public static class AssiAutoSummary
     {
         var exists = Pick(text, "gif_exists");
         var size   = Pick(text, "gif_size_bytes");
-        if (exists != null)
-        {
-            if (exists.ToLower() != "true") return "NG";
-            if (size != null && size == "0") return "NG";
+        // gif_exists=true AND gif_size_bytes > 0 のみ OK
+        if (exists != null && exists.ToLower() == "true"
+            && size != null && long.TryParse(size, out long sz) && sz > 0)
             return "OK";
-        }
-        var path = Path.Combine(RecordingsDir, "snow_test_latest.gif");
-        return (File.Exists(path) && new FileInfo(path).Length > 0) ? "OK" : "NG";
+        return "NG";
     }
 
     static string DetectMp4Status(string text)
@@ -209,13 +209,38 @@ public static class AssiAutoSummary
         return File.Exists(path) ? path : "(not found)";
     }
 
+    static string DetermineResult(string compileResult, string errorCount, string snowState, string underEave, string fallsStraight)
+    {
+        if (compileResult != "PASS") return "FAIL";
+        if (int.TryParse(errorCount, out int n) && n > 0) return "FAIL";
+        // 主要項目が UNKNOWN → 要確認
+        if (snowState == "UNKNOWN" || underEave == "UNKNOWN" || fallsStraight == "UNKNOWN") return "NEED_CHECK";
+        return "PASS";
+    }
+
+    static string BuildNoaNextCheck(string result, string compileResult, string errorCount, string snowState, string underEave, string fallsStraight, string avalancheFeel)
+    {
+        if (compileResult != "PASS") return "Compile FAIL。エラーを修正してから再確認。";
+        if (int.TryParse(errorCount, out int n) && n > 0) return $"エラー {n} 件あり。修正してから再確認。";
+        if (fallsStraight == "YES") return "雪が真下に落ちている。屋根沿い滑走ロジックを確認。";
+        if (underEave == "NO") return "軒下で止まっていない。UnderEaveLanding の挙動を確認。";
+        if (underEave == "UNKNOWN") return "軒下停止が未確認。Play→タップ→目視で確認。";
+        if (snowState == "BROKEN") return "雪の状態が BROKEN。SnowPackSpawner を確認。";
+        if (snowState == "PARTIAL") return "一部の屋根に雪がない。残り屋根の積雪を確認。";
+        if (avalancheFeel == "NONE" || avalancheFeel == "WEAK") return "SAFEは維持。次は雪崩の滑走気持ちよさ（屋根沿い挙動）を強化。";
+        return "SAFEは維持。現状良好。次のタスクをノアに確認。";
+    }
+
     static string DetectMp4Path(string text)
     {
         foreach (var key in new[] { "local_mp4_path", "final_mp4_path", "local_path" })
         {
             var val = Pick(text, key);
-            if (!string.IsNullOrEmpty(val) && val != "(not found)") return val;
+            // フルパスであること・存在すること・途中で切れていないことを確認
+            if (!string.IsNullOrEmpty(val) && val != "(not found)" && val.EndsWith(".mp4") && File.Exists(val))
+                return val;
         }
+        // フォールバック: Recordings フォルダの固定パスを使う
         var path = Path.Combine(RecordingsDir, "snow_test_latest.mp4");
         return File.Exists(path) ? path : "(not found)";
     }
