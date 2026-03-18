@@ -20,7 +20,13 @@ public class WorkSnowForcer : MonoBehaviour
     const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
 
     // 屋根下端からの軒下オフセット（calib 座標、0〜1）
-    const float UNDER_EAVE_OFFSET_CALIB = 0.08f;
+    // 0.08: 高すぎ / 0.20: 下段屋根に誤着地 → 0.10 に設定
+    // クランプロジックで他屋根への侵入を防ぐ
+    const float UNDER_EAVE_OFFSET_CALIB = 0.10f;
+
+    // eaveGuiY の最大オフセット（自分の guiRect.yMax からの最大距離、calib 座標）
+    // これを超えると他段の屋根に入る可能性があるため上限として使用
+    const float EAVE_MAX_EXTRA_CALIB = 0.12f;
 
     // THICK 状態の thickRatio 値（屋根高さに対する厚雪帯の割合）
     // RoofData.thickRatio に設定する。0 = NORMAL、この値 = THICK
@@ -289,6 +295,38 @@ public class WorkSnowForcer : MonoBehaviour
 
         _roofsReady = readyCount == 6;
         Debug.Log($"[UNDER_EAVE_TARGET] all_6_targets_created={(_roofsReady ? "YES" : "NO")} count={readyCount}");
+
+        // ── 誤着地防止: eaveGuiY が「自分より上にある屋根」の guiRect に入らないようクランプ ──
+        // OnGUI は Y 軸下向き（小さい = 上）。自分の guiRect.y より小さい（= 上にある）屋根のみ対象。
+        // 下段屋根は上段屋根の eaveGuiY をクランプしない（相互クランプ禁止）。
+        for (int ai = 0; ai < _roofs.Length; ai++)
+        {
+            if (!_roofs[ai].ready) continue;
+
+            // 自分の屋根下端 + 最大オフセットを絶対上限に設定
+            float ownMaxEaveY  = _roofs[ai].guiRect.yMax + EAVE_MAX_EXTRA_CALIB * Screen.height;
+            float clampedEaveY = Mathf.Min(_roofs[ai].eaveGuiY, ownMaxEaveY);
+
+            for (int bi = 0; bi < _roofs.Length; bi++)
+            {
+                if (bi == ai || !_roofs[bi].ready) continue;
+
+                // bi が ai より上にある屋根（= bi.guiRect.y < ai.guiRect.y）の場合のみクランプ
+                // 下段屋根（bi.guiRect.y > ai.guiRect.y）は制限しない
+                if (_roofs[bi].guiRect.y >= _roofs[ai].guiRect.y) continue;
+
+                float bBottom = _roofs[bi].guiRect.yMax;
+                // ai の eaveGuiY が bi 屋根の下端より上にある（= bi 屋根の範囲内に入る）場合のみ制限
+                if (clampedEaveY <= bBottom + 4f)
+                {
+                    float before = clampedEaveY;
+                    clampedEaveY = bBottom + 4f;
+                    Debug.Log($"[EAVE_CLAMP] roof={_roofs[ai].id} eaveGuiY {before:F1}→{clampedEaveY:F1} (below {_roofs[bi].id} bottom={bBottom:F1})");
+                }
+            }
+            _roofs[ai].eaveGuiY = clampedEaveY;
+            Debug.Log($"[EAVE_FINAL] roof={_roofs[ai].id} eaveGuiY={clampedEaveY:F1}");
+        }
     }
 
     // ── タップ検出（6軒対応）─────────────────────────────────
