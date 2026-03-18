@@ -152,6 +152,35 @@ safe_name: SAFE_TL_THICK_SNOW_POSITIONAL_FALL
 
 ---
 
+## ■ Snow State Definition
+
+積雪の状態は「状態値（State）」として定義する。個別の家 ID によるハードコードは禁止。
+
+| State | 説明 |
+|---|---|
+| `NORMAL` | 標準的な積雪。薄板ではなく通常の厚さ |
+| `THICK` | 明確に厚い積雪。叩く前から視認できる |
+
+**ルール:**
+
+- 積雪の厚さは `snowState: NORMAL / THICK` で表現する
+- Phase1 では TL に `THICK` を適用するが、**システムはどの屋根にも適用可能**にする
+- `if (roofId == "Roof_TL")` のような家 ID によるハードコードは禁止
+- 厚さパラメータ（例: `thickRatio`）は屋根ごとの設定値として渡す
+- 将来的に全6軒を `THICK` にする場合も、コード変更なしでパラメータ変更のみで対応できること
+
+**実装指針:**
+
+```
+// NG: ハードコード禁止
+if (roofId == "Roof_TL") DrawThickSnow();
+
+// OK: 状態パラメータで制御
+if (roof.snowState == SnowState.THICK) DrawThickSnow(roof.thickRatio);
+```
+
+---
+
 ## ■ 関連ファイル
 
 | ファイル | 役割 |
