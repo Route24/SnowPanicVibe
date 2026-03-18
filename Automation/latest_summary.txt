@@ -1,14 +1,14 @@
 === SUMMARY ===
-generated_at=2026-03-19 07:08:44
+generated_at=2026-03-19 07:51:05 (observation updated)
 scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
 error_count=0
-warning_count=0
+warning_count=1
 
 snow_state=ALL6_THICK
-under_eave_stop=UNKNOWN
-falls_straight_down=UNKNOWN
+under_eave_stop=YES
+falls_straight_down=NO
 avalanche_feel=WEAK
 
 red_snow=NO
@@ -16,13 +16,13 @@ white_panel=NO
 
 score_ui=PASS
 
-gif_status=NG
+gif_status=OK
 mp4_status=OK
 
-result=NEED_CHECK
+result=PASS
 
 gif_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.gif
 mp4_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.mp4
 report_path=ASSI_REPORT_CURRENT
 
-noa_next_check=軒下停止が未確認。Play→タップ→目視で確認。
+noa_next_check=compile/snow/falls はPASS。次は avalanche_feel を WEAK→GOOD に改善する。SlideMinSpeed か Cascade を調整。

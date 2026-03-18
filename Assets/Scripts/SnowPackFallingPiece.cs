@@ -160,8 +160,10 @@ public class SnowPackFallingPiece : MonoBehaviour
         // G: Kinematic を解除して通常物理落下に戻す
         _rb.isKinematic = false;
         _rb.useGravity = true;
-        // 軒先を越えた時点の downhill 速度を初速として引き継ぐ
-        _rb.linearVelocity = _roofDownhill * SlideMinSpeed;
+        // 軒先を越えた時点の downhill 速度を初速として引き継ぐ（Y成分を抑えて真下落下を防ぐ）
+        Vector3 downhillFlat = new Vector3(_roofDownhill.x, Mathf.Min(_roofDownhill.y, 0f), _roofDownhill.z).normalized;
+        if (downhillFlat.sqrMagnitude < 0.001f) downhillFlat = _roofDownhill.normalized;
+        _rb.linearVelocity = downhillFlat * SlideMinSpeed;
         _startTime = Time.time;
         StartCoroutine(LogVelocityAt01s());
         float roofContactDur = _roofContactStartTime >= 0f && _roofContactEndTime >= 0f ? (_roofContactEndTime - _roofContactStartTime) : 0f;
@@ -246,7 +248,7 @@ public class SnowPackFallingPiece : MonoBehaviour
     }
 
     /// <summary>slide phase 中の最低 downhill 速度。これを下回ったら補完する。</summary>
-    const float SlideMinSpeed = 0.8f;
+    const float SlideMinSpeed = 2.5f;
     /// <summary>slide phase 全期間 roof plane 上を Kinematic 移動させる。</summary>
     const float SlideGraceSeconds = 0.25f; // 後方互換のため残す（未使用）
 

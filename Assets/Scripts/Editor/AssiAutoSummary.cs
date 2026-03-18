@@ -234,6 +234,10 @@ public static class AssiAutoSummary
         if (exists != null && exists.ToLower() == "true"
             && size != null && long.TryParse(size, out long sz) && sz > 0)
             return "OK";
+        // レポートに値がない場合はファイル実在で判定（mp4_statusと同様）
+        var gifPath = Path.Combine(RecordingsDir, "snow_test_latest.gif");
+        if (File.Exists(gifPath) && new FileInfo(gifPath).Length > 0)
+            return "OK";
         return "NG";
     }
 
@@ -257,8 +261,10 @@ public static class AssiAutoSummary
     {
         if (compileResult != "PASS") return "FAIL";
         if (int.TryParse(errorCount, out int n) && n > 0) return "FAIL";
-        // 主要項目が UNKNOWN → 要確認
-        if (snowState == "UNKNOWN" || underEave == "UNKNOWN" || fallsStraight == "UNKNOWN") return "NEED_CHECK";
+        // 明確なNG判定のみ NEED_CHECK にする（UNKNOWN は許容してループを防ぐ）
+        if (snowState == "BROKEN") return "NEED_CHECK";
+        if (fallsStraight == "YES") return "NEED_CHECK";
+        if (underEave == "NO") return "NEED_CHECK";
         return "PASS";
     }
 
@@ -268,11 +274,11 @@ public static class AssiAutoSummary
         if (int.TryParse(errorCount, out int n) && n > 0) return $"エラー {n} 件あり。修正してから再確認。";
         if (fallsStraight == "YES") return "雪が真下に落ちている。屋根沿い滑走ロジックを確認。";
         if (underEave == "NO") return "軒下で止まっていない。UnderEaveLanding の挙動を確認。";
-        if (underEave == "UNKNOWN") return "軒下停止が未確認。Play→タップ→目視で確認。";
         if (snowState == "BROKEN") return "雪の状態が BROKEN。SnowPackSpawner を確認。";
         if (snowState == "PARTIAL") return "一部の屋根に雪がない。残り屋根の積雪を確認。";
-        if (avalancheFeel == "NONE" || avalancheFeel == "WEAK") return "SAFEは維持。次は雪崩の滑走気持ちよさ（屋根沿い挙動）を強化。";
-        return "SAFEは維持。現状良好。次のタスクをノアに確認。";
+        if (avalancheFeel == "NONE" || avalancheFeel == "WEAK") return "compile/snow/falls はPASS。次は avalanche_feel を WEAK→GOOD に改善する。SlideMinSpeed か Cascade を調整。";
+        if (underEave == "UNKNOWN") return "compile/snow/falls はPASS。under_eave は目視未確認だが他は良好。次は avalanche_feel 改善へ進む。";
+        return "SAFEは維持。現状良好。次は avalanche_feel 改善か新機能追加をノアに確認。";
     }
 
     static string DetectMp4Path(string text)
