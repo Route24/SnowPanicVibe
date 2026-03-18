@@ -1,0 +1,38 @@
+---
+description: Safe化（git commit）の条件と手順。Safe化は全6軒の積雪表示が完成してから行う。
+alwaysApply: true
+---
+
+# Safe化ルール（Snow Panic - Rect Mapping）
+
+## Safe化条件（すべて満たすこと）
+
+- all_6_roofs_snow_visible=YES
+- all_6_roofs_natural_fit=YES
+- compile_result=PASS
+
+## 禁止事項
+
+- 1軒だけ、または一部だけ通った段階での Safe化
+- 条件未確認での Safe化
+
+## Safe化完了時のレポート形式
+
+条件をすべて満たしたら以下を返す:
+
+```
+【ASSI REPORT - SAFE CREATED】
+
+safe_base_commit=（コミットハッシュ）
+scene=Avalanche_Billboard__WORK_SNOW
+all_6_roofs_snow_visible=YES
+all_6_roofs_natural_fit=YES
+compile_result=PASS
+```
+
+## 到達目標
+
+- Roof_TL を完成見本にする（現在進行中）
+- 同じ方式を残り5軒（TM/TR/BL/BM/BR）へ展開する
+- 6軒すべてで自然な積雪表示を確認する
+- Safe化する

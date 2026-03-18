@@ -68,9 +68,7 @@ public class RoofCalibrationController : MonoBehaviour
         _dot  = MakeTex(1, 1, Color.white);
         _fill = MakeTex(1, 1, Color.white);
 
-        // Canvas 上の既存 RoofGuide Rect を非表示にする
-        var canvas = GameObject.Find("RoofGuideCanvas");
-        if (canvas != null) canvas.SetActive(false);
+        // RoofGuideCanvas は Play 時も非表示にしない（roof-local overlay として使用）
 
         // 起動時は全屋根を未確定・非表示にする（Load するまで polygon は出さない）
         Debug.Log("[CALIB] calibration_mode_started=true active_roof=Roof_TL");
