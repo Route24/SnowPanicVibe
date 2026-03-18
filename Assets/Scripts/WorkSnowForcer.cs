@@ -145,7 +145,14 @@ public class WorkSnowForcer : MonoBehaviour
     // ── 6軒の屋根雪 Canvas Image を更新 ─────────────────────────
     void Apply()
     {
+        // Edit モードでは RoofGuideCanvas を非表示にして白板が見えないようにする
+        // Play 中のみ Canvas を表示・操作する
         var canvas = GameObject.Find("RoofGuideCanvas");
+        if (!Application.isPlaying)
+        {
+            if (canvas != null && canvas.activeSelf) canvas.SetActive(false);
+            return;
+        }
         if (canvas != null && !canvas.activeSelf) canvas.SetActive(true);
 
         if (!File.Exists(CALIB_PATH)) return;
