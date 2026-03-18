@@ -5,11 +5,11 @@ using UnityEngine.UI;
 
 /// <summary>
 /// WORK_SNOW シーン専用。
-/// 【モード: ALL_6_ROOFS + ALL_6_UNDER_EAVE_LANDING + TL_THICK_SNOW】
+/// 【モード: ALL_6_ROOFS + ALL_6_UNDER_EAVE_LANDING + ALL_6_THICK_SNOW】
 ///
 /// ① 6軒の屋根雪表示（Canvas Image anchor fit）
 /// ② 6軒すべて: タップ検出 → 屋根雪縮小 → 白い雪片が OnGUI で落下 → 各軒下で停止
-/// ③ Roof_TL のみ: OnGUI で屋根上端に厚雪帯を追加描画（叩くと縮む）
+/// ③ 6軒すべて: OnGUI で屋根上端に厚雪帯を追加描画（叩くと縮む）
 ///
 /// 着地 Y は各屋根の calib maxY + UNDER_EAVE_OFFSET_CALIB から直接計算。
 /// </summary>
@@ -19,7 +19,12 @@ public class WorkSnowForcer : MonoBehaviour
     const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
 
     // 屋根下端からの軒下オフセット（calib 座標、0〜1）
-    const float UNDER_EAVE_OFFSET_CALIB = 0.08f;
+    // 0.14 → 0.04 に減少: 軒下停止位置を屋根直下に近づける（水辺落下を防ぐ）
+    const float UNDER_EAVE_OFFSET_CALIB = 0.04f;
+
+    // 積雪帯の上端オフセット（calib 座標、0〜1）
+    // 0.03 → 0.0 に戻す: 積雪は minY 基準（屋根上端）から描画するのが正しい
+    const float SNOW_TOP_OFFSET_CALIB = 0.0f;
 
     // THICK 状態の thickRatio 値（屋根高さに対する厚雪帯の割合）
     // RoofData.thickRatio に設定する。0 = NORMAL、この値 = THICK
@@ -206,12 +211,60 @@ public class WorkSnowForcer : MonoBehaviour
         Debug.Log($"[ALL6_SNOW_FIT] count={ok}/6 all_6={(_applied ? "YES" : "NO")}");
     }
 
+    // ── BackgroundImage の OnGUI 投影矩形を取得 ─────────────────
+    // キャリブデータは BackgroundImage 内の正規化座標なので、
+    // OnGUI 座標への変換は bgRect 基準で行う必要がある
+    bool TryGetBgRect(out Rect bgRect)
+    {
+        bgRect = new Rect(0, 0, Screen.width, Screen.height);
+        var cam  = Camera.main;
+        var bgGo = GameObject.Find("BackgroundImage");
+        if (cam == null || bgGo == null) return false;
+
+        var t = bgGo.transform;
+        Vector3 wTL = t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
+        Vector3 wTR = t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
+        Vector3 wBL = t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
+        Vector3 wBR = t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
+
+        float sh = Screen.height;
+        Vector2 sTL = cam.WorldToScreenPoint(wTL); sTL.y = sh - sTL.y;
+        Vector2 sTR = cam.WorldToScreenPoint(wTR); sTR.y = sh - sTR.y;
+        Vector2 sBL = cam.WorldToScreenPoint(wBL); sBL.y = sh - sBL.y;
+        Vector2 sBR = cam.WorldToScreenPoint(wBR); sBR.y = sh - sBR.y;
+
+        float minX = Mathf.Min(sTL.x, sBL.x);
+        float maxX = Mathf.Max(sTR.x, sBR.x);
+        float minY = Mathf.Min(sTL.y, sTR.y);
+        float maxY = Mathf.Max(sBL.y, sBR.y);
+
+        if (maxX - minX < 1f || maxY - minY < 1f) return false;
+        bgRect = new Rect(minX, minY, maxX - minX, maxY - minY);
+        return true;
+    }
+
+    // normalized (0〜1) → OnGUI screen pixel（bgRect 基準）
+    Vector2 CalibToGui(float nx, float ny, Rect bgRect)
+    {
+        return new Vector2(
+            bgRect.x + nx * bgRect.width,
+            bgRect.y + ny * bgRect.height);
+    }
+
     // ── 6軒分の guiRect / eaveGuiY を計算（Play 開始後1回のみ）──
     void BuildRoofData()
     {
         if (!File.Exists(CALIB_PATH)) return;
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
         if (sd == null || sd.roofs == null) return;
+
+        // BackgroundImage の投影矩形を取得（キャリブ座標変換の基準）
+        if (!TryGetBgRect(out Rect bgRect))
+        {
+            Debug.LogWarning("[WorkSnowForcer] BackgroundImage not found – using screen as fallback");
+            bgRect = new Rect(0, 0, Screen.width, Screen.height);
+        }
+        Debug.Log($"[WorkSnowForcer] bgRect=({bgRect.x:F1},{bgRect.y:F1},{bgRect.width:F1},{bgRect.height:F1})");
 
         int readyCount = 0;
         for (int ri = 0; ri < RoofPairs.Length; ri++)
@@ -224,24 +277,38 @@ public class WorkSnowForcer : MonoBehaviour
 
             float minX = Mathf.Min(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
             float maxX = Mathf.Max(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
-            float minY = Mathf.Min(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
-            float maxY = Mathf.Max(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
 
-            float eaveCalibY  = maxY + UNDER_EAVE_OFFSET_CALIB;
-            float eaveCenterX = (minX + maxX) * 0.5f;
+            // 片流れ屋根の正確なY基準点（bgRect 基準で変換）:
+            // 積雪上端 = 上端2点(topLeft/topRight)のY平均 → 棟ライン
+            // 軒先基準 = 下端2点(bottomLeft/bottomRight)のY平均 → 軒先ライン
+            float topY    = (entry.topLeft.y    + entry.topRight.y)    * 0.5f;
+            float bottomY = (entry.bottomLeft.y + entry.bottomRight.y) * 0.5f;
+
+            // bgRect 基準で OnGUI 座標に変換
+            Vector2 guiTopLeft  = CalibToGui(minX, topY,    bgRect);
+            Vector2 guiTopRight = CalibToGui(maxX, topY,    bgRect);
+            Vector2 guiBotLeft  = CalibToGui(minX, bottomY, bgRect);
+
+            float guiRoofW = guiTopRight.x - guiTopLeft.x;
+            float guiRoofH = guiBotLeft.y  - guiTopLeft.y;
+
+            // 軒下停止Y: 軒先ラインから UNDER_EAVE_OFFSET_CALIB 分だけ下（bgRect スケール）
+            float eaveGuiY  = guiBotLeft.y  + UNDER_EAVE_OFFSET_CALIB * bgRect.height;
+            float eaveCenterX = (guiTopLeft.x + guiTopRight.x) * 0.5f;
 
             _roofs[ri].id        = calibId;
             _roofs[ri].guideId   = guideId;
+            // 積雪帯: bgRect 基準で変換した棟ラインから描画
             _roofs[ri].guiRect   = new Rect(
-                minX * Screen.width,
-                minY * Screen.height,
-                (maxX - minX) * Screen.width,
-                (maxY - minY) * Screen.height);
-            _roofs[ri].eaveGuiY  = eaveCalibY  * Screen.height;
-            _roofs[ri].eaveGuiX  = eaveCenterX * Screen.width;
-            // GDD Snow State: Roof_TL = THICK、他5軒 = NORMAL
-            // ID ハードコードではなく thickRatio パラメータで制御
-            _roofs[ri].thickRatio = (calibId == "Roof_TL") ? THICK_SNOW_RATIO : 0f;
+                guiTopLeft.x,
+                guiTopLeft.y + SNOW_TOP_OFFSET_CALIB * bgRect.height,
+                guiRoofW,
+                guiRoofH);
+            _roofs[ri].eaveGuiY  = eaveGuiY;
+            _roofs[ri].eaveGuiX  = eaveCenterX;
+            // GDD Snow State: 全6軒 = THICK
+            // ID ハードコード禁止。thickRatio パラメータで制御（全軒同値）
+            _roofs[ri].thickRatio = THICK_SNOW_RATIO;
             _roofs[ri].ready      = true;
             readyCount++;
 
