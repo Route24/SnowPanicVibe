@@ -1626,14 +1626,21 @@ public class SnowPackSpawner : MonoBehaviour
         LayerMask groundMask = (roofSnowSystem != null && roofSnowSystem.groundMask.value != 0) ? roofSnowSystem.groundMask : ~0;
         Vector3 slideVelocity = downhill * Mathf.Max(slideSpeed, actualSlideDist / duration);
 
+        // クラスターDetach用: 軒先に達したピースを溜めてまとめてDetach
+        const int ClusterSizeMax = 4;
+        var clusterBuffer = new List<Transform>();
+        float clusterFlushTimer = 0f;
+        const float ClusterFlushInterval = 0.08f; // 80ms ごとにまとめてDetach
+
         while (elapsed < duration)
         {
             float dt = Time.deltaTime;
             elapsed += dt;
+            clusterFlushTimer += dt;
             float t01 = Mathf.Clamp01(elapsed / duration);
             slideRoot.transform.position = startPos + slideOffset * t01;
 
-            // Step1: Detach BEFORE roof edge (t > tEnd - DetachBeforeEdgeMargin) so piece stays on roof for slide phase
+            // Step1: 軒先に達したピースをクラスターバッファに溜める
             for (int i = slideRoot.transform.childCount - 1; i >= 0; i--)
             {
                 var t = slideRoot.transform.GetChild(i);
@@ -1642,20 +1649,8 @@ public class SnowPackSpawner : MonoBehaviour
                 float tVal = Vector3.Dot(piecePos - roofCenter, downhill);
                 if (tVal > tEnd - DetachBeforeEdgeMargin)
                 {
-                    // Step2: ActivateRoofSlide - detach on roof, useGravity=false, slide then fall
                     t.SetParent(null, true);
-                    var falling = t.gameObject.GetComponent<SnowPackFallingPiece>();
-                    if (falling == null) falling = t.gameObject.AddComponent<SnowPackFallingPiece>();
-                    falling.spawner = this;
-                    falling.groundMask = groundMask;
-                    falling.ActivateRoofSlide(slideVelocity, roofCollider, roofCenter, downhill, tEnd);
-                    var rb = t.GetComponent<Rigidbody>();
-                    fallingCount++;
-                    bool rbPresent = rb != null;
-                    bool spawnedActive = t != null && t.gameObject != null && t.gameObject.activeInHierarchy;
-                    string spawnedName = t != null && t.gameObject != null ? t.gameObject.name : "null";
-                    UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] detach_requested=true falling_piece_spawned=true spawned_object_name={spawnedName} spawned_object_active={spawnedActive} rigidbody_present={rbPresent} initial_velocity=({slideVelocity.x:F2},{slideVelocity.y:F2},{slideVelocity.z:F2}) initial_position=({piecePos.x:F2},{piecePos.y:F2},{piecePos.z:F2})");
-
+                    clusterBuffer.Add(t);
                     SnowLoopLogCapture.AppendToAssiReport($"=== PieceState === pieceId={t.GetInstanceID()} mode=Falling t={Time.time:F2} pos=({piecePos.x:F3},{piecePos.y:F3},{piecePos.z:F3}) vel=({slideVelocity.x:F3},{slideVelocity.y:F3},{slideVelocity.z:F3})");
                 }
                 else
@@ -1663,7 +1658,46 @@ public class SnowPackSpawner : MonoBehaviour
                     SnowLoopLogCapture.AppendToAssiReport($"=== PieceState === pieceId={t.GetInstanceID()} mode=Sliding t={Time.time:F2} pos=({piecePos.x:F3},{piecePos.y:F3},{piecePos.z:F3}) vel=({slideVelocity.x:F3},{slideVelocity.y:F3},{slideVelocity.z:F3})");
                 }
             }
+
+            // Step2: ClusterSizeMax 個溜まるか FlushInterval 経過したらまとめてDetach
+            bool shouldFlush = clusterBuffer.Count >= ClusterSizeMax || (clusterBuffer.Count > 0 && clusterFlushTimer >= ClusterFlushInterval);
+            if (shouldFlush)
+            {
+                // クラスター内の平均位置を基準に downhill 方向へ揃えた初速を付与
+                Vector3 clusterVelocity = downhill * Mathf.Max(slideSpeed, actualSlideDist / duration);
+                foreach (var ct in clusterBuffer)
+                {
+                    if (ct == null) continue;
+                    var falling = ct.gameObject.GetComponent<SnowPackFallingPiece>();
+                    if (falling == null) falling = ct.gameObject.AddComponent<SnowPackFallingPiece>();
+                    falling.spawner = this;
+                    falling.groundMask = groundMask;
+                    falling.ActivateRoofSlide(clusterVelocity, roofCollider, roofCenter, downhill, tEnd);
+                    fallingCount++;
+                    UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] detach_requested=true falling_piece_spawned=true cluster_size={clusterBuffer.Count} initial_velocity=({clusterVelocity.x:F2},{clusterVelocity.y:F2},{clusterVelocity.z:F2}) initial_position=({ct.position.x:F2},{ct.position.y:F2},{ct.position.z:F2})");
+                }
+                clusterBuffer.Clear();
+                clusterFlushTimer = 0f;
+            }
+
             yield return null;
+        }
+
+        // ループ終了後に残ったバッファをフラッシュ
+        if (clusterBuffer.Count > 0)
+        {
+            Vector3 clusterVelocity = downhill * Mathf.Max(slideSpeed, actualSlideDist / duration);
+            foreach (var ct in clusterBuffer)
+            {
+                if (ct == null) continue;
+                var falling = ct.gameObject.GetComponent<SnowPackFallingPiece>();
+                if (falling == null) falling = ct.gameObject.AddComponent<SnowPackFallingPiece>();
+                falling.spawner = this;
+                falling.groundMask = groundMask;
+                falling.ActivateRoofSlide(clusterVelocity, roofCollider, roofCenter, downhill, tEnd);
+                fallingCount++;
+            }
+            clusterBuffer.Clear();
         }
 
         int returnedCount = 0;
