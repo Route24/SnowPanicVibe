@@ -5,10 +5,11 @@ using UnityEngine.UI;
 
 /// <summary>
 /// WORK_SNOW シーン専用。
-/// 【モード: ALL_6_ROOFS + ALL_6_UNDER_EAVE_LANDING】
+/// 【モード: ALL_6_ROOFS + ALL_6_UNDER_EAVE_LANDING + TL_THICK_SNOW】
 ///
 /// ① 6軒の屋根雪表示（Canvas Image anchor fit）
 /// ② 6軒すべて: タップ検出 → 屋根雪縮小 → 白い雪片が OnGUI で落下 → 各軒下で停止
+/// ③ Roof_TL のみ: OnGUI で屋根上端に厚雪帯を追加描画（叩くと縮む）
 ///
 /// 着地 Y は各屋根の calib maxY + UNDER_EAVE_OFFSET_CALIB から直接計算。
 /// </summary>
@@ -19,6 +20,11 @@ public class WorkSnowForcer : MonoBehaviour
 
     // 屋根下端からの軒下オフセット（calib 座標、0〜1）
     const float UNDER_EAVE_OFFSET_CALIB = 0.08f;
+
+    // TL 厚雪: 屋根上端から上方向に描く帯の最大高さ（px）
+    // 屋根の高さの約 60% を「積もった雪の厚み」として表示する
+    const float TL_THICK_SNOW_MAX_PX = 0f; // BuildRoofData() で屋根高さから動的計算
+    const float TL_THICK_SNOW_RATIO  = 0.6f; // 屋根高さに対する厚雪の割合
 
     static readonly (string calibId, string guideId)[] RoofPairs =
     {
@@ -67,6 +73,11 @@ public class WorkSnowForcer : MonoBehaviour
         public int     roofIdx;
     }
     readonly List<LandedPiece> _landedPieces = new List<LandedPiece>();
+
+    // ── TL 厚雪パラメータ ─────────────────────────────────────
+    // 屋根上端の上に重ねる白い帯（OnGUI 描画）
+    // 高さ = thickMaxPx * snowFill（叩くと縮む）
+    float _tlThickMaxPx = 0f;  // BuildRoofData() で屋根高さ * RATIO から計算
 
     // ── spawn マーカー ────────────────────────────────────────
     Vector2 _lastSpawnPos;
@@ -231,6 +242,13 @@ public class WorkSnowForcer : MonoBehaviour
             _roofs[ri].ready     = true;
             readyCount++;
 
+            // TL のみ: 厚雪の最大高さを屋根高さから計算
+            if (calibId == "Roof_TL")
+            {
+                _tlThickMaxPx = _roofs[ri].guiRect.height * TL_THICK_SNOW_RATIO;
+                Debug.Log($"[TL_THICK_SNOW] max_px={_tlThickMaxPx:F1} roof_h={_roofs[ri].guiRect.height:F1} ratio={TL_THICK_SNOW_RATIO}");
+            }
+
             Debug.Log($"[UNDER_EAVE_TARGET] roof={calibId} created=YES" +
                       $" eave_calib_y={eaveCalibY:F4} gui_y={_roofs[ri].eaveGuiY:F1}" +
                       $" gui_x={_roofs[ri].eaveGuiX:F1}");
@@ -376,6 +394,36 @@ public class WorkSnowForcer : MonoBehaviour
                 float barW = _roofs[ri].guiRect.width * 1.1f;
                 float barX = _roofs[ri].eaveGuiX - barW * 0.5f;
                 GUI.DrawTexture(new Rect(barX, _roofs[ri].eaveGuiY - 3f, barW, 6f), _whiteTex);
+            }
+        }
+
+        // ① TL 厚雪帯: 屋根上端から上方向に snowFill に比例した高さの白い帯を描く
+        // 屋根の guiRect.y = 屋根上端（OnGUI 左上原点）
+        // 帯は屋根上端から上に伸びる（y が小さい方向）
+        if (_roofsReady && _tlThickMaxPx > 0f)
+        {
+            int tlIdx = 0; // RoofPairs[0] = Roof_TL
+            if (_roofs[tlIdx].ready)
+            {
+                float fill       = _roofs[tlIdx].snowFill;
+                float thickH     = _tlThickMaxPx * fill;
+                float roofTop    = _roofs[tlIdx].guiRect.y;       // 屋根上端 Y
+                float roofLeft   = _roofs[tlIdx].guiRect.x;
+                float roofWidth  = _roofs[tlIdx].guiRect.width;
+
+                // 帯の上端 = 屋根上端 - 厚み
+                float bandTop    = roofTop - thickH;
+
+                // 白い帯（不透明・雪色）
+                GUI.color = new Color(0.93f, 0.96f, 1.0f, 0.97f);
+                GUI.DrawTexture(new Rect(roofLeft, bandTop, roofWidth, thickH), _whiteTex);
+
+                // 帯の下端に影色（立体感）
+                if (thickH > 4f)
+                {
+                    GUI.color = new Color(0.75f, 0.82f, 0.92f, 0.6f);
+                    GUI.DrawTexture(new Rect(roofLeft, roofTop - 4f, roofWidth, 4f), _whiteTex);
+                }
             }
         }
 
