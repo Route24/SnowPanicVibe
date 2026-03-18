@@ -1,0 +1,28 @@
+=== SUMMARY ===
+generated_at=2026-03-19 05:01:52
+scene_name=Avalanche_Billboard__WORK_SNOW
+
+compile_result=PASS
+error_count=0
+warning_count=0
+
+snow_state=ALL6_THICK
+under_eave_stop=UNKNOWN
+falls_straight_down=UNKNOWN
+avalanche_feel=WEAK
+
+red_snow=NO
+white_panel=NO
+
+score_ui=PASS
+
+gif_status=OK
+mp4_status=OK
+
+result=PASS
+
+gif_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.gif
+mp4_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.mp4
+report_path=ASSI_REPORT_CURRENT
+
+noa_next_check=SAFEは維持。次は雪崩の滑走気持ちよさ（屋根沿い挙動）を強化

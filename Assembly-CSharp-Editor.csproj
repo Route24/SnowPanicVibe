@@ -52,6 +52,7 @@
     <Compile Include="Assets/Editor/SnowPanicVideoPipelineSelfTest.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Editor/ReadmeEditor.cs" />
     <Compile Include="Assets/Scripts/Editor/AssiReportWindow.cs" />
+    <Compile Include="Assets/Scripts/Editor/AssiAutoSummary.cs" />
     <Compile Include="Assets/Scripts/Editor/DioramaRoofSetup.cs" />
     <Compile Include="Assets/Editor/SnowTestSnowPackSetup.cs" />
     <Compile Include="Assets/Editor/SnowVerifyPhaseB1Creator.cs" />

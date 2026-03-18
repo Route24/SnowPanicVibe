@@ -1,0 +1,10 @@
+=== SNOW PANIC - CURRENT PROTOCOL ===
+# ノアからのプロトコルをここに貼り付けて保存する
+# アシはこのファイルを読み取って実行する
+
+last_updated=
+protocol_version=
+task=
+target=
+success_condition=
+notes=

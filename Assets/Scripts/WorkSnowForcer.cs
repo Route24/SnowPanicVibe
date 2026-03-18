@@ -466,8 +466,11 @@ public class WorkSnowForcer : MonoBehaviour
                 if (!_roofs[ri].ready || _roofs[ri].thickRatio <= 0f) continue;
 
                 float fill     = _roofs[ri].snowFill;
-                float thickH   = _roofs[ri].guiRect.height * _roofs[ri].thickRatio * fill;
-                float roofTop  = _roofs[ri].guiRect.y;
+                // 背景絵（BackgroundImage）に元々描かれている「屋根の上の白い雪の線」を
+                // 青いUI矩形で上書きして隠すため、上方向(y)に 12px 拡張する
+                float expandY  = 12f;
+                float thickH   = (_roofs[ri].guiRect.height * _roofs[ri].thickRatio * fill) + expandY;
+                float roofTop  = _roofs[ri].guiRect.y - expandY;
                 float roofLeft = _roofs[ri].guiRect.x;
                 float roofW    = _roofs[ri].guiRect.width;
 
