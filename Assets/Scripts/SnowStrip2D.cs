@@ -263,8 +263,59 @@ public class SnowStrip2D : MonoBehaviour
         float gx = nx * GRID_W;
         float gy = ny * GRID_H;
 
-        int cx = Mathf.Clamp(Mathf.FloorToInt(gx), 0, GRID_W - 1);
-        int cy = Mathf.Clamp(Mathf.FloorToInt(gy), 0, GRID_H - 1);
+        int rawCx = Mathf.Clamp(Mathf.FloorToInt(gx), 0, GRID_W - 1);
+        int rawCy = Mathf.Clamp(Mathf.FloorToInt(gy), 0, GRID_H - 1);
+
+        // ── ヒット判定: 探索半径内で最も近い「雪ありセル」へスナップ ──
+        // raw hit が露出セルでも、近くに雪があれば反応できるようにする。
+        // 端の残雪は量が少ないため「最大量」基準では負けてしまう。
+        // → 「雪あり（> EXPOSED_CELL_THRESHOLD）かつ最も近い」セルを優先する。
+        // SNAP_R: グリッド単位での探索半径（5 = 屋根幅の12.5%、高さの42%）
+        const float SNAP_R = 5f;
+        const float EXPOSED_CELL_THRESHOLD = 0.01f;
+
+        int   cx             = rawCx;
+        int   cy             = rawCy;
+        float bestDist       = float.MaxValue;
+        bool  snapped        = false;
+        int   candidateCells = 0;
+
+        // raw hit 自体に雪があれば初期値として採用
+        if (_snow[rawCx, rawCy] > EXPOSED_CELL_THRESHOLD)
+        {
+            bestDist = 0f;
+            candidateCells++;
+        }
+
+        int sx0 = Mathf.Max(0,          Mathf.FloorToInt(gx - SNAP_R));
+        int sx1 = Mathf.Min(GRID_W - 1, Mathf.CeilToInt (gx + SNAP_R));
+        int sy0 = Mathf.Max(0,          Mathf.FloorToInt(gy - SNAP_R));
+        int sy1 = Mathf.Min(GRID_H - 1, Mathf.CeilToInt (gy + SNAP_R));
+
+        for (int sx = sx0; sx <= sx1; sx++)
+        for (int sy = sy0; sy <= sy1; sy++)
+        {
+            if (sx == rawCx && sy == rawCy) continue; // raw hit は初期値で処理済み
+            if (_snow[sx, sy] <= EXPOSED_CELL_THRESHOLD) continue; // 露出セルは候補外
+            float sdx  = (sx + 0.5f) - gx;
+            float sdy  = (sy + 0.5f) - gy;
+            float dist = Mathf.Sqrt(sdx * sdx + sdy * sdy);
+            if (dist > SNAP_R) continue;
+            candidateCells++;
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                cx       = sx;
+                cy       = sy;
+                snapped  = true;
+            }
+        }
+
+        // ブラシ中心は raw hit 位置のまま維持する。
+        // スナップ (cx, cy) は「露出判定の基準セル」としてのみ使用。
+        // gx/gy をスナップ先に移動すると、端スナップ時にブラシが屋根外へはみ出し
+        // totalSnowInBrush=0 になって [BRUSH_EMPTY] でブロックされる問題を防ぐ。
+        // gx, gy は変更しない（raw hit 位置のまま）
 
         float centerBefore = _snow[cx, cy];
 
@@ -272,17 +323,16 @@ public class SnowStrip2D : MonoBehaviour
         float fillBefore          = CalcFill();
         float totalRoofSnowBefore = fillBefore * GRID_W * GRID_H;
 
-        // ── 露出判定: hit position の center cell が露出していたら即ブロック ──
-        // 参照元: _snow[cx, cy]（タップ位置に対応する 2D セル）
-        // center cell が空 = 屋根が見えている = 落雪させない
-        const float EXPOSED_CELL_THRESHOLD = 0.01f;
+        // ── 露出判定: 探索半径内に雪が1セルもなければブロック ──
         bool exposedAtHit = centerBefore <= EXPOSED_CELL_THRESHOLD;
         if (exposedAtHit)
         {
             _lastSpawned = false;
             _lastInfo    = $"TAP#{_tapCount} exposed spawned=NO";
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) gridCenter=({cx},{cy})" +
+                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                      $" rawCell=({rawCx},{rawCy}) selectedCell=({cx},{cy})" +
+                      $" snapped={snapped} snapRadius={SNAP_R} candidateCells={candidateCells}" +
                       $" exposedAtHit=YES centerSnow={centerBefore:F3}" +
                       $" totalRoofSnowBefore={totalRoofSnowBefore:F1}" +
                       $" totalSnowInBrush=- delta=0 spawned=NO [EXPOSED_HARD_STOP]");
@@ -359,20 +409,18 @@ public class SnowStrip2D : MonoBehaviour
             if (bx == cx && by == cy) centerDelta = d;
         }
 
-        // ── 滑落: 削った雪を下方向セルへ移す ────────────────
+        // ── 滑落: visual only ────────────────────────────────
         //
-        // ルール:
-        //   - 削ったセル (bx, by) ごとに、同 X の1つ下 (bx, by+1) へ雪を移す
-        //   - 下セルの空き容量（1.0 - 現在値）分だけ受け取れる
-        //   - 受け取れなかった分は落雪 spawn に回す（下端も同様）
-        //   - 滑落先セルが露出（空）でも受け取れる（雪を積み上げる）
-        //   - SLIDE_RATIO: 削り量のうち滑落に回す割合（残りは即落雪）
+        // 【責務分離】
+        //   本体ロジック: 上記の円形ブラシ減算のみ（_snow を直接更新）
+        //   演出ロジック: ここでは _snow を一切変更しない
         //
-        const float SLIDE_RATIO = 0.7f; // 削り量の70%を滑落、30%を即落雪
-
-        float totalSlid    = 0f;
-        float totalFalloff = 0f; // 滑落できなかった分（spawn に回る）
-
+        // 演出として「下方向へ流れる量」を計算し、ログに記録するだけ。
+        // _snow[bx, by+1] への書き込みは禁止。
+        // visual slide の量は後で Piece spawn に反映してもよいが、
+        // spawn 上限は totalDelta（実際に削った量）を超えない。
+        //
+        float totalVisualSlide = 0f;
         for (int bx = bx0; bx <= bx1; bx++)
         for (int by = by0; by <= by1; by++)
         {
@@ -380,32 +428,10 @@ public class SnowStrip2D : MonoBehaviour
             float dy   = (by + 0.5f) - gy;
             float dist = Mathf.Sqrt(dx * dx + dy * dy);
             if (dist >= BRUSH_R) continue;
-
-            // このセルで削った量を再計算（ブラシ適用後の差分）
             float t = 1f - dist / BRUSH_R;
             float w = t * t * (3f - 2f * t);
-            // 削り量の上限は BRUSH_MAX * w だが、実際に削った量は totalDelta 按分では
-            // なく、セルごとに独立して計算する。ここでは削り量の近似値を使う。
-            // （正確には減算ループで記録すべきだが、シンプルさを優先）
-            float approxRemoved = w * BRUSH_MAX * SLIDE_RATIO;
-            if (approxRemoved <= 0f) continue;
-
-            float slideAmount = approxRemoved;
-
-            if (by + 1 < GRID_H)
-            {
-                // 下セルの空き容量
-                float capacity = Mathf.Max(0f, 1f - _snow[bx, by + 1]);
-                float canSlide = Mathf.Min(slideAmount, capacity);
-                _snow[bx, by + 1] += canSlide;
-                totalSlid    += canSlide;
-                totalFalloff += slideAmount - canSlide;
-            }
-            else
-            {
-                // 下端: 滑落先なし → 全量 falloff
-                totalFalloff += slideAmount;
-            }
+            // visual 量のみ計算（_snow は変更しない）
+            totalVisualSlide += w * BRUSH_MAX * 0.7f;
         }
 
         _texDirty = true;
@@ -422,31 +448,26 @@ public class SnowStrip2D : MonoBehaviour
             }
         }
 
-        // ── finish assist: 残雪が FINISH_THRESHOLD 以下なら全ゼロ化 ──
-        float fillMid     = CalcFill();
+        // ── finish assist: 無効化（急な全消去を防ぐ）────────────
+        // FINISH_THRESHOLD による強制全ゼロ化を停止。
+        // 残雪は必ずブラシ減算のみで0に収束させる。
+        float fillMid      = CalcFill();
         bool  finishAssist = false;
-        if (fillMid > 0f && fillMid <= FINISH_THRESHOLD)
-        {
-            for (int x = 0; x < GRID_W; x++)
-            for (int y = 0; y < GRID_H; y++)
-                _snow[x, y] = 0f;
-            finishAssist = true;
-        }
+        // if (fillMid > 0f && fillMid <= FINISH_THRESHOLD) { ... }  // 無効化
 
         float fillAfter          = CalcFill();
         float totalRoofSnowAfter = fillAfter * GRID_W * GRID_H;
         float centerAfter        = _snow[cx, cy];
 
         // ── 停止条件 2: finishAssist 後は spawn しない ────────
-        // 停止条件 3: 落雪量（totalFalloff）が最小有効量未満なら spawn しない
-        // spawn 量は totalDelta ではなく totalFalloff（滑落できなかった分）に基づく
-        float spawnBasis = totalFalloff > 0f ? totalFalloff : totalDelta * (1f - SLIDE_RATIO);
-        bool spawned   = !finishAssist && spawnBasis >= SPAWN_MIN_DELTA;
+        // 停止条件 3: 実際に削った量（totalDelta）が最小有効量未満なら spawn しない
+        // spawn 上限 = totalDelta（本体が実際に削った量）— visual slide に依存しない
+        bool spawned   = !finishAssist && totalDelta >= SPAWN_MIN_DELTA;
         int  spawnCount = 0;
 
         if (spawned)
         {
-            spawnCount = Mathf.Clamp(Mathf.RoundToInt(spawnBasis / BRUSH_MAX * 3f), 1, 4);
+            spawnCount = Mathf.Clamp(Mathf.RoundToInt(totalDelta / BRUSH_MAX * 3f), 1, 4);
 
             float roofW  = _guiRect.width;
             float spawnX = Mathf.Clamp(guiPos.x, _guiRect.x + 8f, _guiRect.xMax - 8f);
@@ -487,21 +508,21 @@ public class SnowStrip2D : MonoBehaviour
         Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
                   $" tapCount={_tapCount}" +
                   $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                  $" gridCenter=({cx},{cy}) brushRadius={BRUSH_R}" +
+                  $" rawCell=({rawCx},{rawCy}) selectedCell=({cx},{cy})" +
+                  $" snapped={snapped} snapRadius={SNAP_R} candidateCells={candidateCells}" +
+                  $" brushRadius={BRUSH_R}" +
                   $" exposedAtHit=NO centerSnow_before={centerBefore:F3}" +
                   $" totalSnowInBrush={totalSnowInBrush:F3} brushCells={brushCells} hitCells={hitCells}" +
                   $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowAfter:F1}" +
                   $" removedAmount={totalDelta:F2}" +
-                  $" slidAmount={totalSlid:F2}" +
-                  $" falloffAmount={totalFalloff:F2}" +
-                  $" spawnBasis={spawnBasis:F2}" +
+                  $" visualSlideAmount={totalVisualSlide:F2}" +
                   $" centerDelta={centerDelta:F3}" +
                   $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
                   $" exposedAreaRatio={exposedAreaRatio:F2}" +
                   $" zeroSnapCount={zeroSnapCount}" +
                   $" finishAssist={(finishAssist ? "YES" : "NO")}" +
                   $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
-                  $" SLIDE_RATIO={SLIDE_RATIO} BRUSH_MAX={BRUSH_MAX} FINISH_THRESHOLD={FINISH_THRESHOLD}");
+                  $" spawnBasis=totalDelta BRUSH_MAX={BRUSH_MAX} FINISH_THRESHOLD={FINISH_THRESHOLD}");
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
