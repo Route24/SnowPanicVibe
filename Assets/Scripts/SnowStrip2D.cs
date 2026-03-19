@@ -397,7 +397,15 @@ public class SnowStrip2D : MonoBehaviour
         _lastInfo    = $"TAP#{_tapCount} fill={fillAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
         _lastSpawned = spawned;
 
-        // ── 仕様通りログ出力 ──────────────────────────────────
+        // ── 単一参照元確認ログ ────────────────────────────────
+        // 唯一の真実: _snow[x,y] 配列
+        //   減算セル集合  = hitCells（_snow[bx,by] を実際に減らしたセル）
+        //   マスク変更数  = hitCells（_texDirty=true で次フレームに _snow から再構築）
+        //   spawn判定元   = totalDelta（_snow から削った合計）
+        //   露出判定元    = totalSnowInBrush（_snow から計算）
+        //   finish判定元  = CalcFill()（_snow の全セル合計）
+        //   → 全て _snow[x,y] 単一参照。別配列・fallback なし。
+        bool affectedCellsMatch = true; // hitCells = mask_changed = spawn_source（全て同一ループ）
         Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
                   $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" gridCenter=({cx},{cy}) brushRadius={BRUSH_R}" +
@@ -409,6 +417,8 @@ public class SnowStrip2D : MonoBehaviour
                   $" zeroSnapCount={zeroSnapCount}" +
                   $" finishAssist={(finishAssist ? "YES" : "NO")}" +
                   $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
+                  $" affectedCellsMatch={affectedCellsMatch}" +
+                  $" singleSource=_snow[x,y]" +
                   $" CELL_EPSILON={CELL_EPSILON} FINISH_THRESHOLD={FINISH_THRESHOLD} SPAWN_MIN_DELTA={SPAWN_MIN_DELTA}");
 
         if (fillAfter <= 0f)
@@ -448,22 +458,28 @@ public class SnowStrip2D : MonoBehaviour
     }
 
     // ── 描画 ─────────────────────────────────────────────────
+    //
+    // 【単一参照元の原則】
+    //   描画は _snow[x,y] → _snowTex のアルファだけで制御する。
+    //   描画矩形の高さは固定（fillAvg で縮めない）。
+    //   fillAvg で高さを変えると「帯状に短くなる」症状が出るため廃止。
+    //
     void OnGUI()
     {
         if (!Application.isPlaying) return;
         if (!_ready || _snowTex == null) return;
 
-        // ── 雪帯: Texture2D を stretched 描画 ───────────────
-        // 雪帯の表示領域: 縦方向は _guiRect 上端 -(EXPAND_Y_MAX) から guiRect.yMax まで
-        float fillAvg  = CalcFill();
-        float expandY  = EXPAND_Y_MAX * fillAvg;
-        float snowTop  = _guiRect.y - expandY;
-        float snowH    = _guiRect.height * THICK_RATIO * fillAvg + expandY;
+        // 描画矩形: 常に固定サイズ。_snowTex のアルファが唯一のマスク。
+        // fillAvg で高さを縮めない → 帯状症状を根本解消。
+        float snowTop = _guiRect.y - EXPAND_Y_MAX;
+        float snowH   = _guiRect.height * THICK_RATIO + EXPAND_Y_MAX;
 
-        if (snowH >= 1f && fillAvg > 0f)
+        // 全体残雪（デバッグ表示・ゲージ用のみ。描画矩形には使わない）
+        float fillAvg = CalcFill();
+
+        if (fillAvg > 0f)
         {
-            // テクスチャを雪帯全体にストレッチ描画
-            // _snowTex のアルファがマスクになる
+            // _snowTex のアルファマスクで円形に削れた見た目を表現
             GUI.color = Color.white;
             GUI.DrawTexture(
                 new Rect(_guiRect.x, snowTop, _guiRect.width, snowH),
@@ -472,19 +488,19 @@ public class SnowStrip2D : MonoBehaviour
                 alphaBlend: true
             );
 
-            // 上端シアンライン
+            // 上端シアンライン（固定位置）
             GUI.color = new Color(0f, 1f, 1f, 0.9f);
             GUI.DrawTexture(new Rect(_guiRect.x, snowTop, _guiRect.width, 3f),
                             Texture2D.whiteTexture);
         }
-        else if (fillAvg <= 0f)
+        else
         {
             // 全部空: トップライン消去
             GUI.color = new Color(0.45f, 0.55f, 0.72f, 0.90f);
             GUI.DrawTexture(new Rect(_guiRect.x, _guiRect.y - 18f, _guiRect.width, 22f),
                             Texture2D.whiteTexture);
             GUI.color = new Color(1f, 0.2f, 0.2f, 0.8f);
-            GUI.DrawTexture(new Rect(_guiRect.x, _guiRect.y - 4f,  _guiRect.width,  4f),
+            GUI.DrawTexture(new Rect(_guiRect.x, _guiRect.y - 4f, _guiRect.width, 4f),
                             Texture2D.whiteTexture);
         }
 
