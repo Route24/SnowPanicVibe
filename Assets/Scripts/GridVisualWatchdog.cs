@@ -483,6 +483,9 @@ public class GridVisualWatchdog : MonoBehaviour
         if (r == null) return false;
         var t = r.transform;
         if (t == null) return false;
+        // SnowPackFallingPiece がアタッチされている場合は落下中 → Watchdog 対象外
+        var root = t.gameObject.name == "SnowPackPiece" ? t : (t.parent != null && t.parent.gameObject.name == "SnowPackPiece" ? t.parent : null);
+        if (root != null && root.GetComponent<SnowPackFallingPiece>() != null) return false;
         if (t.gameObject.name == "SnowPackPiece") return true;
         if (t.parent != null && t.parent.gameObject.name == "SnowPackPiece") return true;
         return false;

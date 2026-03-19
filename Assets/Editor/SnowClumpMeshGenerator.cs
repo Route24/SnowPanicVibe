@@ -10,6 +10,26 @@ using System.Collections.Generic;
 /// </summary>
 public static class SnowClumpMeshGenerator
 {
+    [MenuItem("Tools/SnowPanic/Remove SnowClumpPreview from Scene")]
+    public static void RemovePreviewFromScene()
+    {
+        int removed = 0;
+        // 名前に "SnowClumpPreview" を含む全オブジェクトを削除
+        var all = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+        foreach (var go in all)
+        {
+            if (go != null && go.name.Contains("SnowClumpPreview"))
+            {
+                Object.DestroyImmediate(go);
+                removed++;
+            }
+        }
+        UnityEditor.SceneManagement.EditorSceneManager.MarkAllScenesDirty();
+        Debug.Log($"[SnowClumpMeshGenerator] SnowClumpPreview removed count={removed}");
+        EditorUtility.DisplayDialog("完了", $"SnowClumpPreview を {removed} 個削除しました。", "OK");
+    }
+
+
     // --- パラメータ ---
     const int   SeedDefault   = 42;
     const float SizeX         = 1.0f;   // 横幅

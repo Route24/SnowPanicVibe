@@ -91,11 +91,12 @@ public class SnowVisual : MonoBehaviour
             inst = go.AddComponent<SnowVisual>();
         }
         float roundness = inst != null ? inst.roundness : 0.48f;
-        float noiseStr = inst != null ? inst.vertexNoiseStrength : 0.03f;
+        float noiseStr = inst != null ? inst.vertexNoiseStrength : 0.07f;
         int seed = inst != null ? inst.noiseSeed : 42;
         _roundedMesh = BuildRoundedMesh(roundness, noiseStr, seed);
         _snowMaterial = CreateSnowMaterial();
         _initialized = true;
+        UnityEngine.Debug.Log($"[SnowVisual] mesh_changed=true material_changed=true mesh_name={_roundedMesh?.name} vertex_count={_roundedMesh?.vertexCount}");
     }
 
     static Mesh BuildRoundedMesh(float roundness, float noiseStrength, int seed)
@@ -117,9 +118,9 @@ public class SnowVisual : MonoBehaviour
         var verts = new System.Collections.Generic.List<Vector3>();
         var tris  = new System.Collections.Generic.List<int>();
 
-        // UV球パラメータ（ローポリ感を残す）
-        int latDiv = 7;   // 縦分割（少ないほどローポリ）
-        int lonDiv = 8;   // 横分割
+        // UV球パラメータ（ローポリ感を残す・雪片らしい不定形）
+        int latDiv = 6;   // 縦分割（少ないほどローポリ）
+        int lonDiv = 7;   // 横分割（奇数で非対称感）
 
         // 上端（頂点）
         verts.Add(new Vector3(Noise(), 0.5f + Noise() * 0.5f, Noise()));
@@ -132,8 +133,9 @@ public class SnowVisual : MonoBehaviour
             float cosP = Mathf.Cos(phi);
 
             // 上半球は少し縦に伸ばし、下半球は平らにして「雪の塊」らしく
-            float yScale = cosP > 0 ? 1.1f : 0.7f;
-            float xzScale = 0.5f;
+            // xz を非対称にして不定形感を出す
+            float yScale = cosP > 0 ? 1.15f : 0.65f;
+            float xzScale = 0.5f * (1f + (float)(rand.NextDouble() - 0.5) * 0.3f);
 
             for (int lon = 0; lon < lonDiv; lon++)
             {

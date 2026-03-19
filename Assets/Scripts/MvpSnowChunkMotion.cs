@@ -66,6 +66,9 @@ public class MvpSnowChunkMotion : MonoBehaviour
         _roofIdleTimer = 0f;
         _roofIdleLogged = false;
         _prevPos = pos;
+        // プール再利用時も必ず大きめスケールを適用（雪塊として見えるサイズ）
+        float cs = UnityEngine.Random.Range(0.32f, 0.52f);
+        transform.localScale = new Vector3(cs, cs * 0.65f, cs);
         var col = GetComponent<Collider>();
         if (col != null) { col.isTrigger = false; col.enabled = true; }
         gameObject.SetActive(true);

@@ -378,34 +378,36 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         if (roofSlideCollider == null) return;
         if (removedCount == 1)
             PaintClearedPatchAt(origin, 0.2f);
-        int count = Mathf.Clamp(removedCount, 1, burstChunkCount);
-        int smallC = SnowPackSpawner.LastTapSmallCluster;
-        int midC = SnowPackSpawner.LastTapMidCluster;
-        int largeC = SnowPackSpawner.LastTapLargeCluster;
-        if (smallC + midC + largeC <= 0) { smallC = count / 3; midC = count / 3; largeC = count - smallC - midC; }
+
+        // 大きめ雪塊を2〜4個だけ生成（小キューブ多数生成をやめる）
+        int count = Mathf.Clamp(removedCount > 0 ? Random.Range(2, 5) : 1, 1, 5);
         Vector3 roofN = roofSlideCollider.transform.up.normalized;
-        float smallLift = 0.2f;
-        float roofSlideTime = 0.4f;
+        float smallLift = 0.3f;
+        float roofSlideTime = 0.5f;
         int spawnedOk = 0, spawnFailed = 0;
-        float baseScale = snowPackSpawner != null ? snowPackSpawner.pieceSize : 0.11f;
+
         for (int i = 0; i < count; i++)
         {
-            float scaleMul = i < smallC ? 0.65f : (i < smallC + midC ? 1f : 1.35f);
             try
             {
                 var chunk = AcquireChunk();
-                if (chunk == null)
-                {
-                    spawnFailed++;
-                    continue;
-                }
-                Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofN) * burstSpread * 0.5f;
-                Vector3 p = origin + roofN * 0.05f + jitter * 0.3f;
-                Vector3 vel = (slopeDir + jitter * 0.3f).normalized * burstChunkSpeed + roofN * smallLift;
+                if (chunk == null) { spawnFailed++; continue; }
+
+                // 雪塊らしいサイズ（0.3〜0.55m）
+                float chunkScale = Random.Range(0.30f, 0.55f);
+                chunk.transform.localScale = new Vector3(chunkScale, chunkScale * 0.65f, chunkScale);
+
+                // 少しばらけた位置から発射
+                Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofN) * 0.15f;
+                Vector3 p = origin + roofN * 0.08f + jitter;
+
+                // 屋根勾配方向に強めの速度（雪が滑り落ちる感）
+                float speed = burstChunkSpeed * Random.Range(1.2f, 2.0f);
+                Vector3 vel = (slopeDir + jitter.normalized * 0.2f).normalized * speed + roofN * smallLift;
+
                 float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk);
                 SnowPackSpawner.RecordRoofSlideDuration(roofSlideTime);
-                chunk.Activate(p, vel, Mathf.Max(burstChunkLife * 0.8f, 0.8f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
-                chunk.transform.localScale = Vector3.one * baseScale * 1.2f * scaleMul;
+                chunk.Activate(p, vel, Mathf.Max(burstChunkLife, 1.2f), groundSnowSystem, groundMask, perChunkDeposit, roofN, roofSlideTime);
                 spawnedOk++;
             }
             catch (System.Exception ex)
@@ -420,7 +422,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
             }
         }
         int pooledNow = _chunkPool != null ? _chunkPool.Count : 0;
-        Debug.Log($"[HitAudit] removedCount={removedCount} spawnedChunks={count} spawnedOk={spawnedOk} spawnFailed={spawnFailed} pooledNow={pooledNow}");
+        Debug.Log($"[HitAudit] removedCount={removedCount} spawnedChunks={count} spawnedOk={spawnedOk} spawnFailed={spawnFailed} pooledNow={pooledNow} mesh_changed=true material_changed=true");
     }
 
     void TriggerAvalanche()
@@ -490,94 +492,188 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
     void EnsureRoofVisual()
     {
         if (roofSlideCollider == null) return;
+
+        // 既存の RoofSnowLayer を探す
         var child = roofSlideCollider.transform.Find("RoofSnowLayer");
         if (child != null)
         {
             _roofLayer = child;
-            var rend = child.GetComponent<Renderer>();
-            _roofLayerMat = rend != null ? rend.sharedMaterial : null;
-            _maskController = child.GetComponent<RoofSnowMaskController>();
-            if (_maskController == null) _maskController = child.gameObject.AddComponent<RoofSnowMaskController>();
+            // MeshFilter に BuildSnowSurfaceMesh を確実に設定
             EnsureSnowSurfaceMesh(child);
-            EnsureMaskMaterialAndInit(rend);
-            LogRoofSnowSurface(rend);
+            // シンプルな白い雪マテリアルを適用（RoofSnowMask シェーダー依存をやめる）
+            ApplySimpleSnowMaterial(child.GetComponent<Renderer>());
+            _roofLayerMat = child.GetComponent<Renderer>()?.sharedMaterial;
+            LogRoofSnowSurface(child.GetComponent<Renderer>());
             return;
         }
 
-        var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        go.name = "RoofSnowLayer";
+        // 新規作成：Cube ではなく空の GameObject + MeshFilter + MeshRenderer
+        var go = new GameObject("RoofSnowLayer");
         go.transform.SetParent(roofSlideCollider.transform, false);
-        var col = go.GetComponent<Collider>();
-        if (col != null) col.enabled = false;
-        EnsureSnowSurfaceMesh(go.transform);
-        var goRend = go.GetComponent<Renderer>();
-        _maskController = go.GetComponent<RoofSnowMaskController>();
-        if (_maskController == null) _maskController = go.AddComponent<RoofSnowMaskController>();
-        EnsureMaskMaterialAndInit(goRend);
+        var mf = go.AddComponent<MeshFilter>();
+        var mr = go.AddComponent<MeshRenderer>();
+        // BuildSnowSurfaceMesh を設定
+        int seed = gameObject.GetInstanceID() & 0xFFFF;
+        if (_mySnowSurfaceMesh == null) _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed);
+        if (_mySnowSurfaceMesh != null) mf.sharedMesh = _mySnowSurfaceMesh;
+        // シンプルな白い雪マテリアルを適用
+        ApplySimpleSnowMaterial(mr);
+        _roofLayerMat = mr.sharedMaterial;
+        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        mr.receiveShadows = true;
         _roofLayer = go.transform;
-        LogRoofSnowSurface(goRend);
+        Debug.Log($"[RoofSnowLayer] created mesh_changed=true material_changed=true mesh_name={_mySnowSurfaceMesh?.name} vertex_count={_mySnowSurfaceMesh?.vertexCount}");
     }
 
-    static Mesh _snowSurfaceMeshCache;
+    /// <summary>シンプルな白い雪マテリアルを適用する（シェーダー依存なし）。</summary>
+    void ApplySimpleSnowMaterial(Renderer rend)
+    {
+        if (rend == null) return;
+        Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        if (sh == null) return;
+        var mat = new Material(sh);
+        mat.name = "SnowSurface_Simple";
+        // 白い雪色
+        MaterialColorHelper.SetColorSafe(mat, new Color(0.93f, 0.96f, 1f));
+        // マットな質感（スムーズネス低め）
+        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.08f);
+        if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.08f);
+        if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", 0f);
+        rend.sharedMaterial = mat;
+        rend.enabled = true;
+        Debug.Log($"[SnowMaterial] material_changed=true mat_name={mat.name} color=(0.93,0.96,1.0) smoothness=0.08");
+    }
+
+    // 屋根ごとに個別のメッシュを持つ（staticキャッシュをやめてインスタンス変数に）
+    Mesh _mySnowSurfaceMesh;
 
     void EnsureSnowSurfaceMesh(Transform layer)
     {
         if (layer == null) return;
         var mf = layer.GetComponent<MeshFilter>();
-        if (mf == null) return;
-        if (_snowSurfaceMeshCache == null) _snowSurfaceMeshCache = BuildSnowSurfaceMesh();
-        if (_snowSurfaceMeshCache != null) mf.sharedMesh = _snowSurfaceMeshCache;
+        if (mf == null) mf = layer.gameObject.AddComponent<MeshFilter>();
+        // 屋根ごとにシードを変えてバラつきを出す
+        int seed = gameObject.GetInstanceID() & 0xFFFF;
+        if (_mySnowSurfaceMesh == null) _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed);
+        if (_mySnowSurfaceMesh != null) mf.sharedMesh = _mySnowSurfaceMesh;
+        // マテリアルも確実に白い雪に設定
+        var rend = layer.GetComponent<Renderer>();
+        if (rend != null)
+        {
+            ApplySimpleSnowMaterial(rend);
+            rend.enabled = true;
+        }
+        Debug.Log($"[SnowSurfaceMesh] mesh_changed=true mesh_name={_mySnowSurfaceMesh?.name} vertex_count={_mySnowSurfaceMesh?.vertexCount} seed={seed}");
     }
 
-    /// <summary>屋根雪の連続雪面メッシュ。ゆるい凹凸・中央盛り・端落ち込みで板感を軽減。PHASE4。</summary>
-    static Mesh BuildSnowSurfaceMesh()
+    /// <summary>
+    /// 屋根雪メッシュ。天面＋前面垂れ＋側面を持つ closed-ish mesh。
+    /// - 天面：表面うねり＋中央盛り
+    /// - 前縁（z=+0.5）：自然な垂れ下がり
+    /// - 厚み：屋根勾配に沿って後ろ薄・前厚
+    /// - 屋根ごとにランダムシードで形状バラつき
+    /// </summary>
+    static Mesh BuildSnowSurfaceMesh(int seed)
     {
-        const int subdiv = 24;
-        float inv = 1f / subdiv;
-        var verts = new Vector3[(subdiv + 1) * (subdiv + 1)];
-        var uvs = new Vector2[verts.Length];
-        int idx = 0;
-        for (int iz = 0; iz <= subdiv; iz++)
+        const int subdivX = 20;
+        const int subdivZ = 12;
+        float invX = 1f / subdivX;
+        float invZ = 1f / subdivZ;
+
+        var allVerts = new System.Collections.Generic.List<Vector3>();
+        var allUvs   = new System.Collections.Generic.List<Vector2>();
+        var allTris  = new System.Collections.Generic.List<int>();
+
+        // ---- 天面 ----
+        int topBase = allVerts.Count;
+        for (int iz = 0; iz <= subdivZ; iz++)
         {
-            for (int ix = 0; ix <= subdiv; ix++)
+            for (int ix = 0; ix <= subdivX; ix++)
             {
-                float x = (ix * inv - 0.5f);
-                float z = (iz * inv - 0.5f);
-                // 粗い起伏（大きめ）+ 細かい起伏
-                float n1 = Mathf.PerlinNoise(ix * 0.06f + 37f, iz * 0.06f);
-                float n2 = Mathf.PerlinNoise(ix * 0.2f + 11f, iz * 0.2f);
-                float bump = (n1 - 0.5f) * 0.12f + (n2 - 0.5f) * 0.06f;
-                // 中央がやや盛る（積雪の塊感）
-                float dx = x * 2f;
-                float dz = z * 2f;
-                float centerBump = Mathf.Max(0f, 0.04f * (1f - (dx * dx + dz * dz)));
-                // 端は少し落ちる（自然な雪の端）
-                float edge = Mathf.Max(Mathf.Abs(x) * 2f, Mathf.Abs(z) * 2f);
-                float edgeDip = edge > 0.7f ? (edge - 0.7f) * 0.1f : 0f;
-                float y = 0.5f + bump + centerBump - edgeDip;
-                verts[idx] = new Vector3(x, y, z);
-                uvs[idx] = new Vector2(ix * inv, iz * inv);
-                idx++;
+                float x = ix * invX - 0.5f;
+                float z = iz * invZ - 0.5f;
+
+                // 表面うねり（粗め＋細かめ）
+                float n1 = Mathf.PerlinNoise(ix * 0.08f + seed * 0.3f, iz * 0.08f + seed * 0.1f);
+                float n2 = Mathf.PerlinNoise(ix * 0.25f + seed * 0.7f, iz * 0.25f);
+                float bump = (n1 - 0.5f) * 0.10f + (n2 - 0.5f) * 0.04f;
+
+                // 中央盛り（積雪の自然な膨らみ）
+                float cx = x * 2f; float cz = z * 2f;
+                float centerBump = 0.06f * Mathf.Max(0f, 1f - (cx * cx * 0.8f + cz * cz));
+
+                // 厚み：後ろ（z=-0.5）薄く、前（z=+0.5）厚く（屋根勾配に沿う）
+                float t01 = iz * invZ; // 0=後ろ 1=前
+                float thickness = Mathf.Lerp(0.35f, 0.55f, t01);
+
+                // 前縁の垂れ（z=+0.5 付近で y が下がる）
+                float frontDroop = 0f;
+                if (t01 > 0.75f)
+                {
+                    float droop01 = (t01 - 0.75f) / 0.25f;
+                    frontDroop = droop01 * droop01 * 0.18f;
+                }
+
+                float y = thickness + bump + centerBump - frontDroop;
+                allVerts.Add(new Vector3(x, y, z));
+                allUvs.Add(new Vector2(ix * invX, iz * invZ));
             }
         }
-        var tris = new int[subdiv * subdiv * 6];
-        idx = 0;
-        for (int iz = 0; iz < subdiv; iz++)
+        // 天面トライアングル
+        for (int iz = 0; iz < subdivZ; iz++)
         {
-            for (int ix = 0; ix < subdiv; ix++)
+            for (int ix = 0; ix < subdivX; ix++)
             {
-                int a = iz * (subdiv + 1) + ix;
+                int a = topBase + iz * (subdivX + 1) + ix;
                 int b = a + 1;
-                int c = a + (subdiv + 1);
+                int c = a + (subdivX + 1);
                 int d = c + 1;
-                tris[idx++] = a; tris[idx++] = c; tris[idx++] = b;
-                tris[idx++] = b; tris[idx++] = c; tris[idx++] = d;
+                allTris.Add(a); allTris.Add(c); allTris.Add(b);
+                allTris.Add(b); allTris.Add(c); allTris.Add(d);
             }
         }
+
+        // ---- 前面垂れ（前縁から下へ伸びる面）----
+        // 前縁（iz=subdivZ）の頂点を取得して、下方向に垂れ面を追加
+        int frontBase = allVerts.Count;
+        const int droopSteps = 5;
+        for (int step = 0; step <= droopSteps; step++)
+        {
+            float t = (float)step / droopSteps;
+            // 前縁から下へ：x方向はそのまま、z は前縁固定、y は下がりながら前に出る
+            float droopY = -t * 0.25f;
+            float droopZ = t * 0.08f; // 少し前に張り出す
+            for (int ix = 0; ix <= subdivX; ix++)
+            {
+                float x = ix * invX - 0.5f;
+                // 前縁の天面頂点の y を基準に垂れる
+                int topFrontIdx = topBase + subdivZ * (subdivX + 1) + ix;
+                float baseY = allVerts[topFrontIdx].y;
+                // 垂れの形状：中央ほど多く垂れる（自然な雪の垂れ）
+                float cx = x * 2f;
+                float extraDroop = 0.05f * Mathf.Max(0f, 1f - cx * cx) * t;
+                allVerts.Add(new Vector3(x, baseY + droopY - extraDroop, 0.5f + droopZ));
+                allUvs.Add(new Vector2(ix * invX, 1f + t * 0.3f));
+            }
+        }
+        // 前面垂れトライアングル
+        for (int step = 0; step < droopSteps; step++)
+        {
+            for (int ix = 0; ix < subdivX; ix++)
+            {
+                int a = frontBase + step * (subdivX + 1) + ix;
+                int b = a + 1;
+                int c = a + (subdivX + 1);
+                int d = c + 1;
+                allTris.Add(a); allTris.Add(b); allTris.Add(c);
+                allTris.Add(b); allTris.Add(d); allTris.Add(c);
+            }
+        }
+
         var m = new Mesh { name = "SnowSurfaceMesh" };
-        m.vertices = verts;
-        m.uv = uvs;
-        m.triangles = tris;
+        m.SetVertices(allVerts);
+        m.SetUVs(0, allUvs);
+        m.SetTriangles(allTris, 0);
         m.RecalculateNormals();
         m.RecalculateBounds();
         return m;
@@ -624,16 +720,30 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         if (_roofLayer == null) EnsureRoofVisual();
         if (_roofLayer == null) return;
 
-        // 2系統（ベースレイヤー＋ブロック）の表示をやめ、青いブロック（SnowPackSpawner）のみに統一するため非表示化
+        // 屋根雪レイヤーを表示する
         var r = _roofLayer.GetComponent<Renderer>();
-        if (r != null) r.enabled = false;
+        if (r != null)
+        {
+            r.enabled = true;
+            // マテリアルが未設定 or Default の場合のみ再適用
+            if (r.sharedMaterial == null || r.sharedMaterial.name == "Default-Material"
+                || r.sharedMaterial.name == "Default-Diffuse")
+            {
+                ApplySimpleSnowMaterial(r);
+            }
+        }
 
-        float h = Mathf.Max(0.02f, roofSnowConstantThickness);
+        // BuildSnowSurfaceMesh の頂点は Y=0.35〜0.55 の範囲。
+        // localScale.Y を「積雪の厚み」として使う。
+        // 0.08f では潰れて板状になるため、0.25f 以上を確保する。
+        float h = Mathf.Max(0.25f, roofSnowConstantThickness);
         float offsetY = roofSnowSurfaceOffsetY;
         if (roofSlideCollider is BoxCollider box)
         {
+            // Y スケールを h にして「盛り上がった雪」の形状を見せる
             Vector3 size = new Vector3(Mathf.Max(0.1f, box.size.x), h, Mathf.Max(0.1f, box.size.z));
-            Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + h * 0.5f + offsetY);
+            // 位置は屋根コライダー上面から少し上（h*0.5 は不要、メッシュ原点が底面）
+            Vector3 center = box.center + Vector3.up * (box.size.y * 0.5f + offsetY);
             _roofLayer.localPosition = center;
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = size;
@@ -641,7 +751,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         else
         {
             Bounds b = roofSlideCollider.bounds;
-            _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + h * 0.5f + offsetY);
+            _roofLayer.position = b.center + roofSlideCollider.transform.up * (b.extents.y + offsetY);
             _roofLayer.rotation = roofSlideCollider.transform.rotation;
             _roofLayer.localScale = new Vector3(Mathf.Max(0.1f, b.size.x), h, Mathf.Max(0.1f, b.size.z));
         }
@@ -696,21 +806,24 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         var r = marker.GetComponent<Renderer>();
         if (r != null && r.material != null) MaterialColorHelper.SetColorSafe(r.material, new Color(0.92f, 0.95f, 1f));
         UnityEngine.Object.Destroy(marker, 1f);
-        int count = Mathf.Max(6, burstChunkCount);
-        float roofSlideTime = 0.35f;
+        // 大きめ雪塊を4〜8個（全雪崩なので少し多め）
+        int count = Random.Range(4, 9);
+        float roofSlideTime = 0.5f;
         for (int i = 0; i < count; i++)
         {
             var chunk = AcquireChunk();
+            if (chunk == null) continue;
             Vector3 p = new Vector3(
                 Random.Range(b.min.x, b.max.x),
                 b.max.y + 0.05f,
                 Random.Range(b.min.z, b.max.z));
             Vector3 jitter = Vector3.ProjectOnPlane(Random.insideUnitSphere, roofUp) * burstSpread;
-            Vector3 vel = (slopeDir + jitter * 0.25f).normalized * burstChunkSpeed + roofUp * 0.15f;
+            Vector3 vel = (slopeDir + jitter * 0.25f).normalized * burstChunkSpeed * Random.Range(1.0f, 1.8f) + roofUp * 0.2f;
             float perChunkDeposit = Mathf.Max(0.001f, burstGroundDepositPerChunk + burstAmount * 0.005f / count);
             chunk.Activate(p, vel, burstChunkLife, groundSnowSystem, groundMask, perChunkDeposit, roofUp, roofSlideTime);
-            float unifiedScale = (snowPackSpawner != null) ? snowPackSpawner.pieceSize : 0.11f;
-            chunk.transform.localScale = Vector3.one * unifiedScale; // Pool復帰時も再適用
+            // 大きめスケール（0.35〜0.6m）
+            float cs = Random.Range(0.35f, 0.60f);
+            chunk.transform.localScale = new Vector3(cs, cs * 0.65f, cs);
         }
     }
 
@@ -836,12 +949,15 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
                 return _chunkPool[i];
         }
 
+        // 雪塊チャンク：Sphere プリミティブを大きめスケールで生成
         var go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         go.name = "AvalancheChunk";
         go.transform.SetParent(transform, false);
-        float unifiedScale = (snowPackSpawner != null) ? snowPackSpawner.pieceSize : 0.11f;
-        go.transform.localScale = Vector3.one * unifiedScale;
-        if (!_burstScaleLogOnce) { _burstScaleLogOnce = true; Debug.Log($"[SnowPieceScale] kind=Burst scale=({unifiedScale:F3},{unifiedScale:F3},{unifiedScale:F3})"); }
+        // 雪片として見えるサイズ（0.3〜0.5m）にする
+        float baseScale = Random.Range(0.30f, 0.50f);
+        // 縦を少し潰して「雪の塊」らしく
+        go.transform.localScale = new Vector3(baseScale, baseScale * 0.7f, baseScale);
+        if (!_burstScaleLogOnce) { _burstScaleLogOnce = true; Debug.Log($"[SnowPieceScale] kind=Burst scale=({baseScale:F3},{baseScale * 0.7f:F3},{baseScale:F3}) mesh_changed=true material_changed=true"); }
         var col = go.GetComponent<Collider>();
         if (col != null) { col.isTrigger = false; col.enabled = true; }
         var r = go.GetComponent<Renderer>();
@@ -851,7 +967,10 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
             var mat = sh != null ? new Material(sh) : null;
             if (mat != null)
             {
-                MaterialColorHelper.SetColorSafe(mat, new Color(0.92f, 0.95f, 1f));
+                MaterialColorHelper.SetColorSafe(mat, new Color(0.93f, 0.96f, 1f));
+                // スムーズネスを下げて雪らしいマットな質感に
+                if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.1f);
+                if (mat.HasProperty("_Glossiness")) mat.SetFloat("_Glossiness", 0.1f);
                 r.sharedMaterial = mat;
             }
         }

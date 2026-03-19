@@ -73,6 +73,7 @@ public class SnowPackFallingPiece : MonoBehaviour
         _rb.constraints = RigidbodyConstraints.None;
         _renderers = GetComponentsInChildren<Renderer>(true);
         EnableFallingRenderers();
+        ScaleUpForFalling();
 
         var col = GetComponent<Collider>();
         if (col == null)
@@ -131,6 +132,8 @@ public class SnowPackFallingPiece : MonoBehaviour
         _renderers = GetComponentsInChildren<Renderer>(true);
         // falling piece は常に表示（showSnowGridDebug に関係なく本番 mesh で見せる）
         EnableFallingRenderers();
+        // 落下時は雪片らしいサイズに拡大（屋根上の小さなピースを見えるサイズに）
+        ScaleUpForFalling();
 
         var col = GetComponent<Collider>();
         if (col == null)
@@ -205,6 +208,22 @@ public class SnowPackFallingPiece : MonoBehaviour
         float vHorizontal = Mathf.Sqrt(v.x * v.x + v.z * v.z);
         bool verticalDominant = vMag > 0.05f && vVertical > vHorizontal;
         UnityEngine.Debug.Log($"[VERTICAL_DROP_ISOLATION] after_0_1s vel=({v.x:F2},{v.y:F2},{v.z:F2}) vertical_velocity_still_dominant={(verticalDominant ? "YES" : "NO")}");
+    }
+
+    /// <summary>
+    /// 落下時に雪片らしいサイズへ拡大する。
+    /// 屋根上のピースは非常に薄く小さいため、落下時に球状メッシュが見えるサイズにする。
+    /// </summary>
+    void ScaleUpForFalling()
+    {
+        // 現在のスケールを取得し、雪片として見えるサイズ（最低20cm）に拡大
+        Vector3 cur = transform.localScale;
+        float targetXZ = Mathf.Max(cur.x, 0.20f) * UnityEngine.Random.Range(1.5f, 2.5f);
+        float targetY  = Mathf.Max(cur.y, 0.15f) * UnityEngine.Random.Range(1.5f, 2.5f);
+        // 球状に近づける（XYZを均一に）
+        float uniform = Mathf.Max(targetXZ, targetY);
+        transform.localScale = new Vector3(uniform, uniform * 0.8f, uniform);
+        UnityEngine.Debug.Log($"[FallingScale] scaled_up from=({cur.x:F3},{cur.y:F3},{cur.z:F3}) to=({transform.localScale.x:F3},{transform.localScale.y:F3},{transform.localScale.z:F3})");
     }
 
     void EnableFallingRenderers()
