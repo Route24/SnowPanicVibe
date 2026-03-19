@@ -226,6 +226,9 @@ public class SnowStripV2 : MonoBehaviour
             if (!roof.ready) continue;
             if (!roof.guiRect.Contains(guiPos)) continue;
 
+            // Roof_BR は SnowStrip2D に委譲
+            if (roof.id == "Roof_BR") break;
+
             float fillBefore = roof.snowFill;
             roof.tapCount++;
 
@@ -402,6 +405,8 @@ public class SnowStripV2 : MonoBehaviour
         {
             var roof = _roofs[ri];
             if (!roof.ready) continue;
+            // Roof_BR は SnowStrip2D が描画するためスキップ
+            if (roof.id == "Roof_BR") continue;
 
             float roofLeft = roof.guiRect.x;
             float roofW    = roof.guiRect.width;

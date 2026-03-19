@@ -113,6 +113,7 @@
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/RoofSnowMaskController.cs" />
     <Compile Include="Assets/Scripts/MockHudCanvas.cs" />
+    <Compile Include="Assets/Scripts/SnowStrip2D.cs" />
     <Compile Include="Assets/Scripts/DevelopmentStepTracker.cs" />
     <Compile Include="Assets/Scripts/SnowScoreDisplayUI.cs" />
     <Compile Include="Assets/Scripts/RoofSnowAngleProbe.cs" />

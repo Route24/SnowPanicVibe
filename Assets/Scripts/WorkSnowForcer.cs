@@ -194,11 +194,18 @@ public class WorkSnowForcer : MonoBehaviour
             host.AddComponent<WorkSnowForcer>();
         }
 
-        // SnowStrip V2 を同じ GameObject に追加（下段3軒: BL/BM/BR 管理）
+        // SnowStrip V2 を同じ GameObject に追加（全6軒管理）
         if (host.GetComponent<SnowStripV2>() == null)
         {
             host.AddComponent<SnowStripV2>();
             Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for ALL6 roofs");
+        }
+
+        // SnowStrip 2D を追加（Roof_BR 専用・2Dマスク方式プロトタイプ）
+        if (host.GetComponent<SnowStrip2D>() == null)
+        {
+            host.AddComponent<SnowStrip2D>();
+            Debug.Log("[2D_BOOTSTRAP] SnowStrip2D added for Roof_BR");
         }
 
         Debug.Log("[ALL6_SNOW_FIT] Bootstrap scene=" +
