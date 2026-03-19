@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
+// recompile trigger 2026-03-19
 
 /// <summary>
 /// WORK_SNOW シーン専用。
@@ -155,6 +156,13 @@ public class WorkSnowForcer : MonoBehaviour
         public int   brushIdx; // ブラシ種類（0〜4）
     }
     readonly List<SnowHole>[] _snowHoles = new List<SnowHole>[6];
+
+    // ── 表示雪一時停止フラグ ──────────────────────────────────
+    // true にすると OnGUI の屋根雪帯描画をスキップする（落雪ロジック確認モード）
+    // Inspector から切り替え可能。デフォルト false（通常表示）
+    [Header("Debug")]
+    [Tooltip("true=屋根表示雪OFF（落雪ロジック確認モード）")]
+    public bool debugHideRoofSnow = false;
 
     [System.Serializable] class V2 { public float x, y; }
     [System.Serializable] class RoofEntry
@@ -558,11 +566,31 @@ public class WorkSnowForcer : MonoBehaviour
     void Update()
     {
         if (!_applied) Apply();
+        // RoofGuide_* Image を毎フレーム確実に OFF にする
+        // Apply() は _applied=true になると呼ばれなくなるため、ここで保証する
+        EnsureRoofGuideImagesOff();
         if (!Application.isPlaying) return;
         if (!_roofsReady) BuildRoofData();
         HandleTap();
         UpdatePieces();
         UpdateSmoke();
+    }
+
+    // RoofGuide_* の Image コンポーネントを必ず非表示にする
+    // シーン保存時に enabled=true で残っていても、毎フレーム上書きして消す
+    void EnsureRoofGuideImagesOff()
+    {
+        foreach (var (_, guideId) in RoofPairs)
+        {
+            var go = GameObject.Find(guideId);
+            if (go == null) continue;
+            var img = go.GetComponent<Image>();
+            if (img != null && img.enabled)
+            {
+                img.enabled = false;
+                Debug.Log($"[ROOF_GUIDE_IMAGE_OFF] id={guideId} forced_off=YES");
+            }
+        }
     }
 
     // ── 6軒の屋根雪 Canvas Image を更新 ─────────────────────────
@@ -802,13 +830,22 @@ public class WorkSnowForcer : MonoBehaviour
             SyncSnowFill(ri);
             float prev = _roofs[ri].snowFill;
 
-            // ── 積雪0なら雪片生成をブロック ──────────────────────────
-            bool spawnBlocked = (prev <= 0f);
-            Debug.Log($"[SNOW_REMAIN_BEFORE_TAP] roof={_roofs[ri].id} remain_before={prev:F2}");
+            // ── タップ位置の列インデックスを先に計算（spawn判定に使う）──
+            float tapLocalXPre = (guiPos.x - _roofs[ri].guiRect.x) / _roofs[ri].guiRect.width;
+            tapLocalXPre = Mathf.Clamp01(tapLocalXPre);
+            int tapColPre = Mathf.Clamp(Mathf.FloorToInt(tapLocalXPre * SNOW_COLS), 0, SNOW_COLS - 1);
+            float tapColFill = (_roofs[ri].snowCols != null) ? _roofs[ri].snowCols[tapColPre] : prev;
+
+            // ── 積雪0判定: タップ列の snowCols 値で厳密判定 ──────────
+            // 全体平均(prev)ではなく、実際に叩いた列の残雪量で判断する
+            bool spawnBlocked = (tapColFill <= 0f);
+            Debug.Log($"[SNOW_REMAIN_BEFORE_TAP] roof={_roofs[ri].id} remain_before={prev:F2}" +
+                      $" tap_col={tapColPre} tap_col_fill={tapColFill:F2}");
             if (spawnBlocked)
             {
                 Debug.Log($"[SNOW_SPAWN_BLOCKED_EMPTY] roof={_roofs[ri].id}" +
-                          $" remain_before={prev:F2} spawn_blocked=true no_pieces_spawned=YES");
+                          $" tap_col={tapColPre} tap_col_fill={tapColFill:F2}" +
+                          $" spawn_blocked=true no_pieces_spawned=YES");
                 break;
             }
 
@@ -1239,7 +1276,8 @@ public class WorkSnowForcer : MonoBehaviour
         if (_whiteTex == null) return;
 
         // ① 屋根雪帯（前縁崩し + 厚みムラ）
-        if (_roofsReady)
+        // debugHideRoofSnow=true のとき屋根表示雪をスキップ（落雪ロジック確認モード）
+        if (_roofsReady && !debugHideRoofSnow)
         {
             for (int ri = 0; ri < _roofs.Length; ri++)
             {
