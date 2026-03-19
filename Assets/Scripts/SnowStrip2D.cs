@@ -2,6 +2,9 @@ using System.IO;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 /// <summary>
 /// SnowStrip 2D — Roof_BR 専用プロトタイプ
@@ -10,6 +13,9 @@ using UnityEngine.UI;
 /// タップ位置を中心とした円形ブラシで減算する。
 /// 描画は _snow 配列から毎フレーム Texture2D を再生成して OnGUI で表示。
 /// 円形にくり抜かれる見た目を実現する。
+///
+/// Input System 両対応（新旧 API 自動切替）。
+/// SnowStripV2 の Roof_BR 処理を完全に引き継ぐ。
 /// </summary>
 [DefaultExecutionOrder(11)] // SnowStripV2 の後
 public class SnowStrip2D : MonoBehaviour
@@ -82,7 +88,8 @@ public class SnowStrip2D : MonoBehaviour
         }
 
         Debug.Log($"[2D_ALIVE] SnowStrip2D started. roof={TARGET_ROOF_ID}" +
-                  $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}");
+                  $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}" +
+                  $" screen=({Screen.width}x{Screen.height})");
 
         BuildRoofData();
     }
@@ -93,7 +100,12 @@ public class SnowStrip2D : MonoBehaviour
 
         if (!_ready)
         {
-            if (Screen.width > 1 && Screen.height > 1) BuildRoofData();
+            if (Screen.width > 1 && Screen.height > 1)
+            {
+                BuildRoofData();
+                if (!_ready)
+                    Debug.Log($"[2D_NOT_READY] SnowStrip2D not ready yet. screen=({Screen.width}x{Screen.height})");
+            }
             return;
         }
 
@@ -114,14 +126,26 @@ public class SnowStrip2D : MonoBehaviour
     // ── 屋根データ構築 ────────────────────────────────────────
     void BuildRoofData()
     {
-        if (!File.Exists(CALIB_PATH)) return;
+        if (!File.Exists(CALIB_PATH))
+        {
+            Debug.LogWarning($"[2D_BUILD_FAIL] calib not found: {CALIB_PATH}");
+            return;
+        }
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
-        if (sd == null || sd.roofs == null) return;
+        if (sd == null || sd.roofs == null)
+        {
+            Debug.LogWarning("[2D_BUILD_FAIL] calib parse failed");
+            return;
+        }
 
         RoofEntry entry = null;
         foreach (var r in sd.roofs)
             if (r.id == TARGET_ROOF_ID) { entry = r; break; }
-        if (entry == null || !entry.confirmed) return;
+        if (entry == null || !entry.confirmed)
+        {
+            Debug.LogWarning($"[2D_BUILD_FAIL] entry not found or not confirmed for {TARGET_ROOF_ID}");
+            return;
+        }
 
         float minX = Mathf.Min(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
         float maxX = Mathf.Max(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
@@ -180,13 +204,34 @@ public class SnowStrip2D : MonoBehaviour
         bool pressed = false;
         Vector2 screenPos = Vector2.zero;
 
+#if ENABLE_INPUT_SYSTEM
+        // 新 Input System
+        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            screenPos = Mouse.current.position.ReadValue();
+            pressed = true;
+        }
+        else if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+        {
+            screenPos = Touchscreen.current.primaryTouch.position.ReadValue();
+            pressed = true;
+        }
+#else
+        // 旧 Input Manager フォールバック
         if (Input.GetMouseButtonDown(0))
             { screenPos = Input.mousePosition; pressed = true; }
         else if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
             { screenPos = Input.GetTouch(0).position; pressed = true; }
+#endif
         if (!pressed) return;
 
+        // Input はスクリーン左下原点、OnGUI は左上原点
         Vector2 guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
+
+        Debug.Log($"[2D_TAP_RAW] screenPos=({screenPos.x:F0},{screenPos.y:F0})" +
+                  $" guiPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                  $" guiRect={_guiRect} contains={_guiRect.Contains(guiPos)}");
+
         if (!_guiRect.Contains(guiPos)) return;
 
         _tapCount++;
