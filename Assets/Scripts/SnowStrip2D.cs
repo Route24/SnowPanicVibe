@@ -207,14 +207,24 @@ public class SnowStrip2D : MonoBehaviour
 
         float centerBefore = _snow[cx, cy];
 
-        // 全体の平均（spawn判定）
+        // 全体の平均（fill=0 全滅チェック用）
         float fillBefore = CalcFill();
 
-        if (fillBefore <= 0f)
+        // ── 露出セルのハードストップ ──────────────────────────
+        // center cell が空（≒ 屋根が露出）なら即ブロック。
+        // 全体に雪が残っていても、叩いた場所が露出しているなら落雪しない。
+        const float EXPOSED_THRESHOLD = 0.05f;
+        bool centerExposed = centerBefore <= EXPOSED_THRESHOLD;
+
+        if (centerExposed || fillBefore <= 0f)
         {
-            _lastInfo = $"TAP#{_tapCount} fill=0 spawned=NO";
+            _lastSpawned = false;
+            _lastInfo = $"TAP#{_tapCount} center={centerBefore:F2} exposed=YES spawned=NO";
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" fillBefore={fillBefore:F3} spawned=NO [2D_ALL_EMPTY]");
+                      $" gridCenter=({cx},{cy})" +
+                      $" centerSnow_before={centerBefore:F3} exposed=YES" +
+                      $" centerExposed={centerExposed} fillBefore={fillBefore:F3}" +
+                      $" deltaApplied=0 spawned=NO neighborPropagation=NO [2D_EXPOSED_STOP]");
             return;
         }
 
@@ -291,9 +301,10 @@ public class SnowStrip2D : MonoBehaviour
                   $" guiPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" gridCenter=({cx},{cy})" +
                   $" brushR={BRUSH_R} hitCells={hitCells}" +
-                  $" centerBefore={centerBefore:F3} centerAfter={centerAfter:F3}" +
+                  $" centerSnow_before={centerBefore:F3} centerSnow_after={centerAfter:F3}" +
                   $" centerDelta={centerDelta:F3} totalDelta={totalDelta:F3}" +
                   $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
+                  $" exposed=NO neighborPropagation=YES" +
                   $" spawned={(spawned?spawnCount.ToString():"NO")}");
 
         if (fillAfter <= 0f)
