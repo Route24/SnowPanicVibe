@@ -4,16 +4,16 @@ using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// SnowStrip V2 — Single Source of Truth 設計（全6軒・局所減少対応）
+/// SnowStrip V2 — Single Source of Truth 設計（全6軒・円形ブラシ減少）
 ///
 /// 対象: Roof_TL / Roof_TM / Roof_TR / Roof_BL / Roof_BM / Roof_BR
 ///
 /// 設計原則:
-///   - 各屋根ごとに snowCols[] (列ごとの残雪量 0〜1) が唯一の真実。
-///   - snowFill は snowCols の平均値（spawn判定・デバッグ表示用）。
-///   - タップ → タップ列を中心にガウス分布で snowCols 減少 → 落雪生成。
-///   - 全列平均 <= 0 なら絶対に落雪しない。
-///   - 表示は列ごとの高さで描画（帯状にならない）。
+///   - 各屋根ごとに snowGrid[col, row] が唯一の真実（2Dグリッド）。
+///   - snowFill は snowGrid の全セル平均（spawn判定・デバッグ用）。
+///   - タップ → タップ位置を中心とした円形ブラシで snowGrid 減少 → 落雪生成。
+///   - 中心セルが空なら spawned=NO。
+///   - 表示は列ごとに行最大値を使って高さを決定。
 /// </summary>
 [DefaultExecutionOrder(10)]
 public class SnowStripV2 : MonoBehaviour
@@ -23,7 +23,13 @@ public class SnowStripV2 : MonoBehaviour
     const float  UNDER_EAVE_OFFSET = 0.10f;
     const float  THICK_RATIO       = 0.65f;
     const float  EXPAND_Y_MAX      = 14f;
-    const int    SNOW_COLS         = 12;   // 列数（局所減少の解像度）
+
+    // 2Dグリッド解像度
+    const int    GRID_COLS = 20;  // X方向（幅）
+    const int    GRID_ROWS = 1;   // Y方向は1行固定（X軸のみ管理・確実に減少）
+
+    // 円形ブラシ半径（一時無効化: 中心1セルのみ）
+    const float  BRUSH_RADIUS = 0.6f;  // 半径を1列未満にして中心セルのみに限定
 
     // V2 管理対象屋根（全6軒）
     static readonly string[] V2_ROOF_IDS  = { "Roof_TL", "Roof_TM", "Roof_TR", "Roof_BL", "Roof_BM", "Roof_BR" };
@@ -45,31 +51,43 @@ public class SnowStripV2 : MonoBehaviour
         public Vector2  downhillDir;
         public bool     ready;
 
-        // 列ごとの残雪量（唯一の真実）
-        public float[]  snowCols = new float[SNOW_COLS];
-        // snowCols の平均（spawn判定・デバッグ用）
-        public float    snowFill => CalcFill(snowCols);
+        // 2Dグリッド（唯一の真実）: [col, row]  col=X方向, row=Y方向（0=表面）
+        public float[,] snowGrid = new float[GRID_COLS, GRID_ROWS];
+        // snowGrid の全セル平均（spawn判定・デバッグ用）
+        public float snowFill
+        {
+            get
+            {
+                float s = 0f;
+                for (int c = 0; c < GRID_COLS; c++)
+                    for (int r = 0; r < GRID_ROWS; r++)
+                        s += snowGrid[c, r];
+                return s / (GRID_COLS * GRID_ROWS);
+            }
+        }
+        // 列ごとの最大値（表示高さ計算用）
+        public float ColMax(int c)
+        {
+            float m = 0f;
+            for (int r = 0; r < GRID_ROWS; r++)
+                m = Mathf.Max(m, snowGrid[c, r]);
+            return m;
+        }
 
         public int      tapCount      = 0;
         public string   lastSpawnInfo = "---";
 
         public List<Piece> pieces = new List<Piece>();
 
-        public void InitCols()
+        public void InitGrid()
         {
-            for (int c = 0; c < SNOW_COLS; c++) snowCols[c] = 1f;
-        }
-
-        static float CalcFill(float[] cols)
-        {
-            float sum = 0f;
-            for (int c = 0; c < SNOW_COLS; c++) sum += cols[c];
-            return sum / SNOW_COLS;
+            for (int c = 0; c < GRID_COLS; c++)
+                for (int r = 0; r < GRID_ROWS; r++)
+                    snowGrid[c, r] = 1f;
         }
     }
 
     readonly RoofState[] _roofs = new RoofState[6];
-
     Texture2D _whiteTex;
 
     // ── Serialize 用 ──────────────────────────────────────────
@@ -92,7 +110,7 @@ public class SnowStripV2 : MonoBehaviour
         for (int i = 0; i < 6; i++)
         {
             _roofs[i] = new RoofState { id = V2_ROOF_IDS[i] };
-            _roofs[i].InitCols();
+            _roofs[i].InitGrid();
         }
     }
 
@@ -106,10 +124,9 @@ public class SnowStripV2 : MonoBehaviour
         if (!Application.isPlaying) return;
 
         Debug.Log($"[V2_ALIVE] SnowStripV2 started. targets=ALL6(TL/TM/TR/BL/BM/BR)" +
-                  $" scene={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}" +
-                  $" gameObject={gameObject.name}");
+                  $" grid={GRID_COLS}x{GRID_ROWS} brushRadius={BRUSH_RADIUS}" +
+                  $" scene={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}");
 
-        // RoofGuide_* の Image を完全無効化（全6軒）
         for (int i = 0; i < V2_GUIDE_IDS.Length; i++)
         {
             var go = GameObject.Find(V2_GUIDE_IDS[i]);
@@ -190,22 +207,15 @@ public class SnowStripV2 : MonoBehaviour
         }
     }
 
-    // ── タップ処理 ────────────────────────────────────────────
+    // ── タップ処理（円形ブラシ）────────────────────────────────
     void HandleTap()
     {
         bool pressed = false;
         Vector2 screenPos = Vector2.zero;
 
-        if (Input.GetMouseButtonDown(0))
-        {
-            screenPos = Input.mousePosition;
-            pressed   = true;
-        }
+        if (Input.GetMouseButtonDown(0))        { screenPos = Input.mousePosition; pressed = true; }
         else if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
-        {
-            screenPos = Input.GetTouch(0).position;
-            pressed   = true;
-        }
+                                                { screenPos = Input.GetTouch(0).position; pressed = true; }
         if (!pressed) return;
 
         Vector2 guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
@@ -219,69 +229,87 @@ public class SnowStripV2 : MonoBehaviour
             float fillBefore = roof.snowFill;
             roof.tapCount++;
 
-            // ── タップ列を計算 ──────────────────────────────
+            // ── タップ位置 → グリッド列を計算（X軸のみ）──────────
             float localX  = (guiPos.x - roof.guiRect.x) / roof.guiRect.width;
-            int   tapCol  = Mathf.Clamp(Mathf.FloorToInt(localX * SNOW_COLS), 0, SNOW_COLS - 1);
+            float tapGX   = Mathf.Clamp01(localX) * GRID_COLS;
 
-            // ── 局所範囲（tapCol ±1 列）の残雪を確認 ────────
-            // フォールバック禁止: 局所範囲外の雪は関与させない
-            const int LOCAL_HALF = 1; // タップ列から左右1列 = 計3列が局所範囲
-            int localMin = Mathf.Max(0, tapCol - LOCAL_HALF);
-            int localMax = Mathf.Min(SNOW_COLS - 1, tapCol + LOCAL_HALF);
+            // Y軸は1行固定（GRID_ROWS=1 のため常に row=0）
+            float tapGY   = 0.5f;  // 行0の中心
+            int   centerCol = Mathf.Clamp(Mathf.FloorToInt(tapGX), 0, GRID_COLS - 1);
+            int   centerRow = 0;
 
-            float localSnowBefore = 0f;
-            for (int c = localMin; c <= localMax; c++)
-                localSnowBefore += roof.snowCols[c];
-
-            if (localSnowBefore <= 0f)
+            // ── 中心セルが空なら即ブロック ─────────────────────
+            float centerSnowBefore = roof.snowGrid[centerCol, centerRow];
+            if (centerSnowBefore <= 0f)
             {
-                // 局所範囲が空 → 遠方フォールバックなしで即ブロック
-                roof.lastSpawnInfo = $"TAP#{roof.tapCount} local=0.00 spawned=NO";
+                roof.lastSpawnInfo = $"TAP#{roof.tapCount} center=0.00 spawned=NO";
                 Debug.Log($"[V2_TAP#{roof.tapCount}] roof={roof.id}" +
                           $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                          $" tapCol={tapCol} localRange={localMin}-{localMax}(±{LOCAL_HALF}cols)" +
-                          $" localSnow_before={localSnowBefore:F3} localSnow_after={localSnowBefore:F3}" +
-                          $" maxDist={LOCAL_HALF} spawned=NO fallback_used=NO [V2_SPAWN_BLOCKED]");
+                          $" centerCell=({centerCol},{centerRow}) centerSnow={centerSnowBefore:F3}" +
+                          $" brushRadius={BRUSH_RADIUS} spawned=NO [V2_SPAWN_BLOCKED]");
                 break;
             }
 
-            // ── 局所範囲内のみガウス分布で減少（範囲外は触らない）──
-            // sigma = LOCAL_HALF * 0.6 = 0.6列分の広がり（中心集中・隣接は小）
-            float sigma      = LOCAL_HALF * 0.6f;
-            float totalDelta = 0f;
-            float[] deltas   = new float[SNOW_COLS]; // 局所外は 0 のまま
-
+            // ── 円形ブラシで減少 ────────────────────────────────
             int   spawnCount    = Random.Range(1, 4);
             float deltaPerPiece = Random.Range(0.06f, 0.12f);
             float rawDelta      = deltaPerPiece * spawnCount;
 
-            // 局所範囲内のみガウス重みを計算
+            // ブラシが影響するセル範囲（bounding box）
+            int cMin = Mathf.Max(0, Mathf.FloorToInt(tapGX - BRUSH_RADIUS));
+            int cMax = Mathf.Min(GRID_COLS - 1, Mathf.CeilToInt(tapGX + BRUSH_RADIUS));
+            int rMin = Mathf.Max(0, Mathf.FloorToInt(tapGY - BRUSH_RADIUS));
+            int rMax = Mathf.Min(GRID_ROWS - 1, Mathf.CeilToInt(tapGY + BRUSH_RADIUS));
+
+            // 各セルへの重みを計算（半径外=0、線形フォールオフ）
             float weightSum = 0f;
-            for (int c = localMin; c <= localMax; c++)
+            float[,] weights = new float[GRID_COLS, GRID_ROWS];
+            int affectedCount = 0;
+
+            for (int c = cMin; c <= cMax; c++)
+            for (int r = rMin; r <= rMax; r++)
             {
-                float dist = c - tapCol;
-                float w    = Mathf.Exp(-0.5f * (dist / sigma) * (dist / sigma));
-                deltas[c]  = w;
+                // セル中心 vs タップ位置の距離（グリッド単位）
+                float dc = (c + 0.5f) - tapGX;
+                float dr = (r + 0.5f) - tapGY;
+                float dist = Mathf.Sqrt(dc * dc + dr * dr);
+
+                if (dist >= BRUSH_RADIUS) continue;
+
+                // 線形フォールオフ: center=1.0, edge→0
+                float w = 1f - (dist / BRUSH_RADIUS);
+                // smoothstep でより中心集中に
+                w = w * w * (3f - 2f * w);
+
+                weights[c, r] = w;
                 weightSum += w;
+                affectedCount++;
             }
-            // 局所範囲内のみ減少適用
-            for (int c = localMin; c <= localMax; c++)
+
+            // 重みに基づいて各セルを減少
+            float totalDelta      = 0f;
+            float centerDeltaActual = 0f;
+            float edgeDeltaMax   = 0f;
+
+            for (int c = cMin; c <= cMax; c++)
+            for (int r = rMin; r <= rMax; r++)
             {
-                float d = (deltas[c] / weightSum) * rawDelta;
-                d = Mathf.Min(d, roof.snowCols[c]);
-                deltas[c]        = d;
-                totalDelta      += d;
-                roof.snowCols[c] = Mathf.Max(0f, roof.snowCols[c] - d);
+                if (weights[c, r] <= 0f) continue;
+
+                float d = (weights[c, r] / weightSum) * rawDelta;
+                d = Mathf.Min(d, roof.snowGrid[c, r]);
+                roof.snowGrid[c, r] = Mathf.Max(0f, roof.snowGrid[c, r] - d);
+                totalDelta += d;
+
+                if (c == centerCol && r == centerRow) centerDeltaActual = d;
+                else edgeDeltaMax = Mathf.Max(edgeDeltaMax, d);
             }
 
-            float localSnowAfter = 0f;
-            for (int c = localMin; c <= localMax; c++)
-                localSnowAfter += roof.snowCols[c];
-
+            float centerSnowAfter = roof.snowGrid[centerCol, centerRow];
             float fillAfter = roof.snowFill;
 
-            // ── 落雪生成（局所で実際に減った場合のみ）─────────
-            bool spawned = totalDelta > 0.001f;
+            // ── 落雪生成（中心で実際に減った場合のみ）─────────
+            bool spawned = centerDeltaActual > 0.001f;
             if (spawned)
             {
                 float roofW  = roof.guiRect.width;
@@ -290,8 +318,8 @@ public class SnowStripV2 : MonoBehaviour
 
                 for (int i = 0; i < spawnCount; i++)
                 {
-                    float jx  = Random.Range(-roofW * 0.15f, roofW * 0.15f);
-                    float sz  = Mathf.Clamp(roofW * Random.Range(0.12f, 0.28f), 20f, 70f);
+                    float jx  = Random.Range(-roofW * 0.10f, roofW * 0.10f);
+                    float sz  = Mathf.Clamp(roofW * Random.Range(0.10f, 0.22f), 16f, 60f);
                     float spd = Random.Range(80f, 200f);
 
                     roof.pieces.Add(new Piece
@@ -305,20 +333,21 @@ public class SnowStripV2 : MonoBehaviour
                 }
             }
 
-            roof.lastSpawnInfo = $"TAP#{roof.tapCount} local={localSnowAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
+            roof.lastSpawnInfo = $"TAP#{roof.tapCount} ctr={centerSnowAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
 
             Debug.Log($"[V2_TAP#{roof.tapCount}] roof={roof.id}" +
                       $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                      $" centerCell={tapCol} affectedCells={localMin}-{localMax}(±{LOCAL_HALF}cols)" +
-                      $" maxDist={LOCAL_HALF}" +
-                      $" localSnow_before={localSnowBefore:F3} localSnow_after={localSnowAfter:F3}" +
+                      $" centerCell=({centerCol},{centerRow})" +
+                      $" brushRadius={BRUSH_RADIUS} affectedCells={affectedCount}" +
+                      $" centerSnow_before={centerSnowBefore:F3} centerSnow_after={centerSnowAfter:F3}" +
+                      $" centerDelta={centerDeltaActual:F3} edgeDeltaMax={edgeDeltaMax:F3}" +
                       $" fill_before={fillBefore:F3} fill_after={fillAfter:F3}" +
-                      $" totalDelta={totalDelta:F3} spawned={(spawned ? spawnCount.ToString() : "NO")} fallback_used=NO");
+                      $" spawned={(spawned ? spawnCount.ToString() : "NO")}");
 
             if (fillAfter <= 0f)
                 Debug.Log($"[V2_TAP#{roof.tapCount}] roof={roof.id} fill=0.000 all_removed=YES spawned=NO_next_tap");
 
-            break; // 1タップ = 1軒のみ処理
+            break;
         }
     }
 
@@ -359,8 +388,8 @@ public class SnowStripV2 : MonoBehaviour
         if (!Application.isPlaying) return;
         if (_whiteTex == null) return;
 
-        var debugColor = new Color(0.0f, 0.9f, 0.85f, 0.90f); // シアン（確認用）
-        var topLineColor = new Color(0.0f, 1f, 1f, 1f);
+        var debugColor   = new Color(0.0f, 0.9f, 0.85f, 0.90f); // シアン
+        var topLineColor = new Color(0.0f, 1f,   1f,   1f);
 
         var style = new GUIStyle(GUI.skin.label)
         {
@@ -376,18 +405,17 @@ public class SnowStripV2 : MonoBehaviour
 
             float roofLeft = roof.guiRect.x;
             float roofW    = roof.guiRect.width;
-            float colW     = roofW / SNOW_COLS;
-            float maxThickH = roof.guiRect.height * THICK_RATIO + EXPAND_Y_MAX;
+            float colW     = roofW / GRID_COLS;
 
             bool anySnow = false;
 
-            // ── 列ごとに雪帯を描画（局所表示）────────────────
-            for (int c = 0; c < SNOW_COLS; c++)
+            // ── 列ごとに ColMax を使って高さを決定して描画 ────
+            for (int c = 0; c < GRID_COLS; c++)
             {
-                float fill = roof.snowCols[c];
+                float fill = roof.ColMax(c);  // 列の行最大値
+
                 if (fill <= 0f)
                 {
-                    // 列が空: 背景色で上書き（トップライン消去）
                     GUI.color = new Color(0.45f, 0.55f, 0.72f, 0.90f);
                     GUI.DrawTexture(new Rect(roofLeft + c * colW, roof.guiRect.y - 18f, colW + 1f, 22f), _whiteTex);
                     continue;
@@ -404,13 +432,11 @@ public class SnowStripV2 : MonoBehaviour
                 GUI.DrawTexture(new Rect(roofLeft + c * colW, colTop, colW + 1f, thickH), _whiteTex);
             }
 
-            // 上端ライン（雪がある場合のみ）
             if (anySnow)
             {
-                // 各列トップに細いシアンラインを引く
-                for (int c = 0; c < SNOW_COLS; c++)
+                for (int c = 0; c < GRID_COLS; c++)
                 {
-                    float fill = roof.snowCols[c];
+                    float fill = roof.ColMax(c);
                     if (fill <= 0f) continue;
                     float expandY = EXPAND_Y_MAX * fill;
                     float colTop  = roof.guiRect.y - expandY;
@@ -428,13 +454,13 @@ public class SnowStripV2 : MonoBehaviour
                 GUI.DrawTexture(new Rect(p.pos.x - half, p.pos.y - half, p.size, p.size), _whiteTex);
             }
 
-            // ── 黄色 fill ゲージ（屋根左端）──────────────────
+            // ── 黄色 fill ゲージ ──────────────────────────────
             float fillAvg = roof.snowFill;
             GUI.color = new Color(1f, 1f, 0f, 0.85f);
             float barH = roof.guiRect.height * fillAvg;
             GUI.DrawTexture(new Rect(roof.guiRect.x - 6f, roof.guiRect.yMax - barH, 5f, barH), _whiteTex);
 
-            // ── デバッグテキスト（屋根直下）──────────────────
+            // ── デバッグテキスト ──────────────────────────────
             float tx = roof.guiRect.x;
             float ty = roof.guiRect.yMax + 4f;
 
