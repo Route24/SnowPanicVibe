@@ -1,61 +1,83 @@
 using System.IO;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// SnowStrip V2 — Single Source of Truth 設計（1軒限定・最小実装）
+/// SnowStrip V2 — Single Source of Truth 設計（全6軒・局所減少対応）
 ///
-/// 対象: Roof_BR（下段右）のみ。他5軒は WorkSnowForcer V1 が管理する。
+/// 対象: Roof_TL / Roof_TM / Roof_TR / Roof_BL / Roof_BM / Roof_BR
 ///
 /// 設計原則:
-///   - snowFill (0〜1) が唯一の真実。
-///   - 表示雪は snowFill からのみ決まる。外から書き換えない。
-///   - タップ → snowFill 減少 → 落雪生成 の一方通行。
-///   - fill=0 なら絶対に落雪しない。
-///   - RoofGuide_BR Image は完全に無効化し、OnGUI で描画する。
+///   - 各屋根ごとに snowCols[] (列ごとの残雪量 0〜1) が唯一の真実。
+///   - snowFill は snowCols の平均値（spawn判定・デバッグ表示用）。
+///   - タップ → タップ列を中心にガウス分布で snowCols 減少 → 落雪生成。
+///   - 全列平均 <= 0 なら絶対に落雪しない。
+///   - 表示は列ごとの高さで描画（帯状にならない）。
 /// </summary>
-[DefaultExecutionOrder(10)] // WorkSnowForcer より少し後に実行
+[DefaultExecutionOrder(10)]
 public class SnowStripV2 : MonoBehaviour
 {
     // ── 定数 ──────────────────────────────────────────────────
-    const string CALIB_PATH          = "Assets/Art/RoofCalibrationData.json";
-    const string TARGET_ROOF_ID      = "Roof_BR";
-    const string TARGET_GUIDE_ID     = "RoofGuide_BR";
-    const float  UNDER_EAVE_OFFSET   = 0.10f;  // eaveGuiY オフセット（calib 座標）
-    const float  THICK_RATIO         = 0.65f;  // 雪帯高さ / 屋根高さ
-    const float  EXPAND_Y_MAX        = 14f;    // fill=1 時の上方拡張 px
+    const string CALIB_PATH        = "Assets/Art/RoofCalibrationData.json";
+    const float  UNDER_EAVE_OFFSET = 0.10f;
+    const float  THICK_RATIO       = 0.65f;
+    const float  EXPAND_Y_MAX      = 14f;
+    const int    SNOW_COLS         = 12;   // 列数（局所減少の解像度）
 
-    static readonly Color SnowWhite = new Color(0.92f, 0.95f, 1f);
+    // V2 管理対象屋根（全6軒）
+    static readonly string[] V2_ROOF_IDS  = { "Roof_TL", "Roof_TM", "Roof_TR", "Roof_BL", "Roof_BM", "Roof_BR" };
+    static readonly string[] V2_GUIDE_IDS = { "RoofGuide_TL", "RoofGuide_TM", "RoofGuide_TR", "RoofGuide_BL", "RoofGuide_BM", "RoofGuide_BR" };
 
-    // ── 内部状態 ──────────────────────────────────────────────
-    float   _snowFill  = 1f;   // 唯一の残雪量（0〜1）。これだけを真実とする。
-    bool    _ready     = false;
-    int     _tapCount  = 0;    // タップ累計カウント（確認ログ用）
-    string  _lastSpawnInfo = "---"; // 直近タップの spawn 結果テキスト
-    Rect    _guiRect;          // 屋根の OnGUI 座標矩形
-    float   _eaveGuiY;         // 落雪着地 Y（OnGUI 座標）
-    float   _eaveGuiX;         // 落雪着地 X（OnGUI 座標）
-    Vector2 _downhillDir;      // 正規化済み下り方向ベクトル
-    Texture2D _whiteTex;
-
-    // ── 落下雪塊 ──────────────────────────────────────────────
+    // ── 屋根ごとの状態 ────────────────────────────────────────
     struct Piece
     {
-        public Vector2 pos;
-        public Vector2 vel;
-        public float   size;
-        public float   life;
-        public float   alpha;
+        public Vector2 pos, vel;
+        public float   size, life, alpha;
     }
-    readonly System.Collections.Generic.List<Piece> _pieces
-        = new System.Collections.Generic.List<Piece>();
+
+    class RoofState
+    {
+        public string   id;
+        public Rect     guiRect;
+        public float    eaveGuiY;
+        public float    eaveGuiX;
+        public Vector2  downhillDir;
+        public bool     ready;
+
+        // 列ごとの残雪量（唯一の真実）
+        public float[]  snowCols = new float[SNOW_COLS];
+        // snowCols の平均（spawn判定・デバッグ用）
+        public float    snowFill => CalcFill(snowCols);
+
+        public int      tapCount      = 0;
+        public string   lastSpawnInfo = "---";
+
+        public List<Piece> pieces = new List<Piece>();
+
+        public void InitCols()
+        {
+            for (int c = 0; c < SNOW_COLS; c++) snowCols[c] = 1f;
+        }
+
+        static float CalcFill(float[] cols)
+        {
+            float sum = 0f;
+            for (int c = 0; c < SNOW_COLS; c++) sum += cols[c];
+            return sum / SNOW_COLS;
+        }
+    }
+
+    readonly RoofState[] _roofs = new RoofState[6];
+
+    Texture2D _whiteTex;
 
     // ── Serialize 用 ──────────────────────────────────────────
-    [System.Serializable] class V2 { public float x, y; }
+    [System.Serializable] class V2Coord { public float x, y; }
     [System.Serializable] class RoofEntry
     {
         public string id;
-        public V2 topLeft, topRight, bottomRight, bottomLeft;
+        public V2Coord topLeft, topRight, bottomRight, bottomLeft;
         public bool confirmed;
     }
     [System.Serializable] class SaveData { public RoofEntry[] roofs; }
@@ -66,6 +88,12 @@ public class SnowStripV2 : MonoBehaviour
         _whiteTex = new Texture2D(1, 1);
         _whiteTex.SetPixel(0, 0, Color.white);
         _whiteTex.Apply();
+
+        for (int i = 0; i < 6; i++)
+        {
+            _roofs[i] = new RoofState { id = V2_ROOF_IDS[i] };
+            _roofs[i].InitCols();
+        }
     }
 
     void OnDestroy()
@@ -77,93 +105,94 @@ public class SnowStripV2 : MonoBehaviour
     {
         if (!Application.isPlaying) return;
 
-        Debug.Log($"[V2_ALIVE] SnowStripV2 started. target={TARGET_ROOF_ID}" +
+        Debug.Log($"[V2_ALIVE] SnowStripV2 started. targets=ALL6(TL/TM/TR/BL/BM/BR)" +
                   $" scene={UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}" +
                   $" gameObject={gameObject.name}");
 
-        // RoofGuide_BR の Image を完全無効化（トップライン雪の原因を根本から断つ）
-        var guideGo = GameObject.Find(TARGET_GUIDE_ID);
-        if (guideGo != null)
+        // RoofGuide_* の Image を完全無効化（全6軒）
+        for (int i = 0; i < V2_GUIDE_IDS.Length; i++)
         {
-            var img = guideGo.GetComponent<Image>();
-            if (img != null)
-            {
-                img.enabled = false;
-                img.color   = Color.clear;
-                Debug.Log($"[V2_GUIDE_IMAGE_OFF] id={TARGET_GUIDE_ID} forced_off=YES");
-            }
+            var go = GameObject.Find(V2_GUIDE_IDS[i]);
+            if (go == null) continue;
+            var img = go.GetComponent<Image>();
+            if (img == null) continue;
+            img.enabled = false;
+            img.color   = Color.clear;
+            Debug.Log($"[V2_GUIDE_IMAGE_OFF] id={V2_GUIDE_IDS[i]} forced_off=YES");
         }
 
-        BuildRoofData();
+        BuildAllRoofData();
     }
 
     void Update()
     {
         if (!Application.isPlaying) return;
-        if (!_ready)
+
+        bool anyNotReady = false;
+        for (int i = 0; i < 6; i++)
+            if (!_roofs[i].ready) anyNotReady = true;
+
+        if (anyNotReady)
         {
-            // Screen.width/height が確定するまで待つ
             if (Screen.width > 1 && Screen.height > 1)
-                BuildRoofData();
+                BuildAllRoofData();
             return;
         }
 
         HandleTap();
-        UpdatePieces();
+        UpdateAllPieces();
     }
 
     // ── ルーフデータ構築 ─────────────────────────────────────
-    void BuildRoofData()
+    void BuildAllRoofData()
     {
         if (!File.Exists(CALIB_PATH)) return;
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
         if (sd == null || sd.roofs == null) return;
 
-        RoofEntry entry = null;
-        foreach (var r in sd.roofs)
-            if (r.id == TARGET_ROOF_ID) { entry = r; break; }
-        if (entry == null || !entry.confirmed) return;
+        for (int ri = 0; ri < 6; ri++)
+        {
+            string targetId = V2_ROOF_IDS[ri];
+            RoofEntry entry = null;
+            foreach (var r in sd.roofs)
+                if (r.id == targetId) { entry = r; break; }
+            if (entry == null || !entry.confirmed) continue;
 
-        float minX = Mathf.Min(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
-        float maxX = Mathf.Max(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
-        float minY = Mathf.Min(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
-        float maxY = Mathf.Max(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
+            float minX = Mathf.Min(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
+            float maxX = Mathf.Max(entry.topLeft.x, entry.topRight.x, entry.bottomRight.x, entry.bottomLeft.x);
+            float minY = Mathf.Min(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
+            float maxY = Mathf.Max(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
 
-        // calib 座標 (0〜1) → OnGUI ピクセル座標（Y はそのまま: 0=上端）
-        _guiRect = new Rect(
-            minX * Screen.width,
-            minY * Screen.height,
-            (maxX - minX) * Screen.width,
-            (maxY - minY) * Screen.height
-        );
+            var roof = _roofs[ri];
+            roof.guiRect = new Rect(
+                minX * Screen.width,
+                minY * Screen.height,
+                (maxX - minX) * Screen.width,
+                (maxY - minY) * Screen.height
+            );
 
-        float eaveCalibY = maxY + UNDER_EAVE_OFFSET;
-        _eaveGuiY = Mathf.Min(eaveCalibY * Screen.height, Screen.height - 2f);
-        _eaveGuiX = ((minX + maxX) * 0.5f) * Screen.width;
+            float eaveCalibY = maxY + UNDER_EAVE_OFFSET;
+            roof.eaveGuiY = Mathf.Min(eaveCalibY * Screen.height, Screen.height - 2f);
+            roof.eaveGuiX = ((minX + maxX) * 0.5f) * Screen.width;
 
-        // downhill ベクトル（屋根上端中心 → 下端中心）
-        float topCenterX = ((entry.topLeft.x + entry.topRight.x) * 0.5f) * Screen.width;
-        float topCenterY = ((entry.topLeft.y + entry.topRight.y) * 0.5f) * Screen.height;
-        float botCenterX = ((entry.bottomLeft.x + entry.bottomRight.x) * 0.5f) * Screen.width;
-        float botCenterY = ((entry.bottomLeft.y + entry.bottomRight.y) * 0.5f) * Screen.height;
-        var dhRaw = new Vector2(botCenterX - topCenterX, botCenterY - topCenterY);
-        float dhLen = dhRaw.magnitude;
-        _downhillDir = dhLen > 0.5f ? dhRaw.normalized : new Vector2(0f, 1f);
+            float topCX = ((entry.topLeft.x + entry.topRight.x) * 0.5f) * Screen.width;
+            float topCY = ((entry.topLeft.y + entry.topRight.y) * 0.5f) * Screen.height;
+            float botCX = ((entry.bottomLeft.x + entry.bottomRight.x) * 0.5f) * Screen.width;
+            float botCY = ((entry.bottomLeft.y + entry.bottomRight.y) * 0.5f) * Screen.height;
+            var dhRaw = new Vector2(botCX - topCX, botCY - topCY);
+            float dhLen = dhRaw.magnitude;
+            roof.downhillDir = dhLen > 0.5f ? dhRaw.normalized : new Vector2(0f, 1f);
 
-        _ready = true;
-        Debug.Log($"[V2_ROOF_READY] roof={TARGET_ROOF_ID} guiRect={_guiRect} eaveGuiY={_eaveGuiY:F1}" +
-                  $" downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
+            roof.ready = true;
+            Debug.Log($"[V2_ROOF_READY] roof={targetId} guiRect={roof.guiRect}" +
+                      $" eaveGuiY={roof.eaveGuiY:F1}" +
+                      $" downhill=({roof.downhillDir.x:F3},{roof.downhillDir.y:F3})");
+        }
     }
 
     // ── タップ処理 ────────────────────────────────────────────
-    // Single Source of Truth:
-    //   1. snowFill で判定（>0 → 落雪許可、<=0 → 完全禁止）
-    //   2. 落雪量 delta を先に決め、snowFill を減らしてから落雪生成
-    //   3. 表示は OnGUI で snowFill からのみ計算 → 同フレームで反映
     void HandleTap()
     {
-        if (!_ready) return;
-
         bool pressed = false;
         Vector2 screenPos = Vector2.zero;
 
@@ -179,93 +208,148 @@ public class SnowStripV2 : MonoBehaviour
         }
         if (!pressed) return;
 
-        // Input 座標 (左下原点) → OnGUI 座標 (左上原点)
         Vector2 guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
-        if (!_guiRect.Contains(guiPos)) return;
 
-        float fillBefore = _snowFill;
-        _tapCount++;
-
-        // ── fill=0 なら完全ブロック ─────────────────────────────
-        if (fillBefore <= 0f)
+        for (int ri = 0; ri < 6; ri++)
         {
-            _lastSpawnInfo = $"TAP#{_tapCount} fill=0.00 spawned=NO";
-            Debug.Log($"[V2_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" fill_before={fillBefore:F3} fill_after={fillBefore:F3}" +
-                      $" delta=0.000 spawned=NO reason=fill_empty [V2_SPAWN_BLOCKED]");
-            return;
-        }
+            var roof = _roofs[ri];
+            if (!roof.ready) continue;
+            if (!roof.guiRect.Contains(guiPos)) continue;
 
-        // ── 崩落量を決定（snowFill と比例）───────────────────────
-        int   spawnCount    = Random.Range(1, 4);
-        float deltaPerPiece = Random.Range(0.06f, 0.12f);
-        float delta         = Mathf.Min(deltaPerPiece * spawnCount, fillBefore);
+            float fillBefore = roof.snowFill;
+            roof.tapCount++;
 
-        // snowFill を先に減らす（表示は同フレームの OnGUI で自動反映）
-        _snowFill = Mathf.Max(0f, fillBefore - delta);
-        float fillAfter = _snowFill;
+            // ── タップ列を計算 ──────────────────────────────
+            float localX  = (guiPos.x - roof.guiRect.x) / roof.guiRect.width;
+            int   tapCol  = Mathf.Clamp(Mathf.FloorToInt(localX * SNOW_COLS), 0, SNOW_COLS - 1);
 
-        // ── 落雪生成 ─────────────────────────────────────────────
-        float roofW  = _guiRect.width;
-        float spawnX = Mathf.Clamp(guiPos.x, _guiRect.x + 10f, _guiRect.xMax - 10f);
-        float spawnY = _guiRect.y;
+            // ── 局所範囲（tapCol ±1 列）の残雪を確認 ────────
+            // フォールバック禁止: 局所範囲外の雪は関与させない
+            const int LOCAL_HALF = 1; // タップ列から左右1列 = 計3列が局所範囲
+            int localMin = Mathf.Max(0, tapCol - LOCAL_HALF);
+            int localMax = Mathf.Min(SNOW_COLS - 1, tapCol + LOCAL_HALF);
 
-        for (int i = 0; i < spawnCount; i++)
-        {
-            float jx  = Random.Range(-roofW * 0.15f, roofW * 0.15f);
-            float sz  = Mathf.Clamp(roofW * Random.Range(0.12f, 0.28f), 20f, 70f);
-            float spd = Random.Range(80f, 200f);
+            float localSnowBefore = 0f;
+            for (int c = localMin; c <= localMax; c++)
+                localSnowBefore += roof.snowCols[c];
 
-            _pieces.Add(new Piece
+            if (localSnowBefore <= 0f)
             {
-                pos   = new Vector2(spawnX + jx, spawnY),
-                vel   = new Vector2(_downhillDir.x * spd * 0.5f, _downhillDir.y * spd),
-                size  = sz,
-                life  = 5f,
-                alpha = 1f,
-            });
+                // 局所範囲が空 → 遠方フォールバックなしで即ブロック
+                roof.lastSpawnInfo = $"TAP#{roof.tapCount} local=0.00 spawned=NO";
+                Debug.Log($"[V2_TAP#{roof.tapCount}] roof={roof.id}" +
+                          $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                          $" tapCol={tapCol} localRange={localMin}-{localMax}(±{LOCAL_HALF}cols)" +
+                          $" localSnow_before={localSnowBefore:F3} localSnow_after={localSnowBefore:F3}" +
+                          $" maxDist={LOCAL_HALF} spawned=NO fallback_used=NO [V2_SPAWN_BLOCKED]");
+                break;
+            }
+
+            // ── 局所範囲内のみガウス分布で減少（範囲外は触らない）──
+            // sigma = LOCAL_HALF * 0.6 = 0.6列分の広がり（中心集中・隣接は小）
+            float sigma      = LOCAL_HALF * 0.6f;
+            float totalDelta = 0f;
+            float[] deltas   = new float[SNOW_COLS]; // 局所外は 0 のまま
+
+            int   spawnCount    = Random.Range(1, 4);
+            float deltaPerPiece = Random.Range(0.06f, 0.12f);
+            float rawDelta      = deltaPerPiece * spawnCount;
+
+            // 局所範囲内のみガウス重みを計算
+            float weightSum = 0f;
+            for (int c = localMin; c <= localMax; c++)
+            {
+                float dist = c - tapCol;
+                float w    = Mathf.Exp(-0.5f * (dist / sigma) * (dist / sigma));
+                deltas[c]  = w;
+                weightSum += w;
+            }
+            // 局所範囲内のみ減少適用
+            for (int c = localMin; c <= localMax; c++)
+            {
+                float d = (deltas[c] / weightSum) * rawDelta;
+                d = Mathf.Min(d, roof.snowCols[c]);
+                deltas[c]        = d;
+                totalDelta      += d;
+                roof.snowCols[c] = Mathf.Max(0f, roof.snowCols[c] - d);
+            }
+
+            float localSnowAfter = 0f;
+            for (int c = localMin; c <= localMax; c++)
+                localSnowAfter += roof.snowCols[c];
+
+            float fillAfter = roof.snowFill;
+
+            // ── 落雪生成（局所で実際に減った場合のみ）─────────
+            bool spawned = totalDelta > 0.001f;
+            if (spawned)
+            {
+                float roofW  = roof.guiRect.width;
+                float spawnX = Mathf.Clamp(guiPos.x, roof.guiRect.x + 10f, roof.guiRect.xMax - 10f);
+                float spawnY = roof.guiRect.y;
+
+                for (int i = 0; i < spawnCount; i++)
+                {
+                    float jx  = Random.Range(-roofW * 0.15f, roofW * 0.15f);
+                    float sz  = Mathf.Clamp(roofW * Random.Range(0.12f, 0.28f), 20f, 70f);
+                    float spd = Random.Range(80f, 200f);
+
+                    roof.pieces.Add(new Piece
+                    {
+                        pos   = new Vector2(spawnX + jx, spawnY),
+                        vel   = new Vector2(roof.downhillDir.x * spd * 0.5f, roof.downhillDir.y * spd),
+                        size  = sz,
+                        life  = 5f,
+                        alpha = 1f,
+                    });
+                }
+            }
+
+            roof.lastSpawnInfo = $"TAP#{roof.tapCount} local={localSnowAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
+
+            Debug.Log($"[V2_TAP#{roof.tapCount}] roof={roof.id}" +
+                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                      $" centerCell={tapCol} affectedCells={localMin}-{localMax}(±{LOCAL_HALF}cols)" +
+                      $" maxDist={LOCAL_HALF}" +
+                      $" localSnow_before={localSnowBefore:F3} localSnow_after={localSnowAfter:F3}" +
+                      $" fill_before={fillBefore:F3} fill_after={fillAfter:F3}" +
+                      $" totalDelta={totalDelta:F3} spawned={(spawned ? spawnCount.ToString() : "NO")} fallback_used=NO");
+
+            if (fillAfter <= 0f)
+                Debug.Log($"[V2_TAP#{roof.tapCount}] roof={roof.id} fill=0.000 all_removed=YES spawned=NO_next_tap");
+
+            break; // 1タップ = 1軒のみ処理
         }
-
-        // 表示 thickH を先計算（OnGUI と同じ式）
-        float expY  = EXPAND_Y_MAX * fillAfter;
-        float dispH = (_guiRect.height * THICK_RATIO * fillAfter) + expY;
-
-        _lastSpawnInfo = $"TAP#{_tapCount} fill={fillAfter:F2} spawned={spawnCount}";
-
-        Debug.Log($"[V2_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                  $" fill_before={fillBefore:F3} fill_after={fillAfter:F3}" +
-                  $" delta={delta:F3} spawned={spawnCount} spawn=YES" +
-                  $" display_thickH={dispH:F1}px");
-
-        if (fillAfter <= 0f)
-            Debug.Log($"[V2_TAP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0.000 all_removed=YES spawned=NO_next_tap");
     }
 
     // ── 落下雪塊の更新 ────────────────────────────────────────
-    void UpdatePieces()
+    void UpdateAllPieces()
     {
         float dt = Time.deltaTime;
-        for (int i = _pieces.Count - 1; i >= 0; i--)
+        for (int ri = 0; ri < 6; ri++)
         {
-            var p = _pieces[i];
-            p.vel.y += 520f * dt; // 重力
-            p.pos   += p.vel * dt;
-            p.life  -= dt;
-            p.alpha  = Mathf.Clamp01(p.life * 0.8f);
-
-            // 軒下着地
-            if (p.pos.y >= _eaveGuiY)
+            var roof = _roofs[ri];
+            for (int i = roof.pieces.Count - 1; i >= 0; i--)
             {
-                p.pos.y = _eaveGuiY;
-                p.vel   = Vector2.zero;
-                p.life  = Mathf.Min(p.life, 1.2f); // 着地後に短くフェード
-                Debug.Log($"[V2_UNDER_EAVE_STOP] roof={TARGET_ROOF_ID} pos=({p.pos.x:F1},{p.pos.y:F1})");
-            }
+                var p = roof.pieces[i];
+                p.vel.y += 520f * dt;
+                p.pos   += p.vel * dt;
+                p.life  -= dt;
+                p.alpha  = Mathf.Clamp01(p.life * 0.8f);
 
-            if (p.life <= 0f)
-                _pieces.RemoveAt(i);
-            else
-                _pieces[i] = p;
+                if (p.pos.y >= roof.eaveGuiY)
+                {
+                    p.pos.y = roof.eaveGuiY;
+                    p.vel   = Vector2.zero;
+                    p.life  = Mathf.Min(p.life, 1.2f);
+                    Debug.Log($"[V2_UNDER_EAVE_STOP] roof={roof.id} pos=({p.pos.x:F1},{p.pos.y:F1})");
+                }
+
+                if (p.life <= 0f)
+                    roof.pieces.RemoveAt(i);
+                else
+                    roof.pieces[i] = p;
+            }
         }
     }
 
@@ -273,77 +357,100 @@ public class SnowStripV2 : MonoBehaviour
     void OnGUI()
     {
         if (!Application.isPlaying) return;
-        if (!_ready || _whiteTex == null) return;
+        if (_whiteTex == null) return;
 
-        // ── [V2確認モード] 雪帯をシアン色で描画（他軒と一目で区別）──
-        // ★確認完了後に SnowWhite に戻す★
-        var debugColor = new Color(0.0f, 0.9f, 0.85f, 0.90f); // シアン
+        var debugColor = new Color(0.0f, 0.9f, 0.85f, 0.90f); // シアン（確認用）
+        var topLineColor = new Color(0.0f, 1f, 1f, 1f);
 
-        // ── 屋根雪帯（snowFill からのみ決まる）─────────────────
-        if (_snowFill > 0f)
-        {
-            float expandY = EXPAND_Y_MAX * _snowFill;
-            float thickH  = (_guiRect.height * THICK_RATIO * _snowFill) + expandY;
-            float roofTop = _guiRect.y - expandY;
-
-            if (thickH >= 1f)
-            {
-                // 本体（確認用シアン）
-                GUI.color = debugColor;
-                GUI.DrawTexture(new Rect(_guiRect.x, roofTop, _guiRect.width, thickH), _whiteTex);
-
-                // 上端に "V2" 表示代わりの濃いシアンライン
-                GUI.color = new Color(0.0f, 1f, 1f, 1f);
-                GUI.DrawTexture(new Rect(_guiRect.x, roofTop, _guiRect.width, 3f), _whiteTex);
-            }
-        }
-        else
-        {
-            // fill=0: 背景色でトップライン雪を上書き消去
-            GUI.color = new Color(0.45f, 0.55f, 0.72f, 0.90f);
-            GUI.DrawTexture(new Rect(_guiRect.x, _guiRect.y - 18f, _guiRect.width, 22f), _whiteTex);
-            // fill=0 確認: 赤いラインを表示
-            GUI.color = new Color(1f, 0.2f, 0.2f, 0.85f);
-            GUI.DrawTexture(new Rect(_guiRect.x, _guiRect.y - 4f, _guiRect.width, 4f), _whiteTex);
-        }
-
-        // ── 落下雪塊（確認用: シアン色）────────────────────────
-        foreach (var p in _pieces)
-        {
-            if (p.alpha <= 0f) continue;
-            GUI.color = new Color(0.0f, 0.9f, 0.85f, p.alpha);
-            float half = p.size * 0.5f;
-            GUI.DrawTexture(new Rect(p.pos.x - half, p.pos.y - half, p.size, p.size), _whiteTex);
-        }
-
-        // ── fillゲージをデバッグ表示（屋根左端に細い白バー）───
-        GUI.color = new Color(1f, 1f, 0f, 0.85f); // 黄色バー
-        float barH = _guiRect.height * _snowFill;
-        GUI.DrawTexture(new Rect(_guiRect.x - 6f, _guiRect.yMax - barH, 5f, barH), _whiteTex);
-
-        // ── デバッグテキスト（屋根の直下に3行表示）────────────────
-        GUI.color = Color.black;
         var style = new GUIStyle(GUI.skin.label)
         {
             fontSize  = 11,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.UpperLeft,
         };
-        float tx = _guiRect.x;
-        float ty = _guiRect.yMax + 4f;
-        // 背景黒帯
-        GUI.color = new Color(0f, 0f, 0f, 0.60f);
-        GUI.DrawTexture(new Rect(tx, ty, 160f, 38f), _whiteTex);
-        // テキスト
-        GUI.color = Color.cyan;
-        GUI.Label(new Rect(tx + 2f, ty + 1f,  158f, 14f),
-                  $"[V2] {TARGET_ROOF_ID}", style);
-        GUI.color = Color.yellow;
-        GUI.Label(new Rect(tx + 2f, ty + 13f, 158f, 14f),
-                  $"fill={_snowFill:F2}  taps={_tapCount}", style);
-        GUI.color = _snowFill <= 0f ? Color.red : Color.white;
-        GUI.Label(new Rect(tx + 2f, ty + 25f, 158f, 14f),
-                  _lastSpawnInfo, style);
+
+        for (int ri = 0; ri < 6; ri++)
+        {
+            var roof = _roofs[ri];
+            if (!roof.ready) continue;
+
+            float roofLeft = roof.guiRect.x;
+            float roofW    = roof.guiRect.width;
+            float colW     = roofW / SNOW_COLS;
+            float maxThickH = roof.guiRect.height * THICK_RATIO + EXPAND_Y_MAX;
+
+            bool anySnow = false;
+
+            // ── 列ごとに雪帯を描画（局所表示）────────────────
+            for (int c = 0; c < SNOW_COLS; c++)
+            {
+                float fill = roof.snowCols[c];
+                if (fill <= 0f)
+                {
+                    // 列が空: 背景色で上書き（トップライン消去）
+                    GUI.color = new Color(0.45f, 0.55f, 0.72f, 0.90f);
+                    GUI.DrawTexture(new Rect(roofLeft + c * colW, roof.guiRect.y - 18f, colW + 1f, 22f), _whiteTex);
+                    continue;
+                }
+
+                anySnow = true;
+                float expandY = EXPAND_Y_MAX * fill;
+                float thickH  = (roof.guiRect.height * THICK_RATIO * fill) + expandY;
+                float colTop  = roof.guiRect.y - expandY;
+
+                if (thickH < 1f) continue;
+
+                GUI.color = debugColor;
+                GUI.DrawTexture(new Rect(roofLeft + c * colW, colTop, colW + 1f, thickH), _whiteTex);
+            }
+
+            // 上端ライン（雪がある場合のみ）
+            if (anySnow)
+            {
+                // 各列トップに細いシアンラインを引く
+                for (int c = 0; c < SNOW_COLS; c++)
+                {
+                    float fill = roof.snowCols[c];
+                    if (fill <= 0f) continue;
+                    float expandY = EXPAND_Y_MAX * fill;
+                    float colTop  = roof.guiRect.y - expandY;
+                    GUI.color = topLineColor;
+                    GUI.DrawTexture(new Rect(roofLeft + c * colW, colTop, colW + 1f, 3f), _whiteTex);
+                }
+            }
+
+            // ── 落下雪塊 ─────────────────────────────────────
+            foreach (var p in roof.pieces)
+            {
+                if (p.alpha <= 0f) continue;
+                GUI.color = new Color(0.0f, 0.9f, 0.85f, p.alpha);
+                float half = p.size * 0.5f;
+                GUI.DrawTexture(new Rect(p.pos.x - half, p.pos.y - half, p.size, p.size), _whiteTex);
+            }
+
+            // ── 黄色 fill ゲージ（屋根左端）──────────────────
+            float fillAvg = roof.snowFill;
+            GUI.color = new Color(1f, 1f, 0f, 0.85f);
+            float barH = roof.guiRect.height * fillAvg;
+            GUI.DrawTexture(new Rect(roof.guiRect.x - 6f, roof.guiRect.yMax - barH, 5f, barH), _whiteTex);
+
+            // ── デバッグテキスト（屋根直下）──────────────────
+            float tx = roof.guiRect.x;
+            float ty = roof.guiRect.yMax + 4f;
+
+            GUI.color = new Color(0f, 0f, 0f, 0.60f);
+            GUI.DrawTexture(new Rect(tx, ty, 160f, 38f), _whiteTex);
+
+            GUI.color = Color.cyan;
+            GUI.Label(new Rect(tx + 2f, ty + 1f,  158f, 14f), $"[V2] {roof.id}", style);
+
+            GUI.color = Color.yellow;
+            GUI.Label(new Rect(tx + 2f, ty + 13f, 158f, 14f),
+                      $"fill={fillAvg:F2}  taps={roof.tapCount}", style);
+
+            GUI.color = fillAvg <= 0f ? Color.red : Color.white;
+            GUI.Label(new Rect(tx + 2f, ty + 25f, 158f, 14f), roof.lastSpawnInfo, style);
+        }
 
         GUI.color = Color.white;
     }

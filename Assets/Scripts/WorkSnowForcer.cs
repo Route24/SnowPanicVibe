@@ -194,11 +194,11 @@ public class WorkSnowForcer : MonoBehaviour
             host.AddComponent<WorkSnowForcer>();
         }
 
-        // SnowStrip V2 を同じ GameObject に追加（BR 屋根専用）
+        // SnowStrip V2 を同じ GameObject に追加（下段3軒: BL/BM/BR 管理）
         if (host.GetComponent<SnowStripV2>() == null)
         {
             host.AddComponent<SnowStripV2>();
-            Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for Roof_BR");
+            Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for ALL6 roofs");
         }
 
         Debug.Log("[ALL6_SNOW_FIT] Bootstrap scene=" +
@@ -838,8 +838,8 @@ public class WorkSnowForcer : MonoBehaviour
             if (!_roofs[ri].ready) continue;
             if (!_roofs[ri].guiRect.Contains(guiPos)) continue;
 
-            // ── V2 対象屋根 (Roof_BR) は SnowStripV2 に委譲するためスキップ ──
-            if (_roofs[ri].id == "Roof_BR") break;
+            // ── V2 対象屋根 (全6軒) は SnowStripV2 に委譲するためスキップ ──
+            break;
 
             // ── ヒットマップの平均を snowFill に同期 ──────────────
             SyncSnowFill(ri);
@@ -1298,8 +1298,8 @@ public class WorkSnowForcer : MonoBehaviour
             {
                 if (!_roofs[ri].ready || _roofs[ri].thickRatio <= 0f) continue;
                 if (_roofs[ri].snowCols == null) continue;
-                // V2 対象屋根 (Roof_BR) は SnowStripV2 が描画するためスキップ
-                if (_roofs[ri].id == "Roof_BR") continue;
+                // V2 対象屋根 (全6軒) は SnowStripV2 が描画するためスキップ
+                continue;
 
                 float fill    = _roofs[ri].snowFill; // 平均（全消去判定用）
                 float roofLeft= _roofs[ri].guiRect.x;
