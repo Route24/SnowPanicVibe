@@ -182,13 +182,25 @@ public class WorkSnowForcer : MonoBehaviour
         if (Object.FindFirstObjectByType<WorkSnowForcer>() != null) return;
 
         var bgGo = GameObject.Find("BackgroundImage");
+        GameObject host;
         if (bgGo != null)
-            bgGo.AddComponent<WorkSnowForcer>();
+        {
+            host = bgGo;
+            host.AddComponent<WorkSnowForcer>();
+        }
         else
         {
-            var go = new GameObject("WorkSnowForcer_Root");
-            go.AddComponent<WorkSnowForcer>();
+            host = new GameObject("WorkSnowForcer_Root");
+            host.AddComponent<WorkSnowForcer>();
         }
+
+        // SnowStrip V2 を同じ GameObject に追加（BR 屋根専用）
+        if (host.GetComponent<SnowStripV2>() == null)
+        {
+            host.AddComponent<SnowStripV2>();
+            Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for Roof_BR");
+        }
+
         Debug.Log("[ALL6_SNOW_FIT] Bootstrap scene=" +
                   UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
     }
@@ -826,6 +838,9 @@ public class WorkSnowForcer : MonoBehaviour
             if (!_roofs[ri].ready) continue;
             if (!_roofs[ri].guiRect.Contains(guiPos)) continue;
 
+            // ── V2 対象屋根 (Roof_BR) は SnowStripV2 に委譲するためスキップ ──
+            if (_roofs[ri].id == "Roof_BR") break;
+
             // ── ヒットマップの平均を snowFill に同期 ──────────────
             SyncSnowFill(ri);
             float prev = _roofs[ri].snowFill;
@@ -1283,6 +1298,8 @@ public class WorkSnowForcer : MonoBehaviour
             {
                 if (!_roofs[ri].ready || _roofs[ri].thickRatio <= 0f) continue;
                 if (_roofs[ri].snowCols == null) continue;
+                // V2 対象屋根 (Roof_BR) は SnowStripV2 が描画するためスキップ
+                if (_roofs[ri].id == "Roof_BR") continue;
 
                 float fill    = _roofs[ri].snowFill; // 平均（全消去判定用）
                 float roofLeft= _roofs[ri].guiRect.x;

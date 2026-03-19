@@ -72,6 +72,7 @@
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
     <Compile Include="Assets/Scripts/SnowMvpBootstrap.cs" />
     <Compile Include="Assets/Scripts/WorkSnowGameBootstrap.cs" />
+    <Compile Include="Assets/Scripts/SnowStripV2.cs" />
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
     <Compile Include="Assets/Scripts/RoofDebugGizmo.cs" />
