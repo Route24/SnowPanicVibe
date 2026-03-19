@@ -55,12 +55,11 @@ public class WorkSnowForcer : MonoBehaviour
         public float   snowFill;      // 0〜1
         public float   anchorMinY0;   // 初期 anchorMin.y
         public float   anchorMaxY0;   // 初期 anchorMax.y
-        // GDD Snow State: thickRatio > 0 なら THICK 状態（ID ハードコード禁止）
-        // 0 = NORMAL（厚雪帯なし）、0.65 = THICK（屋根高さの65%分の帯）
         public float   thickRatio;
-        // downhill 方向の X 成分（片流れ屋根の手前方向、OnGUI 座標系）
-        // 正 = 右方向、負 = 左方向。calib の top→bottom X 差から算出
-        public float   downhillVelX;
+        // downhill: OnGUI座標系（Y下向き）での正規化滑落方向ベクトル
+        // 屋根上端中央 → 屋根下端中央 の方向（主にY+、わずかにX成分）
+        public Vector2 downhillDir;   // 正規化済み
+        public float   downhillVelX;  // 後方互換（未使用になる予定）
         public bool    ready;
     }
     RoofData[] _roofs = new RoofData[6];
@@ -83,15 +82,20 @@ public class WorkSnowForcer : MonoBehaviour
 
         // ── 屋根滑落フェーズ制御 ──
         public PiecePhase phase;
-        public float      eaveX;       // 軒先X座標（ここまで滑ったら落下へ）
+        public Vector2    slideDir;    // 正規化滑落方向（downhillDir をコピー）
         public float      slideSpeed;  // 滑落速度（px/s）
-        public float      slideDirX;   // 滑落方向 (+1 or -1)
-        public float      slideY;      // 滑落中の固定Y（屋根下端）
+        public float      slideDirX;   // 後方互換（未使用）
+        public float      slideY;      // 滑落中の基準Y（屋根下端）
+        public float      slideStartX; // 滑落開始X
+        public float      eaveX;       // 軒先X（到達判定用）
+        public float      eaveY;       // 軒先Y（到達判定用）
+        public float      slideDist;   // 累積移動距離
+        public float      maxSlideDist;// 最大滑落距離（屋根幅）
 
         // 引っかかり制御
-        public float      stickTimer;  // 残り引っかかり時間（>0 なら減速中）
-        public float      stickCooldown; // 次の引っかかりまでの待機時間
-        public bool       hasStick;    // 引っかかりタイプか
+        public float      stickTimer;
+        public float      stickCooldown;
+        public bool       hasStick;
     }
     readonly List<FallingPiece> _pieces = new List<FallingPiece>();
 
@@ -450,12 +454,29 @@ public class WorkSnowForcer : MonoBehaviour
             float eaveCalibY  = maxY + UNDER_EAVE_OFFSET_CALIB;
             float eaveCenterX = (minX + maxX) * 0.5f;
 
-            // downhill 方向: 片流れ屋根の top 中央 → bottom 中央 の X 差分
-            // calib 座標で topCenter.x と bottomCenter.x を比較し、OnGUI スケールで速度化
-            float topCenterX    = (entry.topLeft.x    + entry.topRight.x)    * 0.5f;
-            float bottomCenterX = (entry.bottomLeft.x + entry.bottomRight.x) * 0.5f;
-            // downhill X 方向（正=右、負=左）。屋根幅に対する比率 × 基準速度
-            float downhillDx    = (bottomCenterX - topCenterX) * Screen.width;
+            // ── downhill ベクトルを OnGUI 座標系で正しく計算 ──────────────
+            // calib 座標の Y は 0=画面上端・1=画面下端（OnGUI と同方向）。
+            // guiRect や eaveGuiY も calibY * Screen.height でそのまま変換している。
+            // → downhill 計算も同じく calibY * Screen.height を使う（1-y 変換は不要）。
+            //
+            // 滑落方向 = 屋根「top中央」→「bottom中央」（calibY が小さい方 → 大きい方）
+            float topCenterX_c    = (entry.topLeft.x    + entry.topRight.x)    * 0.5f;
+            float topCenterY_c    = (entry.topLeft.y    + entry.topRight.y)    * 0.5f;
+            float bottomCenterX_c = (entry.bottomLeft.x + entry.bottomRight.x) * 0.5f;
+            float bottomCenterY_c = (entry.bottomLeft.y + entry.bottomRight.y) * 0.5f;
+
+            // calib → OnGUI ピクセル座標（Y変換なし: calibY * Screen.height）
+            float topGX    = topCenterX_c    * Screen.width;
+            float topGY    = topCenterY_c    * Screen.height;
+            float bottomGX = bottomCenterX_c * Screen.width;
+            float bottomGY = bottomCenterY_c * Screen.height;
+
+            // top → bottom ベクトル = 滑落方向（Y+ = 画面下 = 軒先方向）
+            var rawDownhill = new Vector2(bottomGX - topGX, bottomGY - topGY);
+            float dhLen = rawDownhill.magnitude;
+            Vector2 downhillDir = dhLen > 0.5f
+                ? rawDownhill / dhLen
+                : new Vector2(0f, 1f);
 
             _roofs[ri].id           = calibId;
             _roofs[ri].guideId      = guideId;
@@ -466,12 +487,10 @@ public class WorkSnowForcer : MonoBehaviour
                 (maxY - minY) * Screen.height);
             _roofs[ri].eaveGuiY     = eaveCalibY  * Screen.height;
             _roofs[ri].eaveGuiX     = eaveCenterX * Screen.width;
-            // downhill 速度 X: 屋根の傾斜方向に初速を与える（真下落下禁止）
-            // downhillDx が小さい場合は最低限の横速度を保証
-            _roofs[ri].downhillVelX = (Mathf.Abs(downhillDx) > 5f) ? downhillDx * 0.8f : 20f;
-            // GDD Snow State: 全6軒 THICK（ID ハードコード禁止、パラメータで制御）
+            _roofs[ri].downhillDir  = downhillDir;
+            _roofs[ri].downhillVelX = rawDownhill.x; // 後方互換
             _roofs[ri].thickRatio   = THICK_SNOW_RATIO;
-            _roofs[ri].ready      = true;
+            _roofs[ri].ready        = true;
             readyCount++;
 
             if (_roofs[ri].thickRatio > 0f)
@@ -483,6 +502,18 @@ public class WorkSnowForcer : MonoBehaviour
             {
                 Debug.Log($"[SNOW_STATE] roof={calibId} state=NORMAL");
             }
+
+            // 必須ログ: downhill ベクトル確認（3種）
+            Debug.Log($"[ROOF_DOWNHILL_RAW] roof={calibId}" +
+                      $" raw=({rawDownhill.x:F1},{rawDownhill.y:F1})" +
+                      $" top_gui=({topGX:F1},{topGY:F1}) bottom_gui=({bottomGX:F1},{bottomGY:F1})");
+            Debug.Log($"[ROOF_DOWNHILL_FINAL] roof={calibId}" +
+                      $" final=({downhillDir.x:F3},{downhillDir.y:F3})" +
+                      $" y_positive={( downhillDir.y > 0 ? "YES(correct)" : "NO(inverted!)" )}");
+            Debug.Log($"[ROOF_EAVE_DIR] roof={calibId}" +
+                      $" eave=({downhillDir.x:F3},{downhillDir.y:F3})" +
+                      $" eaveGuiY={eaveCalibY * Screen.height:F1}" +
+                      $" topGY={topGY:F1} bottomGY={bottomGY:F1}");
 
             Debug.Log($"[UNDER_EAVE_TARGET] roof={calibId} created=YES" +
                       $" eave_calib_y={eaveCalibY:F4} gui_y={_roofs[ri].eaveGuiY:F1}" +
@@ -557,63 +588,74 @@ public class WorkSnowForcer : MonoBehaviour
             _roofs[ri].snowFill = Mathf.Max(0f, _roofs[ri].snowFill - 0.15f);
             UpdateSnowVisual(ri);
 
-            // spawn 位置: タップ位置に近い屋根上端から開始（滑落スタート地点）
+            // ── spawn 設定 ──────────────────────────────────────────
             float roofW    = _roofs[ri].guiRect.width;
-            float roofLeft = _roofs[ri].guiRect.x;
-            float roofRight= _roofs[ri].guiRect.xMax;
-            float slideY   = _roofs[ri].guiRect.y + _roofs[ri].guiRect.height; // 屋根下端（軒先ライン）
+            float roofH    = _roofs[ri].guiRect.height;
 
-            // downhill 方向（+1=右, -1=左）
-            float dvx      = _roofs[ri].downhillVelX;
-            float slideDir = dvx >= 0f ? 1f : -1f;
-            // 軒先X: downhill 方向の端
-            float eaveX    = slideDir > 0f ? roofRight : roofLeft;
+            // スポーン位置: 屋根上端中央（滑落スタート）
+            float spawnX   = _roofs[ri].guiRect.x + roofW * 0.5f;
+            float spawnY   = _roofs[ri].guiRect.y; // 屋根上端
 
-            // 雪煙（detach 瞬間）
-            float spawnX = _roofs[ri].guiRect.x + _roofs[ri].guiRect.width * 0.5f;
-            SpawnSmoke(spawnX, slideY, dvx * 0.3f, ri);
+            // downhill ベクトル（正規化済み、Y下向き主成分）
+            Vector2 dh     = _roofs[ri].downhillDir;
 
-            // 大きめ雪塊を2〜4個生成（屋根滑落フェーズ付き）
+            // 軒先到達点: 屋根下端中央（downhill方向に屋根高さ分移動した点）
+            float eaveX    = spawnX + dh.x * roofH;
+            float eaveY    = _roofs[ri].guiRect.yMax; // 屋根下端Y
+
+            // 最大滑落距離: 屋根の対角線長さ
+            float maxDist  = Mathf.Sqrt(roofW * roofW + roofH * roofH);
+
+            // detach 瞬間の雪煙
+            SpawnSmoke(spawnX, eaveY, dh.x * 30f, ri);
+
+            // 大きめ雪塊を2〜4個生成（downhillDir 方向に滑落）
             int spawnCount = Random.Range(2, 5);
             for (int si = 0; si < spawnCount; si++)
             {
-                // スポーン X: 屋根中央付近（滑落方向の反対側寄り）
-                float jx = Random.Range(-roofW * 0.20f, roofW * 0.10f) * -slideDir;
+                // スポーン位置: 屋根上端付近にばらつき
+                float jx = Random.Range(-roofW * 0.25f, roofW * 0.25f);
                 float sz = roofW * Random.Range(0.15f, 0.28f);
                 sz = Mathf.Clamp(sz, 30f, 85f);
 
                 // 速度タイプ: 0=速い, 1=普通, 2=引っかかり
                 int speedType = Random.Range(0, 3);
-                float baseSpeed = speedType == 0 ? Random.Range(160f, 240f)   // 速い
-                                : speedType == 1 ? Random.Range(90f,  150f)   // 普通
-                                :                  Random.Range(55f,   95f);  // 引っかかり
+                float baseSpeed = speedType == 0 ? Random.Range(150f, 220f)
+                                : speedType == 1 ? Random.Range(85f,  140f)
+                                :                  Random.Range(50f,   88f);
 
                 _pieces.Add(new FallingPiece
                 {
-                    pos          = new Vector2(spawnX + jx, slideY),
+                    pos          = new Vector2(spawnX + jx, spawnY),
                     vel          = Vector2.zero,
                     size         = sz,
                     sizeY        = sz * Random.Range(0.55f, 0.80f),
                     life         = 8f,
                     roofIdx      = ri,
                     rot          = Random.Range(-15f, 15f),
-                    rotVel       = Random.Range(-40f, 40f) * slideDir,
+                    rotVel       = Random.Range(-35f, 35f),
                     alpha        = 1f,
                     texIdx       = Random.Range(0, 4),
                     phase        = PiecePhase.Sliding,
-                    eaveX        = eaveX,
+                    slideDir     = dh,
                     slideSpeed   = baseSpeed,
-                    slideDirX    = slideDir,
-                    slideY       = slideY,
+                    slideDirX    = dh.x,
+                    slideY       = spawnY,
+                    slideStartX  = spawnX + jx,
+                    eaveX        = eaveX,
+                    eaveY        = eaveY,
+                    slideDist    = 0f,
+                    maxSlideDist = maxDist,
                     hasStick     = (speedType == 2),
                     stickTimer   = 0f,
-                    stickCooldown= Random.Range(0.15f, 0.45f), // 最初の引っかかりまでの時間
+                    stickCooldown= Random.Range(0.15f, 0.45f),
                 });
             }
 
             Debug.Log($"[DETACH] roof={_roofs[ri].id} tap_detected=YES" +
-                      $" spawn_gui=({spawnX:F1},{slideY:F1})" +
-                      $" eave_x={eaveX:F1} slide_dir={slideDir:F0}" +
+                      $" spawn=({spawnX:F1},{spawnY:F1})" +
+                      $" downhill=({dh.x:F3},{dh.y:F3})" +
+                      $" eave=({eaveX:F1},{eaveY:F1})" +
                       $" snow_fill={_roofs[ri].snowFill:F2}" +
                       $" chunk_count={spawnCount} phase=SLIDING");
             break; // 1タップ1軒
@@ -659,59 +701,53 @@ public class WorkSnowForcer : MonoBehaviour
             if (p.phase == PiecePhase.Sliding)
             {
                 // ── 屋根滑落フェーズ ──────────────────────────────
-                // Y は屋根下端に固定、X のみ滑落方向へ移動
-                p.pos.y = p.slideY;
-
+                // downhillDir ベクトル方向に移動（X・Y 両成分）
                 // 引っかかり処理
                 float curSpeed = p.slideSpeed;
                 if (p.hasStick)
                 {
                     if (p.stickTimer > 0f)
                     {
-                        // 引っかかり中: 速度を大幅減速
                         p.stickTimer -= dt;
-                        curSpeed = p.slideSpeed * 0.12f;
+                        curSpeed = p.slideSpeed * 0.10f;
                         if (p.stickTimer <= 0f)
                         {
-                            // 引っかかり解除: 次の引っかかりまでの時間をリセット
-                            p.stickCooldown = Random.Range(0.2f, 0.6f);
-                            // 解除時に小さな雪煙
-                            SpawnSmoke(p.pos.x, p.pos.y, p.slideDirX * 20f, p.roofIdx);
+                            p.stickCooldown = Random.Range(0.2f, 0.55f);
+                            SpawnSmoke(p.pos.x, p.pos.y, p.slideDir.x * 15f, p.roofIdx);
                         }
                     }
                     else
                     {
                         p.stickCooldown -= dt;
                         if (p.stickCooldown <= 0f)
-                        {
-                            // 引っかかり開始
-                            p.stickTimer = Random.Range(0.08f, 0.22f);
-                        }
+                            p.stickTimer = Random.Range(0.08f, 0.20f);
                     }
                 }
 
-                // 滑落移動
-                p.pos.x += p.slideDirX * curSpeed * dt;
-                p.rot   += p.rotVel * 0.3f * dt; // 滑落中は回転を抑える
+                // downhillDir 方向に移動（屋根面に沿って）
+                float step = curSpeed * dt;
+                p.pos      += p.slideDir * step;
+                p.slideDist += step;
+                p.rot       += p.rotVel * 0.25f * dt;
 
-                // 軒先到達判定
-                bool reachedEave = p.slideDirX > 0f
-                    ? p.pos.x >= p.eaveX
-                    : p.pos.x <= p.eaveX;
+                // 軒先到達判定: 屋根下端Y を超えたら落下へ
+                bool reachedEave = p.pos.y >= p.eaveY
+                                || p.slideDist >= p.maxSlideDist;
 
                 if (reachedEave)
                 {
-                    // 軒先到達 → 落下フェーズへ移行
-                    p.pos.x = p.eaveX;
+                    p.pos.y = p.eaveY;
                     p.phase = PiecePhase.Falling;
-                    // 落下初速: 滑落速度を引き継ぎ + 下方向
+                    // 落下初速: downhill 方向の勢いを引き継ぎ
+                    float launchSpeed = p.slideSpeed * Random.Range(0.35f, 0.65f);
                     p.vel = new Vector2(
-                        p.slideDirX * p.slideSpeed * Random.Range(0.3f, 0.6f),
-                        Random.Range(30f, 80f));
-                    p.rotVel = Random.Range(-100f, 100f); // 落下時に回転増加
-                    // 軒先での雪煙
-                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.5f, p.roofIdx);
-                    Debug.Log($"[EAVE_REACHED] roof={_roofs[p.roofIdx].id} pos=({p.pos.x:F1},{p.pos.y:F1}) -> FALLING");
+                        p.slideDir.x * launchSpeed,
+                        Mathf.Max(p.slideDir.y * launchSpeed, 40f));
+                    p.rotVel = Random.Range(-110f, 110f);
+                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.4f, p.roofIdx);
+                    Debug.Log($"[EAVE_REACHED] roof={_roofs[p.roofIdx].id}" +
+                              $" pos=({p.pos.x:F1},{p.pos.y:F1})" +
+                              $" dist={p.slideDist:F1} -> FALLING");
                 }
             }
             else
