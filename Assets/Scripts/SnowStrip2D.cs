@@ -267,14 +267,32 @@ public class SnowStrip2D : MonoBehaviour
         float fillBefore          = CalcFill();
         float totalRoofSnowBefore = fillBefore * GRID_W * GRID_H;
 
+        // ── 露出判定: hit position の center cell が露出していたら即ブロック ──
+        // 参照元: _snow[cx, cy]（タップ位置に対応する 2D セル）
+        // center cell が空 = 屋根が見えている = 落雪させない
+        const float EXPOSED_CELL_THRESHOLD = 0.01f;
+        bool exposedAtHit = centerBefore <= EXPOSED_CELL_THRESHOLD;
+        if (exposedAtHit)
+        {
+            _lastSpawned = false;
+            _lastInfo    = $"TAP#{_tapCount} exposed spawned=NO";
+            Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
+                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) gridCenter=({cx},{cy})" +
+                      $" exposedAtHit=YES centerSnow={centerBefore:F3}" +
+                      $" totalRoofSnowBefore={totalRoofSnowBefore:F1}" +
+                      $" totalSnowInBrush=- delta=0 spawned=NO [EXPOSED_HARD_STOP]");
+            return;
+        }
+
         // ── 屋根全体が既に 0 なら即ブロック ──────────────────
         if (fillBefore <= 0f)
         {
             _lastSpawned = false;
             _lastInfo    = $"TAP#{_tapCount} roofEmpty spawned=NO";
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowBefore:F1}" +
-                      $" totalSnowInBrush=0 zeroSnapCount=0 finishAssist=NO spawned=NO [ROOF_EMPTY]");
+                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) gridCenter=({cx},{cy})" +
+                      $" exposedAtHit=NO totalRoofSnowBefore={totalRoofSnowBefore:F1}" +
+                      $" totalSnowInBrush=0 delta=0 spawned=NO [ROOF_EMPTY]");
             return;
         }
 
@@ -297,15 +315,16 @@ public class SnowStrip2D : MonoBehaviour
             brushCells++;
         }
 
-        // ── 停止条件 1: ブラシ内に雪がない（露出領域タップ）──
+        // ── 停止条件: ブラシ内に雪がない ─────────────────────
         if (totalSnowInBrush <= 0f)
         {
             _lastSpawned = false;
             _lastInfo    = $"TAP#{_tapCount} brushEmpty spawned=NO";
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowBefore:F1}" +
+                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) gridCenter=({cx},{cy})" +
+                      $" exposedAtHit=NO totalRoofSnowBefore={totalRoofSnowBefore:F1}" +
                       $" totalSnowInBrush={totalSnowInBrush:F3} brushCells={brushCells}" +
-                      $" zeroSnapCount=0 finishAssist=NO spawned=NO [BRUSH_EMPTY]");
+                      $" delta=0 spawned=NO [BRUSH_EMPTY]");
             return;
         }
 
@@ -397,27 +416,24 @@ public class SnowStrip2D : MonoBehaviour
         _lastInfo    = $"TAP#{_tapCount} fill={fillAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
         _lastSpawned = spawned;
 
-        // ── 単一参照元確認ログ ────────────────────────────────
         // 唯一の真実: _snow[x,y] 配列
-        //   減算セル集合  = hitCells（_snow[bx,by] を実際に減らしたセル）
-        //   マスク変更数  = hitCells（_texDirty=true で次フレームに _snow から再構築）
-        //   spawn判定元   = totalDelta（_snow から削った合計）
-        //   露出判定元    = totalSnowInBrush（_snow から計算）
-        //   finish判定元  = CalcFill()（_snow の全セル合計）
-        //   → 全て _snow[x,y] 単一参照。別配列・fallback なし。
-        bool affectedCellsMatch = true; // hitCells = mask_changed = spawn_source（全て同一ループ）
+        //   露出判定: _snow[cx,cy] <= EXPOSED_CELL_THRESHOLD
+        //   減算:     _snow[bx,by] -= d
+        //   マスク:   _texDirty=true → RebuildTexture() が _snow から再構築
+        //   spawn:    totalDelta（_snow から削った合計）
+        //   finish:   CalcFill()（_snow の全セル合計）
         Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
                   $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" gridCenter=({cx},{cy}) brushRadius={BRUSH_R}" +
+                  $" exposedAtHit=NO centerSnow_before={centerBefore:F3}" +
                   $" totalSnowInBrush={totalSnowInBrush:F3} brushCells={brushCells} hitCells={hitCells}" +
                   $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowAfter:F1}" +
-                  $" centerSnow_before={centerBefore:F3} centerSnow_after={centerAfter:F3}" +
+                  $" centerSnow_after={centerAfter:F3}" +
                   $" centerDelta={centerDelta:F3} totalDelta={totalDelta:F3}" +
                   $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
                   $" zeroSnapCount={zeroSnapCount}" +
                   $" finishAssist={(finishAssist ? "YES" : "NO")}" +
                   $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
-                  $" affectedCellsMatch={affectedCellsMatch}" +
                   $" singleSource=_snow[x,y]" +
                   $" CELL_EPSILON={CELL_EPSILON} FINISH_THRESHOLD={FINISH_THRESHOLD} SPAWN_MIN_DELTA={SPAWN_MIN_DELTA}");
 
