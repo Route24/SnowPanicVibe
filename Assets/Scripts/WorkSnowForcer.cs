@@ -44,23 +44,35 @@ public class WorkSnowForcer : MonoBehaviour
 
     static readonly Color SnowWhite = new Color(0.92f, 0.95f, 1f);
 
+    // ── 崩落タイプ ────────────────────────────────────────────
+    enum CollapseType { Small, Medium, Avalanche }
+
+    // ── 積雪ヒットマップ解像度 ─────────────────────────────────
+    // 屋根を横 SNOW_COLS 列に分割し、各列が独立した残雪量(0〜1)を持つ。
+    // これにより「帯状減少」を廃止し、タップ位置起点の局所崩落を実現する。
+    const int SNOW_COLS = 16;
+
     // ── 屋根ごとのデータ ──────────────────────────────────────
     struct RoofData
     {
         public string  id;
         public string  guideId;
-        public Rect    guiRect;       // OnGUI bbox（左上原点）
-        public float   eaveGuiY;      // 軒下着地 Y（OnGUI）
-        public float   eaveGuiX;      // 軒下着地 X 中央（OnGUI）
-        public float   snowFill;      // 0〜1
-        public float   anchorMinY0;   // 初期 anchorMin.y
-        public float   anchorMaxY0;   // 初期 anchorMax.y
+        public Rect    guiRect;
+        public float   eaveGuiY;
+        public float   eaveGuiX;
+        // ── 旧: snowFill（帯状管理・廃止）→ 互換用プロパティとして残す ──
+        // 実体は snowCols[] の平均値。直接書き込み禁止。
+        public float   snowFill;      // 読み取り専用互換（= snowCols 平均）
+        public float[] snowCols;      // [SNOW_COLS] 各列の残雪量 0〜1（実体）
+        public float   anchorMinY0;
+        public float   anchorMaxY0;
         public float   thickRatio;
-        // downhill: OnGUI座標系（Y下向き）での正規化滑落方向ベクトル
-        // 屋根上端中央 → 屋根下端中央 の方向（主にY+、わずかにX成分）
-        public Vector2 downhillDir;   // 正規化済み
-        public float   downhillVelX;  // 後方互換（未使用になる予定）
+        public Vector2 downhillDir;
+        public float   downhillVelX;
         public bool    ready;
+        // 可変崩落用
+        public float   collapseCharge;
+        public float   instability;
     }
     RoofData[] _roofs = new RoofData[6];
 
@@ -128,6 +140,21 @@ public class WorkSnowForcer : MonoBehaviour
     Texture2D _snowEdgeTex;       // 前縁凹凸用テクスチャ（ノイズ生成）
     Texture2D[] _chunkTextures;   // 不定形雪塊シルエット（4種類）
     Texture2D _roofEdgeMaskTex;   // 屋根雪前縁マスク（縦方向ノイズ）
+    Texture2D _smokeTex;          // 雪煙用ソフト円形テクスチャ（四角回避）
+    Texture2D[] _brushTextures;   // 不定形ブラシ（5種: 円/楕円/欠け/しずく/多角形）
+
+    // ── 局所積雪マスク（タップ位置に不定形ブラシで穴を刻む）─────
+    struct SnowHole
+    {
+        public float cx;       // 穴中心X（guiRect.width に対する割合 0〜1）
+        public float cy;       // 穴中心Y（雪帯の高さに対する割合 0〜1）
+        public float scaleX;   // ブラシ横スケール（guiRect.width 倍）
+        public float scaleY;   // ブラシ縦スケール（雪帯高さ倍）
+        public float rot;      // 回転角（deg）
+        public float alpha;    // 不透明度（0〜1）
+        public int   brushIdx; // ブラシ種類（0〜4）
+    }
+    readonly List<SnowHole>[] _snowHoles = new List<SnowHole>[6];
 
     [System.Serializable] class V2 { public float x, y; }
     [System.Serializable] class RoofEntry
@@ -167,10 +194,18 @@ public class WorkSnowForcer : MonoBehaviour
         _smoke.Clear();
         for (int i = 0; i < _roofs.Length; i++)
         {
-            _roofs[i].snowFill    = 1f;
-            _roofs[i].anchorMinY0 = -1f;
-            _roofs[i].anchorMaxY0 = -1f;
-            _roofs[i].ready       = false;
+            // ヒットマップ初期化（全列 1.0 = 満雪）
+            _roofs[i].snowCols       = new float[SNOW_COLS];
+            for (int c = 0; c < SNOW_COLS; c++) _roofs[i].snowCols[c] = 1f;
+            _roofs[i].snowFill       = 1f; // 互換用（snowCols 平均）
+            _roofs[i].anchorMinY0    = -1f;
+            _roofs[i].anchorMaxY0    = -1f;
+            _roofs[i].ready          = false;
+            _roofs[i].collapseCharge = 0f;
+            _roofs[i].instability    = Random.Range(0.3f, 1.0f);
+            // 穴リストは廃止（ヒットマップに統合）
+            if (_snowHoles[i] == null) _snowHoles[i] = new List<SnowHole>();
+            else _snowHoles[i].Clear();
         }
         if (_whiteTex == null)
         {
@@ -182,6 +217,8 @@ public class WorkSnowForcer : MonoBehaviour
         BuildSnowEdgeTexture();
         BuildChunkTextures();
         BuildRoofEdgeMaskTexture();
+        BuildSmokeTexture();
+        BuildBrushTextures();
     }
 
     /// <summary>
@@ -247,70 +284,247 @@ public class WorkSnowForcer : MonoBehaviour
     /// 32×32px、アルファチャンネルで形状を表現。
     /// 各種類で角丸・左右非対称・欠けを変化させる。
     /// </summary>
-    void BuildChunkTextures()
+    /// <summary>
+    /// 雪煙用ソフト円形グラデーションテクスチャを生成。
+    /// 中心が白く不透明、外縁に向かってなめらかにフェードアウト。
+    /// 四角く見えないように周辺アルファを完全に0にする。
+    /// </summary>
+    void BuildSmokeTexture()
     {
         const int S = 32;
-        if (_chunkTextures != null)
-            foreach (var t in _chunkTextures)
-                if (t != null) Object.DestroyImmediate(t);
-        _chunkTextures = new Texture2D[4];
+        if (_smokeTex != null) Object.DestroyImmediate(_smokeTex);
+        _smokeTex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+        _smokeTex.wrapMode = TextureWrapMode.Clamp;
+        var pixels = new Color[S * S];
+        float seed = Random.Range(0f, 100f);
+        for (int y = 0; y < S; y++)
+        {
+            for (int x = 0; x < S; x++)
+            {
+                float u = (float)x / (S - 1) * 2f - 1f; // -1〜1
+                float v = (float)y / (S - 1) * 2f - 1f;
+                float dist = Mathf.Sqrt(u * u + v * v); // 中心からの距離
 
-        // 4種類のシード（毎回ランダム）
-        float[] seeds = {
-            Random.Range(0f, 100f),
-            Random.Range(0f, 100f),
-            Random.Range(0f, 100f),
-            Random.Range(0f, 100f),
-        };
+                // Smooth な円形グラデーション: dist=0 で alpha=1、dist=1 で alpha=0
+                float alpha = Mathf.Clamp01(1f - dist * dist * dist * 1.4f);
 
-        for (int ti = 0; ti < 4; ti++)
+                // 外縁のぼけを強調（2乗で急速フェード）
+                alpha = Mathf.Pow(alpha, 1.8f);
+
+                // 軽いノイズで輪郭を不定形に
+                float n = Mathf.PerlinNoise(u * 3f + seed, v * 3f + seed) * 0.22f;
+                alpha = Mathf.Clamp01(alpha - n * (1f - alpha * 0.5f));
+
+                // 完全に外縁（dist > 0.95）はアルファ 0
+                if (dist > 0.95f) alpha = 0f;
+
+                pixels[y * S + x] = new Color(1f, 1f, 1f, alpha);
+            }
+        }
+        _smokeTex.SetPixels(pixels);
+        _smokeTex.Apply();
+    }
+
+    /// <summary>
+    /// 積雪削除用の不定形ブラシテクスチャを5種類生成。
+    /// 各ブラシは中心が濃く外縁がソフトにフェードし、輪郭をPerlinノイズで崩す。
+    /// 種類: 0=円形, 1=横楕円, 2=欠け円, 3=しずく(下流伸び), 4=不定形多角
+    /// </summary>
+    void BuildBrushTextures()
+    {
+        const int S = 48;
+        if (_brushTextures != null)
+            foreach (var t in _brushTextures) if (t != null) Object.DestroyImmediate(t);
+        _brushTextures = new Texture2D[5];
+
+        for (int kind = 0; kind < 5; kind++)
         {
             var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
             tex.wrapMode = TextureWrapMode.Clamp;
             var pixels = new Color[S * S];
-            float sd = seeds[ti];
-
-            // 種類ごとに形状パラメータを変える
-            float cx = 0.5f + (ti % 2 == 0 ? -0.06f : 0.06f); // 中心X を左右にずらす
-            float cy = 0.5f + (ti < 2     ? -0.05f : 0.05f);  // 中心Y を上下にずらす
-            float rx = 0.38f + ti * 0.02f;  // X 半径（種類ごとに微変化）
-            float ry = 0.28f + ti * 0.015f; // Y 半径（縦を潰す）
+            float seed = kind * 31.7f + 5f;
 
             for (int y = 0; y < S; y++)
             {
                 for (int x = 0; x < S; x++)
                 {
-                    float u = (float)x / (S - 1);
+                    float u = (float)x / (S - 1) * 2f - 1f; // -1〜1
+                    float v = (float)y / (S - 1) * 2f - 1f;
+
+                    float dist;
+                    switch (kind)
+                    {
+                        case 0: // 円形
+                            dist = Mathf.Sqrt(u * u + v * v);
+                            break;
+                        case 1: // 横楕円（横1.6倍）
+                            dist = Mathf.Sqrt((u / 1.6f) * (u / 1.6f) + v * v);
+                            break;
+                        case 2: // 欠け円（右下が少し欠ける）
+                            dist = Mathf.Sqrt(u * u + v * v);
+                            dist += Mathf.Max(0f, u * 0.3f + v * 0.2f); // 右下方向を膨らませ欠けに
+                            break;
+                        case 3: // しずく（下流=+v方向に伸びる）
+                            {
+                                float vy = v < 0f ? v * 0.7f : v * 1.35f; // 下方向に伸ばす
+                                dist = Mathf.Sqrt(u * u + vy * vy);
+                            }
+                            break;
+                        default: // 不定形多角（ノイズで角を出す）
+                            dist = Mathf.Sqrt(u * u + v * v);
+                            float angle = Mathf.Atan2(v, u);
+                            float poly  = Mathf.Abs(Mathf.Cos(angle * 3.5f)) * 0.22f; // 多角形ぽい凹凸
+                            dist += poly;
+                            break;
+                    }
+
+                    // ソフトエッジ: 中心alpha=1、外縁=0
+                    float alpha = Mathf.Clamp01(1f - dist * dist * 1.5f);
+                    alpha = Mathf.Pow(alpha, 1.6f);
+
+                    // Perlinノイズで輪郭を崩す
+                    float noise = Mathf.PerlinNoise(u * 4f + seed, v * 4f + seed) * 0.28f;
+                    alpha = Mathf.Clamp01(alpha - noise * (1f - alpha * 0.4f));
+
+                    // 外縁完全透明
+                    if (dist > 1.05f) alpha = 0f;
+
+                    pixels[y * S + x] = new Color(1f, 1f, 1f, alpha);
+                }
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _brushTextures[kind] = tex;
+        }
+    }
+
+    /// <summary>
+    /// 不定形雪塊シルエットを6種類生成。
+    /// 各種類で形状が大きく異なる（丸塊・横長・縦長・三角崩れ・L字風・多角形風）。
+    /// </summary>
+    void BuildChunkTextures()
+    {
+        const int S = 48; // 解像度を上げて形状をより鮮明に
+        if (_chunkTextures != null)
+            foreach (var t in _chunkTextures)
+                if (t != null) Object.DestroyImmediate(t);
+        _chunkTextures = new Texture2D[6];
+
+        for (int ti = 0; ti < 6; ti++)
+        {
+            float sd  = Random.Range(0f, 100f);
+            float sd2 = Random.Range(0f, 100f);
+            var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+            tex.wrapMode = TextureWrapMode.Clamp;
+            var pixels = new Color[S * S];
+
+            for (int y = 0; y < S; y++)
+            {
+                for (int x = 0; x < S; x++)
+                {
+                    float u = (float)x / (S - 1); // 0〜1
                     float v = (float)y / (S - 1);
+                    float alpha = 0f;
 
-                    // 楕円距離（中心からの正規化距離）
-                    float dx = (u - cx) / rx;
-                    float dy = (v - cy) / ry;
-                    float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                    switch (ti)
+                    {
+                        case 0: // 丸塊（中央重め・左右非対称）
+                        {
+                            float cx = 0.48f, cy = 0.52f, rx = 0.40f, ry = 0.36f;
+                            float dx = (u - cx) / rx, dy = (v - cy) / ry;
+                            float dist = Mathf.Sqrt(dx*dx + dy*dy);
+                            if (dist < 1f)
+                            {
+                                float n = Mathf.PerlinNoise(u*3.5f+sd, v*3.5f+sd);
+                                float threshold = 0.28f + dist * 0.42f;
+                                if (n > threshold)
+                                    alpha = Mathf.Clamp01((1f - dist) * 2.8f);
+                            }
+                            break;
+                        }
+                        case 1: // 横長・扁平（雪が潰れた形）
+                        {
+                            float cx = 0.46f, cy = 0.55f, rx = 0.46f, ry = 0.26f;
+                            float dx = (u - cx) / rx, dy = (v - cy) / ry;
+                            float dist = Mathf.Sqrt(dx*dx + dy*dy);
+                            if (dist < 1f)
+                            {
+                                float n = Mathf.PerlinNoise(u*5f+sd, v*4f+sd*0.8f);
+                                float threshold = 0.32f + dist * 0.38f;
+                                if (n > threshold)
+                                    alpha = Mathf.Clamp01((1f - dist) * 3.2f);
+                            }
+                            break;
+                        }
+                        case 2: // 三角崩れ（上が尖り、下が広い）
+                        {
+                            // 上に向かって細くなる三角形ベース
+                            float narrowX = 0.5f + (v - 0.5f) * 0.7f * (u - 0.5f > 0 ? 1 : -1);
+                            float triDist = Mathf.Abs(u - 0.5f) / Mathf.Max(0.05f, (1f - v) * 0.45f + 0.05f);
+                            float vertDist = v; // 上端に近いほど細い
+                            if (triDist < 1f && vertDist < 0.92f)
+                            {
+                                float n = Mathf.PerlinNoise(u*4f+sd, v*5f+sd2);
+                                float threshold = 0.30f + triDist * 0.35f;
+                                if (n > threshold)
+                                    alpha = Mathf.Clamp01((1f - triDist) * 2.5f * (1f - vertDist * 0.3f));
+                            }
+                            break;
+                        }
+                        case 3: // 縦長・不規則（縦に伸びた塊）
+                        {
+                            float cx = 0.52f, cy = 0.50f, rx = 0.28f, ry = 0.44f;
+                            float dx = (u - cx) / rx, dy = (v - cy) / ry;
+                            float dist = Mathf.Sqrt(dx*dx + dy*dy);
+                            if (dist < 1f)
+                            {
+                                float n1 = Mathf.PerlinNoise(u*3f+sd, v*3f+sd);
+                                float n2 = Mathf.PerlinNoise(u*7f+sd2, v*6f+sd2) * 0.4f;
+                                float threshold = 0.26f + dist * 0.50f;
+                                if ((n1 + n2) > threshold)
+                                    alpha = Mathf.Clamp01((1f - dist) * 3f);
+                            }
+                            break;
+                        }
+                        case 4: // L字風（右下が欠けた形）
+                        {
+                            // 左上の楕円 + 右下を大きく欠く
+                            float cx = 0.44f, cy = 0.46f, rx = 0.42f, ry = 0.38f;
+                            float dx = (u - cx) / rx, dy = (v - cy) / ry;
+                            float dist = Mathf.Sqrt(dx*dx + dy*dy);
+                            // 右下コーナーを強制除去
+                            bool cutCorner = (u > 0.62f && v > 0.60f);
+                            if (dist < 1f && !cutCorner)
+                            {
+                                float n = Mathf.PerlinNoise(u*4.5f+sd, v*4f+sd2);
+                                float threshold = 0.29f + dist * 0.44f;
+                                if (n > threshold)
+                                    alpha = Mathf.Clamp01((1f - dist) * 2.8f);
+                            }
+                            break;
+                        }
+                        case 5: // 多角形風（ノイズ強め・輪郭が荒い）
+                        {
+                            float cx = 0.50f, cy = 0.50f, rx = 0.38f, ry = 0.38f;
+                            float dx = (u - cx) / rx, dy = (v - cy) / ry;
+                            float dist = Mathf.Sqrt(dx*dx + dy*dy);
+                            if (dist < 1f)
+                            {
+                                // 強いノイズで輪郭を荒く
+                                float n1 = Mathf.PerlinNoise(u*6f+sd,  v*6f+sd);
+                                float n2 = Mathf.PerlinNoise(u*12f+sd2, v*11f+sd2) * 0.5f;
+                                float threshold = 0.22f + dist * 0.55f;
+                                if ((n1 + n2) > threshold)
+                                    alpha = Mathf.Clamp01((1f - dist) * 2.5f);
+                            }
+                            break;
+                        }
+                    }
 
-                    // 楕円内部のみ描画
-                    if (dist > 1.0f) { pixels[y * S + x] = new Color(1, 1, 1, 0); continue; }
-
-                    // 輪郭に向かってフェードアウト（角丸効果）
-                    float edgeFade = Mathf.Clamp01((1f - dist) * 3f);
-
-                    // 低周波ノイズ: 大きな欠け・凹み
-                    float n1 = Mathf.PerlinNoise(u * 4f + sd, v * 4f + sd * 0.7f);
-                    // 中周波ノイズ: 中程度の凹凸
-                    float n2 = Mathf.PerlinNoise(u * 8f + sd * 1.3f, v * 8f + sd * 0.5f) * 0.5f;
-
-                    // 輪郭付近ほどノイズで欠ける（内部は安定）
-                    float noiseThreshold = 0.30f + dist * 0.45f;
-                    bool inShape = (n1 + n2 * 0.5f) > noiseThreshold;
-
-                    float alpha = inShape ? edgeFade : 0f;
-
-                    // 上端に軽いハイライト
-                    float highlight = (v < 0.35f && dist < 0.7f) ? 0.15f : 0f;
-                    // 下端に影
-                    float shadow = (v > 0.65f && dist < 0.8f) ? -0.12f : 0f;
-
-                    float bright = 1f + highlight + shadow;
+                    // 上端ハイライト・下端影を全種共通で焼き込み
+                    float highlight = (v < 0.30f && alpha > 0.1f) ? 0.12f : 0f;
+                    float shadow    = (v > 0.70f && alpha > 0.1f) ? -0.10f : 0f;
+                    float bright    = 1f + highlight + shadow;
                     pixels[y * S + x] = new Color(
                         Mathf.Clamp01(SnowWhite.r * bright),
                         Mathf.Clamp01(SnowWhite.g * bright),
@@ -322,7 +536,7 @@ public class WorkSnowForcer : MonoBehaviour
             tex.Apply();
             _chunkTextures[ti] = tex;
         }
-        Debug.Log("[SNOW_CHUNK_TEX] chunk_textures_built=4 silhouette=irregular_ellipse_with_noise");
+        Debug.Log("[SNOW_CHUNK_TEX] chunk_textures_built=6 silhouette=multi_shape_irregular");
     }
 
     void Start()
@@ -584,45 +798,145 @@ public class WorkSnowForcer : MonoBehaviour
             if (!_roofs[ri].ready) continue;
             if (!_roofs[ri].guiRect.Contains(guiPos)) continue;
 
-            // 屋根雪を減らす
-            _roofs[ri].snowFill = Mathf.Max(0f, _roofs[ri].snowFill - 0.15f);
+            // ── ヒットマップの平均を snowFill に同期 ──────────────
+            SyncSnowFill(ri);
+            float prev = _roofs[ri].snowFill;
+
+            // ── 積雪0なら雪片生成をブロック ──────────────────────────
+            bool spawnBlocked = (prev <= 0f);
+            Debug.Log($"[SNOW_REMAIN_BEFORE_TAP] roof={_roofs[ri].id} remain_before={prev:F2}");
+            if (spawnBlocked)
+            {
+                Debug.Log($"[SNOW_SPAWN_BLOCKED_EMPTY] roof={_roofs[ri].id}" +
+                          $" remain_before={prev:F2} spawn_blocked=true no_pieces_spawned=YES");
+                break;
+            }
+
+            // ── 崩落タイプを決定（可変崩落システム）────────────────
+            _roofs[ri].collapseCharge += Random.Range(0.15f, 0.35f) * _roofs[ri].instability;
+            float charge = _roofs[ri].collapseCharge;
+
+            CollapseType collapseType;
+            float snowDelta;
+            int   spawnCount;
+
+            if (charge >= 0.8f && Random.value < 0.55f)
+            {
+                collapseType = CollapseType.Avalanche;
+                snowDelta    = Random.Range(0.35f, Mathf.Min(0.65f, prev));
+                spawnCount   = Random.Range(4, 7);
+                _roofs[ri].collapseCharge = 0f;
+            }
+            else if (charge >= 0.45f && Random.value < 0.50f)
+            {
+                collapseType = CollapseType.Medium;
+                snowDelta    = Random.Range(0.15f, 0.30f);
+                spawnCount   = Random.Range(2, 4);
+                _roofs[ri].collapseCharge *= 0.5f;
+            }
+            else
+            {
+                collapseType = CollapseType.Small;
+                snowDelta    = Random.Range(0.05f, 0.14f);
+                spawnCount   = Random.Range(1, 3);
+            }
+
+            // ── ヒットマップにタップ位置起点の局所崩落を書き込む ──
+            // タップX のヒットマップ列インデックス
+            float tapLocalX = (guiPos.x - _roofs[ri].guiRect.x) / _roofs[ri].guiRect.width;
+            tapLocalX = Mathf.Clamp01(tapLocalX);
+            int tapCol = Mathf.Clamp(Mathf.FloorToInt(tapLocalX * SNOW_COLS), 0, SNOW_COLS - 1);
+
+            // 崩落タイプに応じた影響半径（列数）
+            float radiusCols = collapseType == CollapseType.Avalanche ? Random.Range(4f, 7f)
+                             : collapseType == CollapseType.Medium     ? Random.Range(2.5f, 4f)
+                             :                                           Random.Range(1f, 2.5f);
+
+            // 下流方向（+X 側）に少し伸ばす（しずく感）
+            float downstreamBias = radiusCols * 0.4f;
+
+            for (int c = 0; c < SNOW_COLS; c++)
+            {
+                float dx = c - tapCol;
+                // 下流側は少し広く、上流側は狭く
+                float effRadius = dx >= 0f ? radiusCols + downstreamBias : radiusCols;
+                float dist = Mathf.Abs(dx) / effRadius;
+                if (dist > 1f) continue;
+
+                // ガウシアン的な減少量（中心が最大、外縁がゼロ）
+                float weight = Mathf.Pow(1f - dist * dist, 1.5f);
+                // 列ごとに少しランダムな揺らぎを加える（凸凹感）
+                float jitter = Random.Range(0.7f, 1.3f);
+                float delta  = snowDelta * weight * jitter;
+                _roofs[ri].snowCols[c] = Mathf.Max(0f, _roofs[ri].snowCols[c] - delta);
+            }
+
+            // ── スムージング: 隣接列の差を緩和して境界の四角さを除去 ──
+            SmoothSnowCols(ri);
+            Debug.Log($"[SNOW_MASK_SMOOTH_APPLIED] roof={_roofs[ri].id} cols_smoothed=YES");
+
+            // snowFill を snowCols 平均に同期
+            SyncSnowFill(ri);
+            float afterFill = _roofs[ri].snowFill;
+            bool justCleared = (prev > 0f && afterFill <= 0f);
+            if (justCleared)
+            {
+                Debug.Log($"[SNOW_CLEARED] roof={_roofs[ri].id} all_snow_removed=YES");
+                // 全列を確実に0にする（トップライン残影対策）
+                for (int c = 0; c < SNOW_COLS; c++) _roofs[ri].snowCols[c] = 0f;
+                _roofs[ri].snowFill = 0f;
+                _snowHoles[ri]?.Clear();
+            }
             UpdateSnowVisual(ri);
+
+            Debug.Log($"[SNOW_REMAIN_AFTER_TAP] roof={_roofs[ri].id}" +
+                      $" remain_after={afterFill:F2} delta={snowDelta:F2}" +
+                      $" collapse={collapseType} charge={charge:F2} spawn_blocked=false");
+            Debug.Log($"[SNOW_TOP_ROW_STATE] roof={_roofs[ri].id} top_row={afterFill:F2}" +
+                      $" cleared={justCleared}");
+
+            // ── 積雪0になったらスポーンをブロック（問題2対策）─────
+            if (afterFill <= 0f)
+            {
+                Debug.Log($"[SNOW_SPAWN_BLOCKED_EMPTY] roof={_roofs[ri].id}" +
+                          $" remain_after=0.00 spawn_blocked=true no_pieces_spawned=YES");
+                break;
+            }
 
             // ── spawn 設定 ──────────────────────────────────────────
             float roofW    = _roofs[ri].guiRect.width;
             float roofH    = _roofs[ri].guiRect.height;
 
-            // スポーン位置: 屋根上端中央（滑落スタート）
-            float spawnX   = _roofs[ri].guiRect.x + roofW * 0.5f;
-            float spawnY   = _roofs[ri].guiRect.y; // 屋根上端
+            float tapRoofX = guiPos.x;
+            float spawnSpread = collapseType == CollapseType.Avalanche ? roofW * 0.45f
+                              : collapseType == CollapseType.Medium     ? roofW * 0.25f
+                              :                                           roofW * 0.12f;
+            float spawnX   = Mathf.Clamp(tapRoofX, _roofs[ri].guiRect.x + 10f,
+                                          _roofs[ri].guiRect.xMax - 10f);
+            float spawnY   = _roofs[ri].guiRect.y;
 
-            // downhill ベクトル（正規化済み、Y下向き主成分）
             Vector2 dh     = _roofs[ri].downhillDir;
-
-            // 軒先到達点: 屋根下端中央（downhill方向に屋根高さ分移動した点）
             float eaveX    = spawnX + dh.x * roofH;
-            float eaveY    = _roofs[ri].guiRect.yMax; // 屋根下端Y
-
-            // 最大滑落距離: 屋根の対角線長さ
+            float eaveY    = _roofs[ri].guiRect.yMax;
             float maxDist  = Mathf.Sqrt(roofW * roofW + roofH * roofH);
 
-            // detach 瞬間の雪煙
-            SpawnSmoke(spawnX, eaveY, dh.x * 30f, ri);
-
-            // 大きめ雪塊を2〜4個生成（downhillDir 方向に滑落）
-            int spawnCount = Random.Range(2, 5);
+            SmokeType smokeType = collapseType == CollapseType.Avalanche ? SmokeType.Land
+                                : SmokeType.Tap;
+            SpawnSmoke(spawnX, eaveY, dh.x * 30f, ri, smokeType);
             for (int si = 0; si < spawnCount; si++)
             {
-                // スポーン位置: 屋根上端付近にばらつき
-                float jx = Random.Range(-roofW * 0.25f, roofW * 0.25f);
-                float sz = roofW * Random.Range(0.15f, 0.28f);
-                sz = Mathf.Clamp(sz, 30f, 85f);
+                float jx = Random.Range(-spawnSpread, spawnSpread);
+                float szMin = collapseType == CollapseType.Avalanche ? 0.20f : 0.12f;
+                float szMax = collapseType == CollapseType.Avalanche ? 0.35f : 0.25f;
+                float sz = roofW * Random.Range(szMin, szMax);
+                sz = Mathf.Clamp(sz, 25f, 90f);
 
-                // 速度タイプ: 0=速い, 1=普通, 2=引っかかり
-                int speedType = Random.Range(0, 3);
-                float baseSpeed = speedType == 0 ? Random.Range(150f, 220f)
-                                : speedType == 1 ? Random.Range(85f,  140f)
-                                :                  Random.Range(50f,   88f);
+                int speedType = collapseType == CollapseType.Avalanche
+                    ? Random.Range(0, 2)
+                    : Random.Range(0, 3);
+                float baseSpeed = speedType == 0 ? Random.Range(150f, 230f)
+                                : speedType == 1 ? Random.Range(85f,  145f)
+                                :                  Random.Range(48f,   88f);
 
                 _pieces.Add(new FallingPiece
                 {
@@ -635,7 +949,7 @@ public class WorkSnowForcer : MonoBehaviour
                     rot          = Random.Range(-15f, 15f),
                     rotVel       = Random.Range(-35f, 35f),
                     alpha        = 1f,
-                    texIdx       = Random.Range(0, 4),
+                    texIdx       = Random.Range(0, 6),
                     phase        = PiecePhase.Sliding,
                     slideDir     = dh,
                     slideSpeed   = baseSpeed,
@@ -658,11 +972,44 @@ public class WorkSnowForcer : MonoBehaviour
                       $" eave=({eaveX:F1},{eaveY:F1})" +
                       $" snow_fill={_roofs[ri].snowFill:F2}" +
                       $" chunk_count={spawnCount} phase=SLIDING");
-            break; // 1タップ1軒
+            break;
         }
     }
 
     // ── 各屋根の Image 高さを fill に合わせて縮小 ────────────────
+
+    /// 隣接列の差を緩和するスムージング（2パス）。
+    /// 急激な段差を滑らかにして境界の四角さを除去する。
+    void SmoothSnowCols(int ri)
+    {
+        if (_roofs[ri].snowCols == null) return;
+        var cols = _roofs[ri].snowCols;
+
+        // パス1: 3列移動平均（境界を丸める）
+        var tmp = new float[SNOW_COLS];
+        for (int c = 0; c < SNOW_COLS; c++)
+        {
+            float sum = cols[c];
+            int   cnt = 1;
+            if (c > 0)             { sum += cols[c - 1]; cnt++; }
+            if (c < SNOW_COLS - 1) { sum += cols[c + 1]; cnt++; }
+            tmp[c] = sum / cnt;
+        }
+
+        // パス2: 元の値と平均値をブレンド（50%）して過度な平滑化を防ぐ
+        for (int c = 0; c < SNOW_COLS; c++)
+            cols[c] = cols[c] * 0.5f + tmp[c] * 0.5f;
+    }
+
+    /// snowCols[] の平均を snowFill に同期する。
+    void SyncSnowFill(int ri)
+    {
+        if (_roofs[ri].snowCols == null) return;
+        float sum = 0f;
+        for (int c = 0; c < SNOW_COLS; c++) sum += _roofs[ri].snowCols[c];
+        _roofs[ri].snowFill = sum / SNOW_COLS;
+    }
+
     void UpdateSnowVisual(int ri)
     {
         if (_roofs[ri].anchorMinY0 < 0f || _roofs[ri].anchorMaxY0 < 0f) return;
@@ -713,7 +1060,8 @@ public class WorkSnowForcer : MonoBehaviour
                         if (p.stickTimer <= 0f)
                         {
                             p.stickCooldown = Random.Range(0.2f, 0.55f);
-                            SpawnSmoke(p.pos.x, p.pos.y, p.slideDir.x * 15f, p.roofIdx);
+                            // 引っかかり解除: 小さな雪煙（Slide: 控えめ）
+                            SpawnSmoke(p.pos.x, p.pos.y, p.slideDir.x * 15f, p.roofIdx, SmokeType.Slide);
                         }
                     }
                     else
@@ -744,7 +1092,8 @@ public class WorkSnowForcer : MonoBehaviour
                         p.slideDir.x * launchSpeed,
                         Mathf.Max(p.slideDir.y * launchSpeed, 40f));
                     p.rotVel = Random.Range(-110f, 110f);
-                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.4f, p.roofIdx);
+                    // 軒先到達: Tap サイズ（中程度）
+                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.4f, p.roofIdx, SmokeType.Tap);
                     Debug.Log($"[EAVE_REACHED] roof={_roofs[p.roofIdx].id}" +
                               $" pos=({p.pos.x:F1},{p.pos.y:F1})" +
                               $" dist={p.slideDist:F1} -> FALLING");
@@ -763,7 +1112,8 @@ public class WorkSnowForcer : MonoBehaviour
                     && p.pos.y >= _roofs[ri].eaveGuiY)
                 {
                     p.pos.y = _roofs[ri].eaveGuiY;
-                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.3f, ri);
+                    // 着地: Land（大サイズ・派手・ランダム差）
+                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.3f, ri, SmokeType.Land);
                     _landedPieces.Add(new LandedPiece
                     {
                         pos        = p.pos,
@@ -786,25 +1136,79 @@ public class WorkSnowForcer : MonoBehaviour
         }
     }
 
-    // ── 雪煙生成（強化版）─────────────────────────────────────
-    // 数・サイズ・寿命を増加し、崩れ感を補強
-    void SpawnSmoke(float x, float y, float baseVx, int roofIdx)
+    // ── 雪煙タイプ ────────────────────────────────────────────
+    enum SmokeType
     {
-        int count = Random.Range(14, 22); // 強化: 8〜14 → 14〜22
+        Tap,     // 叩いた瞬間: 中サイズ・少し広がる
+        Slide,   // 滑落中:     小サイズ・控えめ・透明
+        Land,    // 着地:       大サイズ・ランダム差・派手
+    }
+
+    // ── 雪煙生成（タイプ別）──────────────────────────────────
+    void SpawnSmoke(float x, float y, float baseVx, int roofIdx,
+                    SmokeType type = SmokeType.Tap)
+    {
+        int   count;
+        float sizeMin, sizeMax, speedMin, speedMax, lifeMin, lifeMax;
+        float spread, alphaScale;
+
+        switch (type)
+        {
+            case SmokeType.Tap:
+                // 叩いた瞬間: 中サイズ・少し広がる
+                count      = Random.Range(8, 13);
+                sizeMin    = 7f;  sizeMax  = 18f;
+                speedMin   = 50f; speedMax = 120f;
+                lifeMin    = 0.5f; lifeMax = 1.1f;
+                spread     = 20f;
+                alphaScale = 1.0f;
+                break;
+
+            case SmokeType.Slide:
+                // 滑落中: 小サイズ・控えめ・透明（本体を隠さない）
+                count      = Random.Range(2, 5);
+                sizeMin    = 3f;  sizeMax  = 8f;
+                speedMin   = 20f; speedMax = 55f;
+                lifeMin    = 0.2f; lifeMax = 0.5f;
+                spread     = 8f;
+                alphaScale = 0.45f;
+                break;
+
+            case SmokeType.Land:
+            default:
+                // 着地: 大サイズ・ランダム差・派手
+                count      = Random.Range(16, 24);
+                sizeMin    = 12f; sizeMax  = 32f;
+                speedMin   = 60f; speedMax = 160f;
+                lifeMin    = 0.7f; lifeMax = 1.6f;
+                spread     = 30f;
+                alphaScale = 1.0f;
+                break;
+        }
+
         for (int i = 0; i < count; i++)
         {
             float angle = Random.Range(160f, 380f) * Mathf.Deg2Rad;
-            float speed = Random.Range(40f, 140f); // 強化: 速度増加
-            float life  = Random.Range(0.5f, 1.4f); // 強化: 寿命増加
+            float speed = Random.Range(speedMin, speedMax);
+            float life  = Random.Range(lifeMin, lifeMax);
+            float sz    = Random.Range(sizeMin, sizeMax);
             _smoke.Add(new SnowSmoke
             {
-                pos     = new Vector2(x + Random.Range(-25f, 25f), y + Random.Range(-8f, 8f)),
-                vel     = new Vector2(baseVx * 0.5f + Mathf.Cos(angle) * speed,
-                                      Mathf.Sin(angle) * speed - 30f),
-                size    = Random.Range(6f, 20f), // 強化: サイズ増加
-                life    = life,
+                pos     = new Vector2(x + Random.Range(-spread, spread),
+                                      y + Random.Range(-spread * 0.3f, spread * 0.3f)),
+                vel     = new Vector2(baseVx * 0.4f + Mathf.Cos(angle) * speed,
+                                      Mathf.Sin(angle) * speed - 25f),
+                size    = sz * alphaScale + sz * (1f - alphaScale), // サイズは変えずアルファで制御
+                life    = life * alphaScale + life * (1f - alphaScale) * 0.5f,
                 maxLife = life,
             });
+            // Slide タイプは maxLife を短く設定してアルファを抑える
+            if (type == SmokeType.Slide)
+            {
+                var s = _smoke[_smoke.Count - 1];
+                s.maxLife = life * 2.2f; // maxLife > life にして alpha = life/maxLife を低く保つ
+                _smoke[_smoke.Count - 1] = s;
+            }
         }
     }
 
@@ -840,60 +1244,85 @@ public class WorkSnowForcer : MonoBehaviour
             for (int ri = 0; ri < _roofs.Length; ri++)
             {
                 if (!_roofs[ri].ready || _roofs[ri].thickRatio <= 0f) continue;
+                if (_roofs[ri].snowCols == null) continue;
 
-                float fill    = _roofs[ri].snowFill;
-                float expandY = 14f;
-                float thickH  = (_roofs[ri].guiRect.height * _roofs[ri].thickRatio * fill) + expandY;
-                float roofTop = _roofs[ri].guiRect.y - expandY;
+                float fill    = _roofs[ri].snowFill; // 平均（全消去判定用）
                 float roofLeft= _roofs[ri].guiRect.x;
                 float roofW   = _roofs[ri].guiRect.width;
+                float maxThickH = _roofs[ri].guiRect.height * _roofs[ri].thickRatio + 14f;
 
-                if (thickH < 1f) continue;
-
-                // 本体（雪色・不透明）
-                GUI.color = SnowWhite;
-                GUI.DrawTexture(new Rect(roofLeft, roofTop, roofW, thickH), _whiteTex);
-
-                // 上端ハイライト（光沢感）
-                if (thickH > 8f)
+                // fill=0: 背景に焼き込まれた屋根トップの白ラインを上書き消去
+                // expandY=14 分 + 余白を含めた広い範囲を背景色で塗りつぶす
+                if (fill <= 0f)
                 {
-                    GUI.color = new Color(1f, 1f, 1f, 0.55f);
-                    GUI.DrawTexture(new Rect(roofLeft, roofTop, roofW, 4f), _whiteTex);
+                    GUI.color = new Color(0.45f, 0.55f, 0.72f, 0.92f);
+                    GUI.DrawTexture(new Rect(roofLeft, _roofs[ri].guiRect.y - 18f, roofW, 22f), _whiteTex);
+                    continue;
                 }
 
-                // 前縁: 2Dノイズマスクで崩す（厚みムラ + 垂れ）
-                if (_roofEdgeMaskTex != null && thickH > 8f)
+                // ── 列ごとに高さを変えて描画（帯状廃止・局所凸凹を実現）──
+                float colW = roofW / SNOW_COLS;
+                // 各列の下端に加えるノイズオフセット（境界の四角さを除去）
+                // Time.time を使わず固定シードで描画ごとに安定させる
+                float noiseSeedX = ri * 17.3f;
+                for (int c = 0; c < SNOW_COLS; c++)
                 {
-                    // 前縁帯の高さ: 雪帯全体の40〜50%（大きめに崩す）
-                    float edgeH = Mathf.Min(thickH * 0.48f, 28f);
-                    float edgeY = roofTop + thickH - edgeH;
+                    float colFill = _roofs[ri].snowCols[c];
+                    if (colFill <= 0f) continue;
 
-                    // 背景色（青灰）で前縁の本体部分を部分的に消す → 欠け感
-                    // ※ OnGUI はアルファブレンドのみ。背景を上書きするため半透明の背景色で隠す
-                    GUI.color = new Color(0.55f, 0.65f, 0.82f, 0.60f);
-                    GUI.DrawTexture(new Rect(roofLeft, edgeY, roofW, edgeH), _roofEdgeMaskTex);
+                    float expandY = 14f * colFill;
+                    float baseThickH = (_roofs[ri].guiRect.height * _roofs[ri].thickRatio * colFill) + expandY;
+                    if (baseThickH < 1f) continue;
 
-                    // 前縁の上に雪色を重ねて「崩れた雪の前縁」を表現
-                    GUI.color = new Color(SnowWhite.r, SnowWhite.g, SnowWhite.b, 0.90f);
-                    GUI.DrawTexture(new Rect(roofLeft, edgeY, roofW, edgeH * 0.6f), _roofEdgeMaskTex);
+                    // 下端に微細なノイズを加えて境界を有機的に（±最大6px）
+                    float noiseU = (float)c / (SNOW_COLS - 1);
+                    float edgeNoise = (Mathf.PerlinNoise(noiseU * 5f + noiseSeedX, colFill * 3f) - 0.5f) * 12f * colFill;
+                    float thickH = baseThickH + edgeNoise;
+                    if (thickH < 1f) thickH = 1f;
+
+                    float colX    = roofLeft + c * colW;
+                    float roofTop = _roofs[ri].guiRect.y - expandY;
+
+                    // 本体（雪色）
+                    GUI.color = SnowWhite;
+                    GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, thickH), _whiteTex);
+
+                    // 上端ハイライト
+                    if (thickH > 8f)
+                    {
+                        GUI.color = new Color(1f, 1f, 1f, 0.50f);
+                        GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, 4f), _whiteTex);
+                    }
+
+                    // 下端影
+                    if (thickH > 8f)
+                    {
+                        float botY = roofTop + thickH;
+                        GUI.color = new Color(0.60f, 0.70f, 0.88f, 0.55f);
+                        GUI.DrawTexture(new Rect(colX, botY - 5f, colW + 1f, 5f), _whiteTex);
+                    }
                 }
 
-                // 下端グラデーション影（3段）
-                if (thickH > 10f)
+                // 前縁ノイズマスク（全体に1枚重ねて前縁を崩す）
+                if (_roofEdgeMaskTex != null)
                 {
-                    float edgeY = roofTop + thickH;
-                    GUI.color = new Color(0.70f, 0.78f, 0.92f, 0.65f);
-                    GUI.DrawTexture(new Rect(roofLeft, edgeY - 10f, roofW, 4f), _whiteTex);
-                    GUI.color = new Color(0.58f, 0.68f, 0.88f, 0.50f);
-                    GUI.DrawTexture(new Rect(roofLeft, edgeY - 6f, roofW, 3f), _whiteTex);
-                    GUI.color = new Color(0.48f, 0.60f, 0.82f, 0.40f);
-                    GUI.DrawTexture(new Rect(roofLeft, edgeY - 3f, roofW, 3f), _whiteTex);
+                    float avgFill = fill;
+                    float avgThickH = maxThickH * avgFill;
+                    if (avgThickH > 8f)
+                    {
+                        float edgeH = Mathf.Min(avgThickH * 0.45f, 26f);
+                        float edgeY = (_roofs[ri].guiRect.y - 14f * avgFill) + avgThickH - edgeH;
+                        GUI.color = new Color(0.52f, 0.63f, 0.82f, 0.55f);
+                        GUI.DrawTexture(new Rect(roofLeft, edgeY, roofW, edgeH), _roofEdgeMaskTex);
+                        GUI.color = new Color(SnowWhite.r, SnowWhite.g, SnowWhite.b, 0.85f);
+                        GUI.DrawTexture(new Rect(roofLeft, edgeY, roofW, edgeH * 0.55f), _roofEdgeMaskTex);
+                    }
                 }
             }
         }
 
         // ② 落下中の不定形雪塊（シルエットテクスチャ使用）
-        bool hasChunkTex = _chunkTextures != null && _chunkTextures.Length == 4;
+        bool hasChunkTex = _chunkTextures != null && _chunkTextures.Length == 6;
         foreach (var p in _pieces)
         {
             var center = new Vector2(p.pos.x, p.pos.y);
@@ -921,14 +1350,21 @@ public class WorkSnowForcer : MonoBehaviour
                                      lp.size, lp.sizeY), tex);
         }
 
-        // ④ 雪煙パーティクル（強化: 大きめ・長め・散り広がる）
+        // ④ 雪煙パーティクル（ソフト円形テクスチャ + 回転 + サイズ揺らぎ）
+        Texture2D smokeTex = (_smokeTex != null) ? _smokeTex : _whiteTex;
         foreach (var s in _smoke)
         {
             float t     = Mathf.Clamp01(s.life / s.maxLife);
-            float alpha = t * t * 0.85f; // 二乗でゆっくりフェード
-            float sz    = s.size * (1f + (1f - t) * 0.8f); // 時間とともに膨らむ
+            float alpha = t * t * 0.80f;
+            float sz    = s.size * (1f + (1f - t) * 0.9f); // 膨らみ増加
+            float szY   = sz * Random.Range(0.80f, 1.20f);  // 縦横を少しランダムに
+            // 回転: 各パーティクルに固有の角度（ランダムに見せるため life を seed に）
+            float angle = s.life * 137.5f; // 黄金角ベースで分散
+            var center  = new Vector2(s.pos.x, s.pos.y);
+            GUIUtility.RotateAroundPivot(angle, center);
             GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(s.pos.x - sz * 0.5f, s.pos.y - sz * 0.5f, sz, sz), _whiteTex);
+            GUI.DrawTexture(new Rect(s.pos.x - sz * 0.5f, s.pos.y - szY * 0.5f, sz, szY), smokeTex);
+            GUIUtility.RotateAroundPivot(-angle, center);
         }
 
         GUI.color = Color.white;
@@ -937,6 +1373,7 @@ public class WorkSnowForcer : MonoBehaviour
     void OnDestroy()
     {
         if (_whiteTex        != null) { Object.DestroyImmediate(_whiteTex);        _whiteTex        = null; }
+        if (_smokeTex        != null) { Object.DestroyImmediate(_smokeTex);        _smokeTex        = null; }
         if (_snowEdgeTex     != null) { Object.DestroyImmediate(_snowEdgeTex);     _snowEdgeTex     = null; }
         if (_roofEdgeMaskTex != null) { Object.DestroyImmediate(_roofEdgeMaskTex); _roofEdgeMaskTex = null; }
         if (_chunkTextures   != null)
@@ -944,6 +1381,12 @@ public class WorkSnowForcer : MonoBehaviour
             foreach (var t in _chunkTextures)
                 if (t != null) Object.DestroyImmediate(t);
             _chunkTextures = null;
+        }
+        if (_brushTextures   != null)
+        {
+            foreach (var t in _brushTextures)
+                if (t != null) Object.DestroyImmediate(t);
+            _brushTextures = null;
         }
     }
 }
