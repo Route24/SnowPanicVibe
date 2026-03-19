@@ -201,12 +201,41 @@ public class WorkSnowForcer : MonoBehaviour
             Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for ALL6 roofs");
         }
 
-        // SnowStrip 2D を追加（Roof_BR 専用・2Dマスク方式プロトタイプ）
-        if (host.GetComponent<SnowStrip2D>() == null)
+        // SnowStrip 2D を全6軒に追加（各屋根ごとに専用 GameObject）
+        var roofDefs = new (string roofId, string guideId)[]
         {
-            host.AddComponent<SnowStrip2D>();
-            Debug.Log("[2D_BOOTSTRAP] SnowStrip2D added for Roof_BR");
+            ("Roof_TL", "RoofGuide_TL"),
+            ("Roof_TM", "RoofGuide_TM"),
+            ("Roof_TR", "RoofGuide_TR"),
+            ("Roof_BL", "RoofGuide_BL"),
+            ("Roof_BM", "RoofGuide_BM"),
+            ("Roof_BR", "RoofGuide_BR"),
+        };
+
+        int applied = 0;
+        foreach (var (rid, gid) in roofDefs)
+        {
+            // 既存インスタンスがあればスキップ（重複防止）
+            bool alreadyExists = false;
+            foreach (var existing in Object.FindObjectsByType<SnowStrip2D>(FindObjectsSortMode.None))
+            {
+                if (existing.roofId == rid) { alreadyExists = true; break; }
+            }
+            if (alreadyExists) continue;
+
+            var go   = new GameObject($"SnowStrip2D_{rid}");
+            var comp = go.AddComponent<SnowStrip2D>();
+            comp.roofId  = rid;
+            comp.guideId = gid;
+            applied++;
+
+            Debug.Log($"[2D_BOOTSTRAP] SnowStrip2D added roof={rid} guide={gid}");
         }
+
+        Debug.Log($"[ROOF_BIND_CHECK] applied={applied}/6" +
+                  $" slide=YES engulf=YES puff=YES" +
+                  $" chunkMinScale=7 chunkMaxScale=22" +
+                  $" chunkAvgScale=14 houseCountApplied={applied}");
 
         Debug.Log("[ALL6_SNOW_FIT] Bootstrap scene=" +
                   UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);

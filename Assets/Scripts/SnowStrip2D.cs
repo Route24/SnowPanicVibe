@@ -7,7 +7,7 @@ using UnityEngine.InputSystem;
 #endif
 
 /// <summary>
-/// SnowStrip 2D — Roof_BR 専用プロトタイプ
+/// SnowStrip 2D — 全6軒対応 2D残雪管理コンポーネント
 ///
 /// 残雪を 2D float 配列（_snow[x, y]）で管理し、
 /// タップ位置を中心とした円形ブラシで減算する。
@@ -15,15 +15,21 @@ using UnityEngine.InputSystem;
 /// 円形にくり抜かれる見た目を実現する。
 ///
 /// Input System 両対応（新旧 API 自動切替）。
-/// SnowStripV2 の Roof_BR 処理を完全に引き継ぐ。
+/// roofId / guideId を外部から設定することで任意の屋根に適用可能。
 /// </summary>
 [DefaultExecutionOrder(11)] // SnowStripV2 の後
 public class SnowStrip2D : MonoBehaviour
 {
+    // ── 設定（外部から設定可能）──────────────────────────────
+    // WorkSnowForcer から AddComponent 後に設定する
+    public string roofId  = "Roof_BR";
+    public string guideId = "RoofGuide_BR";
+
     // ── 定数 ──────────────────────────────────────────────────
     const string CALIB_PATH        = "Assets/Art/RoofCalibrationData.json";
-    const string TARGET_ROOF_ID    = "Roof_BR";
-    const string TARGET_GUIDE_ID   = "RoofGuide_BR";
+    // TARGET_ROOF_ID / TARGET_GUIDE_ID は roofId / guideId に移行
+    string TARGET_ROOF_ID  => roofId;
+    string TARGET_GUIDE_ID => guideId;
     const float  UNDER_EAVE_OFFSET = 0.10f;
     const float  THICK_RATIO       = 0.60f;
     const float  EXPAND_Y_MAX      = 12f;
@@ -62,8 +68,30 @@ public class SnowStrip2D : MonoBehaviour
         public float   slideTimer;    // >0 = スライドフェーズ残り時間（重力OFF）
         public float   engulfBudget;  // この滑落が巻き込める残量上限
         public float   engulfTotal;   // 累計巻き込み量（ログ用）
+        public float   currentMass;   // 滑落中の雪塊質量（初期値=タップ削り量由来）
+        public bool    slideActive;   // true=スライド継続中、false=停止or落下へ移行
+        // 不定形ビジュアル用
+        public float   scaleX;        // 横方向スケール比
+        public float   scaleY;        // 縦方向スケール比
+        public float   rotation;      // 表示回転（度）
+        public float   chunkCount;    // 副塊数係数（1〜4）
+        public Color   snowColor;     // 個別雪色（白〜薄青）
+        // 副塊レイアウト（最大3個）
+        public Vector2 sub0Offset; public float sub0Scale;
+        public Vector2 sub1Offset; public float sub1Scale;
+        public Vector2 sub2Offset; public float sub2Scale;
+        public int     subCount;       // 実際の副塊数（0〜3）
     }
     readonly List<Piece> _pieces = new List<Piece>();
+
+    // 雪煙パーティクル（hit / eave / ground）
+    struct Puff
+    {
+        public Vector2 pos, vel;
+        public float   size, life, alpha, maxLife;
+        public int     kind; // 0=hit 1=eave 2=ground
+    }
+    readonly List<Puff> _puffs = new List<Puff>();
 
     // ── JSON Deserialize ──────────────────────────────────────
     [System.Serializable] class V2C { public float x, y; }
@@ -122,6 +150,7 @@ public class SnowStrip2D : MonoBehaviour
 
         HandleTap();
         UpdatePieces();
+        UpdatePuffs();
 
         if (_texDirty) RebuildTexture();
     }
@@ -190,20 +219,24 @@ public class SnowStrip2D : MonoBehaviour
     }
 
     // ── Texture2D を _snow から再構築 ─────────────────────────
-    // 各ピクセル = 1グリッドセル。alpha = _snow[x,y]
-    // y=0 が表面（テクスチャでは上 = flipY）
     void RebuildTexture()
     {
         if (_snowTex == null) return;
 
-        var cyan = new Color(0f, 0.9f, 0.85f);
+        // 雪色: 白ベース + 薄い青みの陰影（自然な雪に見せる）
+        // r/g/b を少し下げることで背景雪と区別しつつ自然に見える
+        var snowColor = new Color(0.92f, 0.95f, 1.00f);
+        Debug.Log($"[SNOW_VISUAL_COLOR] class=SnowStrip2D color=({snowColor.r:F2},{snowColor.g:F2},{snowColor.b:F2})");
+
         for (int x = 0; x < GRID_W; x++)
         for (int y = 0; y < GRID_H; y++)
         {
-            float v = _snow[x, y];
-            // テクスチャY=0が下なので flip: texY = GRID_H-1-y
-            int texY = GRID_H - 1 - y;
-            _snowTex.SetPixel(x, texY, new Color(cyan.r, cyan.g, cyan.b, v));
+            float v    = _snow[x, y];
+            int   texY = GRID_H - 1 - y;
+            // 下段（y大）ほど少し暗くして奥行き感（shadow gradient）
+            float shadow = 1f - (float)y / GRID_H * 0.15f;
+            _snowTex.SetPixel(x, texY,
+                new Color(snowColor.r * shadow, snowColor.g * shadow, snowColor.b * shadow, v));
         }
         _snowTex.Apply();
         _texDirty = false;
@@ -348,6 +381,9 @@ public class SnowStrip2D : MonoBehaviour
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
                       $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) rawCell=({rawCx},{rawCy})" +
                       $" fpRX={FP_RX} fpRY={FP_RY} fpHasSnow=NO spawned=NO [FP_EXPOSED]");
+            Debug.Log($"[SNOW_PUFF_SUPPRESSED_EXPOSED] roof={TARGET_ROOF_ID}" +
+                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                      $" reason=fpExposed suppressed=YES");
             return;
         }
 
@@ -480,13 +516,82 @@ public class SnowStrip2D : MonoBehaviour
             // spawn Y: 屋根の中央付近（_guiRect.y = 上端、yMax = 下端）
             float spawnY = Mathf.Lerp(_guiRect.y, _guiRect.yMax, 0.3f);
 
+            // ── 叩き雪煙: 雪セルにヒットした時のみ ──────────────
+            // 大中小: totalDelta に基づいて分類
+            float puffDelta = totalDelta;
+            string puffSize = puffDelta > 2.0f ? "large" : (puffDelta > 0.8f ? "medium" : "small");
+            int puffCount = puffDelta > 2.0f ? 5 : (puffDelta > 0.8f ? 3 : 2);
+            float puffBaseSize = puffDelta > 2.0f ? 28f : (puffDelta > 0.8f ? 18f : 10f);
+
+            for (int pi = 0; pi < puffCount; pi++)
+            {
+                float pjx = Random.Range(-12f, 12f);
+                float pjy = Random.Range(-8f, 8f);
+                float psz = puffBaseSize * Random.Range(0.7f, 1.4f);
+                float pl  = Random.Range(0.4f, 0.7f);
+                _puffs.Add(new Puff
+                {
+                    pos     = new Vector2(spawnX + pjx, spawnY + pjy),
+                    vel     = new Vector2(Random.Range(-20f, 20f), Random.Range(-30f, -10f)),
+                    size    = psz,
+                    life    = pl,
+                    maxLife = pl,
+                    alpha   = 1f,
+                    kind    = 0,
+                });
+            }
+            Debug.Log($"[SNOW_PUFF_HIT] roof={TARGET_ROOF_ID} puffSize={puffSize}" +
+                      $" puffCount={puffCount} puffBaseSize={puffBaseSize:F0}" +
+                      $" totalDelta={totalDelta:F3}" +
+                      $" pos=({spawnX:F0},{spawnY:F0})");
+
             for (int i = 0; i < spawnCount; i++)
             {
-                float jx  = Random.Range(-roofW * 0.08f, roofW * 0.08f);
-                float sz  = Mathf.Clamp(roofW * Random.Range(0.06f, 0.16f), 10f, 40f);
+                float jx = Random.Range(-roofW * 0.10f, roofW * 0.10f);
+
+                // サイズ: 屋根幅の 1/8〜1/10 程度を目標に縮小
+                // 旧: roofW * [0.10, 0.26] → clamp [14, 52]
+                // 新: roofW * [0.05, 0.12] → clamp [7, 22]（半分以下）
+                float sz = Mathf.Clamp(roofW * Random.Range(0.05f, 0.12f), 7f, 22f);
+
+                // ── 不定形ビジュアルパラメータ ──────────────────
+                // scaleJitter: 縦横比を大きくばらつかせる（角張り感を消す）
+                const float SCALE_JITTER_MIN = 0.45f;
+                const float SCALE_JITTER_MAX = 1.55f;
+                float sx  = Random.Range(SCALE_JITTER_MIN, SCALE_JITTER_MAX);
+                float sy  = Random.Range(SCALE_JITTER_MIN, SCALE_JITTER_MAX);
+
+                // vertexNoise: 回転を大きくばらつかせる
+                const float VERTEX_NOISE_DEG = 45f;
+                float rot = Random.Range(-VERTEX_NOISE_DEG, VERTEX_NOISE_DEG);
+
+                // 副塊数: 1〜4個（塊感を出す）
+                int subN = Random.Range(1, 4); // 1,2,3
+
+                // 副塊の相対オフセット・スケール（親サイズ比）
+                Vector2 s0o = new Vector2(Random.Range(-0.7f, 0.7f), Random.Range(-0.5f, 0.5f));
+                float   s0s = Random.Range(0.35f, 0.65f);
+                Vector2 s1o = new Vector2(Random.Range(-0.8f, 0.8f), Random.Range(-0.6f, 0.6f));
+                float   s1s = Random.Range(0.25f, 0.55f);
+                Vector2 s2o = new Vector2(Random.Range(-0.9f, 0.9f), Random.Range(-0.7f, 0.7f));
+                float   s2s = Random.Range(0.20f, 0.45f);
+
+                // 白〜薄青〜薄灰のばらつき（自然な雪色）
+                Color sc = new Color(
+                    Random.Range(0.85f, 1.00f),
+                    Random.Range(0.90f, 1.00f),
+                    Random.Range(0.95f, 1.00f));
+
+                Debug.Log($"[SNOW_CHUNK_SHAPE] roof={TARGET_ROOF_ID} idx={i}" +
+                          $" size={sz:F1} scaleX={sx:F2} scaleY={sy:F2}" +
+                          $" rotation={rot:F1} subCount={subN}" +
+                          $" roundness=soft vertexNoise={VERTEX_NOISE_DEG:F0}deg" +
+                          $" scaleJitter=[{SCALE_JITTER_MIN:F2},{SCALE_JITTER_MAX:F2}]" +
+                          $" minScale={sz * SCALE_JITTER_MIN:F1} maxScale={sz * SCALE_JITTER_MAX:F1}" +
+                          $" clusterSizeRange=[1,{subN + 1}]" +
+                          $" color=({sc.r:F2},{sc.g:F2},{sc.b:F2})");
 
                 // 初速: downhill 方向のみ（上向き成分なし）
-                // スライドフェーズ中は重力を掛けないので pos.y は増加のみ
                 Vector2 slideVel = _downhillDir * SLIDE_SPD;
 
                 _pieces.Add(new Piece
@@ -496,9 +601,20 @@ public class SnowStrip2D : MonoBehaviour
                     size         = sz,
                     life         = 5f,
                     alpha        = 1f,
-                    slideTimer   = SLIDE_DURATION,
-                    engulfBudget = 0.8f, // 1滑落あたりの巻き込み上限
+                    slideTimer   = 999f,
+                    slideActive  = true,
+                    currentMass  = 0.5f + totalDelta * 0.1f,
+                    engulfBudget = 2.0f,
                     engulfTotal  = 0f,
+                    scaleX       = sx,
+                    scaleY       = sy,
+                    rotation     = rot,
+                    chunkCount   = subN,
+                    snowColor    = sc,
+                    subCount     = subN,
+                    sub0Offset   = s0o, sub0Scale = s0s,
+                    sub1Offset   = s1o, sub1Scale = s1s,
+                    sub2Offset   = s2o, sub2Scale = s2s,
                 });
             }
 
@@ -547,85 +663,190 @@ public class SnowStrip2D : MonoBehaviour
 
     // ── 落下片の更新 ─────────────────────────────────────────
     //
-    // スライドフェーズ中、Piece の GUI 座標を屋根ローカル 2D セルへ変換し、
-    // そのセルと近傍に対して小さな巻き込み減算を行う。
-    // _guiRect が有効な場合のみ変換を実行。
+    // 【抵抗ベース滑落: 止まる or 突破する】
+    //
+    // slideActive=true の間:
+    //   1. 前方セル（downhill 1グリッド先）の snow 合計 = frontResistance
+    //   2. currentMass < frontResistance * RESIST_MULT → 減速・停止
+    //   3. currentMass >= frontResistance * RESIST_MULT → 突破しつつ吸収
+    //   4. 軒先到達 → 落下フェーズへ移行
     //
     void UpdatePieces()
     {
-        const float ENGULF_PER_FRAME = 0.04f; // 1フレームあたりの巻き込み量
-        const float ENGULF_CELL_R    = 1.5f;  // 巻き込み近傍半径（グリッド単位）
-        const float EXPOSED_THR      = 0.01f;
+        // 抵抗倍率: frontResistance * この値 が停止閾値
+        const float RESIST_MULT   = 1.2f;
+        // 減速係数（停止方向時、毎フレーム vel をこの割合で減らす）
+        const float DECEL         = 6f;
+        // 停止判定速度（これ以下で slideActive=false）
+        const float STOP_VEL      = 8f;
+        // 突破時の吸収割合（前方 snow のこの割合を currentMass に加算）
+        const float ABSORB_RATE   = 0.5f;
+        // 1回の滑落での累計吸収上限（暴走防止）
+        const float ENGULF_CAP    = 4.0f;
+        // 吸収対象の横幅
+        const int   SWEEP_R       = 1;
+        const float EXPOSED_THR   = 0.01f;
 
         float dt = Time.deltaTime;
         for (int i = _pieces.Count - 1; i >= 0; i--)
         {
             var p = _pieces[i];
 
-            if (p.slideTimer > 0f)
+            if (p.slideActive)
             {
-                // ── スライドフェーズ ──────────────────────────
-                p.slideTimer -= dt;
-                p.pos        += p.vel * dt;
+                bool transitionToFall = false;
 
-                // ── 通過セルへの巻き込み ──────────────────────
-                if (_ready && p.engulfBudget > 0f && _guiRect.width > 1f)
+                if (_ready && _guiRect.width > 1f)
                 {
-                    // GUI 座標 → 屋根ローカル正規化座標 → グリッドセル
-                    float nx = Mathf.Clamp01((p.pos.x - _guiRect.x) / _guiRect.width);
-                    float ny = Mathf.Clamp01((p.pos.y - _guiRect.y) / _guiRect.height);
+                    // 現在位置 → グリッド座標
+                    float nx  = Mathf.Clamp01((p.pos.x - _guiRect.x) / _guiRect.width);
+                    float ny  = Mathf.Clamp01((p.pos.y - _guiRect.y) / _guiRect.height);
                     float pgx = nx * GRID_W;
                     float pgy = ny * GRID_H;
 
-                    int ex0 = Mathf.Max(0,          Mathf.FloorToInt(pgx - ENGULF_CELL_R));
-                    int ex1 = Mathf.Min(GRID_W - 1, Mathf.CeilToInt (pgx + ENGULF_CELL_R));
-                    int ey0 = Mathf.Max(0,          Mathf.FloorToInt(pgy - ENGULF_CELL_R));
-                    int ey1 = Mathf.Min(GRID_H - 1, Mathf.CeilToInt (pgy + ENGULF_CELL_R));
+                    int cgx = Mathf.Clamp(Mathf.FloorToInt(pgx), 0, GRID_W - 1);
+                    int cgy = Mathf.Clamp(Mathf.FloorToInt(pgy), 0, GRID_H - 1);
 
-                    int   contactCells = 0;
+                    // 前方セル: downhill 方向に1グリッド先
+                    // _downhillDir は GUI 方向の正規化ベクトル
+                    // → グリッド単位に変換（y が主方向のため GRID_H で scale）
+                    int fgx = Mathf.Clamp(cgx + Mathf.RoundToInt(_downhillDir.x * 2f), 0, GRID_W - 1);
+                    int fgy = Mathf.Clamp(cgy + Mathf.RoundToInt(_downhillDir.y * 2f), 0, GRID_H - 1);
+
+                    // frontResistance: 前方セル群の snow 合計
+                    float frontResistance = 0f;
+                    for (int sx = Mathf.Max(0, fgx - SWEEP_R);
+                             sx <= Mathf.Min(GRID_W - 1, fgx + SWEEP_R); sx++)
+                        frontResistance += _snow[sx, fgy];
+
+                    bool stopped       = false;
+                    bool breakthrough  = false;
                     float frameEngulf  = 0f;
+                    int   contactCells = 0;
 
-                    for (int ex = ex0; ex <= ex1; ex++)
-                    for (int ey = ey0; ey <= ey1; ey++)
+                    if (frontResistance > EXPOSED_THR)
                     {
-                        if (_snow[ex, ey] <= EXPOSED_THR) continue;
-                        float edx = (ex + 0.5f) - pgx;
-                        float edy = (ey + 0.5f) - pgy;
-                        if (edx * edx + edy * edy > ENGULF_CELL_R * ENGULF_CELL_R) continue;
+                        float threshold = frontResistance * RESIST_MULT;
 
-                        float take = Mathf.Min(ENGULF_PER_FRAME, _snow[ex, ey],
-                                               p.engulfBudget - frameEngulf);
-                        if (take <= 0f) continue;
+                        if (p.currentMass < threshold)
+                        {
+                            // ── 停止方向: 減速 ────────────────────
+                            p.vel *= Mathf.Max(0f, 1f - DECEL * dt);
 
-                        _snow[ex, ey] -= take;
-                        frameEngulf   += take;
-                        contactCells++;
-                        _texDirty = true;
+                            if (p.vel.magnitude <= STOP_VEL)
+                            {
+                                // 完全停止
+                                p.slideActive = false;
+                                p.vel         = Vector2.zero;
+                                p.life        = Mathf.Min(p.life, 1.0f);
+                                stopped       = true;
+
+                                Debug.Log($"[2D_SLIDE_STOP] roof={TARGET_ROOF_ID}" +
+                                          $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
+                                          $" currentMass={p.currentMass:F3}" +
+                                          $" frontResistance={frontResistance:F3}" +
+                                          $" threshold={threshold:F3}" +
+                                          $" stop=YES breakthrough=NO" +
+                                          $" totalEngulfed={p.engulfTotal:F3}");
+                            }
+                        }
+                        else
+                        {
+                            // ── 突破: 前方雪を吸収しながら進む ────
+                            breakthrough = true;
+
+                            for (int sx = Mathf.Max(0, fgx - SWEEP_R);
+                                     sx <= Mathf.Min(GRID_W - 1, fgx + SWEEP_R); sx++)
+                            {
+                                if (_snow[sx, fgy] <= EXPOSED_THR) continue;
+                                if (p.engulfTotal >= ENGULF_CAP) break;
+
+                                float take = Mathf.Min(
+                                    _snow[sx, fgy] * ABSORB_RATE,
+                                    ENGULF_CAP - p.engulfTotal);
+                                if (take <= 0f) continue;
+
+                                _snow[sx, fgy] -= take;
+                                p.currentMass  += take * 0.5f; // 吸収量の50%だけ mass 増
+                                p.engulfTotal  += take;
+                                frameEngulf    += take;
+                                contactCells++;
+                                _texDirty = true;
+                            }
+
+                            Debug.Log($"[ENGULF_ENTRY] roof={TARGET_ROOF_ID}" +
+                                      $" frame={Time.frameCount}" +
+                                      $" slidePos=({p.pos.x:F0},{p.pos.y:F0})" +
+                                      $" cell=({fgx},{fgy})" +
+                                      $" currentMass={p.currentMass:F3}" +
+                                      $" frontResistance={frontResistance:F3}" +
+                                      $" absorbed={frameEngulf:F3}" +
+                                      $" totalEngulfed={p.engulfTotal:F3}" +
+                                      $" stop=NO breakthrough=YES");
+                        }
                     }
 
-                    p.engulfBudget -= frameEngulf;
-                    p.engulfTotal  += frameEngulf;
+                    // 移動（停止していなければ）
+                    if (!stopped) p.pos += p.vel * dt;
 
-                    if (frameEngulf > 0f)
+                    // 軒先到達 or 屋根下端 → 落下フェーズへ移行
+                    if (p.pos.y >= _eaveGuiY || ny >= 1f)
                     {
-                        // [ENGULF_ENTRY] 巻き込み実行確認
-                        Debug.Log($"[ENGULF_ENTRY] class=SnowStrip2D method=UpdatePieces" +
-                                  $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
-                                  $" contactCells={contactCells} frameEngulf={frameEngulf:F3}" +
-                                  $" totalEngulfed={p.engulfTotal:F3} budgetLeft={p.engulfBudget:F3}");
-                        Debug.Log($"[2D_SLIDE_ENGULF] roof={TARGET_ROOF_ID}" +
-                                  $" slidePos=({p.pos.x:F0},{p.pos.y:F0})" +
-                                  $" gridPos=({pgx:F1},{pgy:F1})" +
-                                  $" contactCells={contactCells}" +
-                                  $" frameEngulf={frameEngulf:F3}" +
-                                  $" totalEngulfed={p.engulfTotal:F3}" +
-                                  $" budgetLeft={p.engulfBudget:F3}");
+                        transitionToFall = true;
+                        Debug.Log($"[2D_SLIDE_EAVE] roof={TARGET_ROOF_ID}" +
+                                  $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
+                                  $" currentMass={p.currentMass:F3}" +
+                                  $" totalEngulfed={p.engulfTotal:F3} reachedEave=YES");
+
+                        // 軒落下時の雪煙: 大中小を currentMass で分類
+                        string eavePuffSz = p.currentMass > 1.5f ? "large" :
+                                            (p.currentMass > 0.7f ? "medium" : "small");
+                        int eavePuffN = p.currentMass > 1.5f ? 4 : (p.currentMass > 0.7f ? 3 : 2);
+                        float eavePuffBase = p.currentMass > 1.5f ? 22f : (p.currentMass > 0.7f ? 14f : 8f);
+                        for (int pi2 = 0; pi2 < eavePuffN; pi2++)
+                        {
+                            float pjx = Random.Range(-10f, 10f);
+                            float pjy = Random.Range(-6f, 6f);
+                            float psz = eavePuffBase * Random.Range(0.7f, 1.4f);
+                            float pl  = Random.Range(0.5f, 0.9f);
+                            _puffs.Add(new Puff
+                            {
+                                pos     = new Vector2(p.pos.x + pjx, p.pos.y + pjy),
+                                vel     = new Vector2(Random.Range(-15f, 15f), Random.Range(-20f, 5f)),
+                                size    = psz,
+                                life    = pl,
+                                maxLife = pl,
+                                alpha   = 1f,
+                                kind    = 1,
+                            });
+                        }
+                        Debug.Log($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID}" +
+                                  $" puffSize={eavePuffSz} puffCount={eavePuffN}" +
+                                  $" currentMass={p.currentMass:F3}" +
+                                  $" pos=({p.pos.x:F0},{p.pos.y:F0})");
+                    }
+
+                    // 屋根左右外に出たら停止
+                    if (nx <= 0f || nx >= 1f)
+                    {
+                        p.slideActive = false;
+                        p.vel         = Vector2.zero;
+                        p.life        = Mathf.Min(p.life, 0.6f);
                     }
                 }
+                else
+                {
+                    // _guiRect 未準備時は素通り移動
+                    p.pos += p.vel * dt;
+                }
 
-                // スライド終了時に通常落下速度へ移行
-                if (p.slideTimer <= 0f)
-                    p.vel = new Vector2(p.vel.x * 0.3f, Mathf.Max(p.vel.y, 60f));
+                if (transitionToFall)
+                {
+                    p.slideActive = false;
+                    p.vel = new Vector2(p.vel.x * 0.3f, Mathf.Max(p.vel.y, 80f));
+                }
+
+                p.slideTimer = p.slideActive ? 999f : 0f;
             }
             else
             {
@@ -639,12 +860,82 @@ public class SnowStrip2D : MonoBehaviour
 
             if (p.pos.y >= _eaveGuiY)
             {
+                bool wasMoving = p.vel.magnitude > 20f;
                 p.pos.y = _eaveGuiY;
                 p.vel   = Vector2.zero;
                 p.life  = Mathf.Min(p.life, 1.2f);
+
+                // 地面着弾雪煙: 速度があった時のみ（停止から来たPuffは出さない）
+                if (wasMoving && !p.slideActive)
+                {
+                    float gPuffBase = p.currentMass > 1.5f ? 20f : (p.currentMass > 0.7f ? 13f : 7f);
+                    string gPuffSz  = p.currentMass > 1.5f ? "large" :
+                                      (p.currentMass > 0.7f ? "medium" : "small");
+                    int gPuffN = p.currentMass > 1.5f ? 4 : (p.currentMass > 0.7f ? 3 : 2);
+                    for (int pi3 = 0; pi3 < gPuffN; pi3++)
+                    {
+                        float pjx = Random.Range(-14f, 14f);
+                        float psz = gPuffBase * Random.Range(0.8f, 1.5f);
+                        float pl  = Random.Range(0.4f, 0.8f);
+                        _puffs.Add(new Puff
+                        {
+                            pos     = new Vector2(p.pos.x + pjx, p.pos.y),
+                            vel     = new Vector2(Random.Range(-25f, 25f), Random.Range(-40f, -10f)),
+                            size    = psz,
+                            life    = pl,
+                            maxLife = pl,
+                            alpha   = 1f,
+                            kind    = 2,
+                        });
+                    }
+                    Debug.Log($"[SNOW_PUFF_GROUND] roof={TARGET_ROOF_ID}" +
+                              $" puffSize={gPuffSz} puffCount={gPuffN}" +
+                              $" currentMass={p.currentMass:F3}" +
+                              $" pos=({p.pos.x:F0},{p.pos.y:F0})");
+                }
             }
             if (p.life <= 0f) _pieces.RemoveAt(i);
             else              _pieces[i] = p;
+        }
+    }
+
+    // 副塊1個を描画するヘルパー（OnGUI 内から呼ぶ）
+    void DrawSubChunk(Piece p, Vector2 offsetRatio, float scaleRatio, Color baseColor, float rot)
+    {
+        float sz  = p.size * scaleRatio;
+        float w2  = sz * p.scaleX * 0.5f;
+        float h2  = sz * p.scaleY * 0.5f;
+        float cx  = p.pos.x + offsetRatio.x * p.size;
+        float cy  = p.pos.y + offsetRatio.y * p.size;
+
+        Color c   = new Color(baseColor.r, baseColor.g, baseColor.b, baseColor.a * 0.85f);
+        var saved = GUI.matrix;
+        GUIUtility.RotateAroundPivot(rot, new Vector2(cx, cy));
+        GUI.color = c;
+        GUI.DrawTexture(new Rect(cx - w2, cy - h2, w2 * 2f, h2 * 2f), Texture2D.whiteTexture);
+
+        // 副塊にも丸み補助
+        float rnd = Mathf.Min(w2, h2) * 0.3f;
+        GUI.color = new Color(c.r, c.g, c.b, c.a * 0.45f);
+        GUI.DrawTexture(new Rect(cx - w2 * 0.65f, cy - h2 - rnd * 0.5f,
+                                  w2 * 1.3f, rnd), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(cx - w2 * 0.65f, cy + h2 - rnd * 0.5f,
+                                  w2 * 1.3f, rnd), Texture2D.whiteTexture);
+        GUI.matrix = saved;
+    }
+
+    void UpdatePuffs()
+    {
+        float dt = Time.deltaTime;
+        for (int i = _puffs.Count - 1; i >= 0; i--)
+        {
+            var pf = _puffs[i];
+            pf.vel.y -= 60f * dt; // 上昇気流（雪煙が少し浮く）
+            pf.pos   += pf.vel * dt;
+            pf.life  -= dt;
+            pf.alpha  = Mathf.Clamp01(pf.life / pf.maxLife);
+            if (pf.life <= 0f) _puffs.RemoveAt(i);
+            else               _puffs[i] = pf;
         }
     }
 
@@ -679,8 +970,8 @@ public class SnowStrip2D : MonoBehaviour
                 alphaBlend: true
             );
 
-            // 上端シアンライン（固定位置）
-            GUI.color = new Color(0f, 1f, 1f, 0.9f);
+            // 上端ラインを白系に（雪面エッジ）
+            GUI.color = new Color(0.85f, 0.92f, 1.0f, 0.85f);
             GUI.DrawTexture(new Rect(_guiRect.x, snowTop, _guiRect.width, 3f),
                             Texture2D.whiteTexture);
         }
@@ -695,13 +986,66 @@ public class SnowStrip2D : MonoBehaviour
                             Texture2D.whiteTexture);
         }
 
-        // ── 落下片 ───────────────────────────────────────────
+        // ── 落下片（不定形・ランダムサイズ・副塊クラスタ）──────
         foreach (var p in _pieces)
         {
             if (p.alpha <= 0f) continue;
-            GUI.color = new Color(0f, 0.9f, 0.85f, p.alpha);
-            float h = p.size * 0.5f;
-            GUI.DrawTexture(new Rect(p.pos.x - h, p.pos.y - h, p.size, p.size),
+
+            Color c = p.snowColor;
+            c.a = p.alpha;
+
+            var savedMatrix = GUI.matrix;
+            GUIUtility.RotateAroundPivot(p.rotation, new Vector2(p.pos.x, p.pos.y));
+
+            // ── 丸み表現: 中心矩形 + 4方向に小さめ矩形を重ねる ──
+            // これにより角が「埋まって」丸く見える
+            float w2 = p.size * p.scaleX * 0.5f;
+            float h2 = p.size * p.scaleY * 0.5f;
+
+            // 中心ブロック
+            GUI.color = c;
+            GUI.DrawTexture(new Rect(p.pos.x - w2, p.pos.y - h2, w2 * 2f, h2 * 2f),
+                            Texture2D.whiteTexture);
+
+            // 丸み補助: 上下左右に少し大きめの矩形を半透明で重ねる
+            float rnd = Mathf.Min(w2, h2) * 0.35f; // roundness radius
+            GUI.color = new Color(c.r, c.g, c.b, c.a * 0.55f);
+            GUI.DrawTexture(new Rect(p.pos.x - w2 * 0.7f, p.pos.y - h2 - rnd * 0.6f,
+                                     w2 * 1.4f, rnd * 1.2f), Texture2D.whiteTexture); // 上
+            GUI.DrawTexture(new Rect(p.pos.x - w2 * 0.7f, p.pos.y + h2 - rnd * 0.6f,
+                                     w2 * 1.4f, rnd * 1.2f), Texture2D.whiteTexture); // 下
+            GUI.DrawTexture(new Rect(p.pos.x - w2 - rnd * 0.6f, p.pos.y - h2 * 0.7f,
+                                     rnd * 1.2f, h2 * 1.4f), Texture2D.whiteTexture); // 左
+            GUI.DrawTexture(new Rect(p.pos.x + w2 - rnd * 0.6f, p.pos.y - h2 * 0.7f,
+                                     rnd * 1.2f, h2 * 1.4f), Texture2D.whiteTexture); // 右
+
+            GUI.matrix = savedMatrix;
+
+            // ── 副塊クラスタ（subCount 個）──────────────────────
+            // 親とは別の回転・位置で描画（クラスタ感を出す）
+            if (p.subCount >= 1)
+            {
+                DrawSubChunk(p, p.sub0Offset, p.sub0Scale, c, p.rotation + Random.Range(-15f, 15f));
+            }
+            if (p.subCount >= 2)
+            {
+                DrawSubChunk(p, p.sub1Offset, p.sub1Scale, c, p.rotation + Random.Range(-20f, 20f));
+            }
+            if (p.subCount >= 3)
+            {
+                DrawSubChunk(p, p.sub2Offset, p.sub2Scale, c, p.rotation + Random.Range(-25f, 25f));
+            }
+        }
+
+        // ── 雪煙パーティクル ─────────────────────────────────
+        foreach (var pf in _puffs)
+        {
+            if (pf.alpha <= 0f) continue;
+            float progress = 1f - pf.life / pf.maxLife;
+            float sz = pf.size * (0.5f + progress * 1.2f); // 膨らんで薄くなる
+            float a  = pf.alpha * (1f - progress * 0.8f);
+            GUI.color = new Color(0.95f, 0.97f, 1f, a * 0.7f);
+            GUI.DrawTexture(new Rect(pf.pos.x - sz * 0.5f, pf.pos.y - sz * 0.5f, sz, sz),
                             Texture2D.whiteTexture);
         }
 
