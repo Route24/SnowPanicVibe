@@ -72,6 +72,7 @@
     <Compile Include="Assets/Scripts/Editor/CorniceSceneSetup.cs" />
     <Compile Include="Assets/Editor/SnowPanicAutoRecord.cs" />
     <Compile Include="Assets/Editor/SnowPanicUploadTest.cs" />
+    <Compile Include="Assets/Editor/SnowClumpMeshGenerator.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowLoopNoaReportAutoCopy.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowMinReproSceneBuilder.cs" />
     <Compile Include="Assets/Editor/SnowVerifyPhaseACreator.cs" />

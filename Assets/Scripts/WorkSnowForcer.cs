@@ -42,7 +42,7 @@ public class WorkSnowForcer : MonoBehaviour
         ("Roof_BR", "RoofGuide_BR"),
     };
 
-    static readonly Color SnowWhite = Color.blue;
+    static readonly Color SnowWhite = new Color(0.92f, 0.95f, 1f);
 
     // ── 屋根ごとのデータ ──────────────────────────────────────
     struct RoofData

@@ -81,7 +81,7 @@ public class SnowPackSpawner : MonoBehaviour
     public bool rebuildOnPlay = true;
 
     [Header("Material")]
-    public Color snowColor = Color.blue;
+    public Color snowColor = new Color(0.92f, 0.95f, 1f);
     [Tooltip("PoolReturn発生元特定用。ONで初回のみthrow")]
     public bool throwOnFirstPoolReturn = false;
     [Header("Debug (水平積雪切り分け)")]
@@ -1663,18 +1663,37 @@ public class SnowPackSpawner : MonoBehaviour
             bool shouldFlush = clusterBuffer.Count >= ClusterSizeMax || (clusterBuffer.Count > 0 && clusterFlushTimer >= ClusterFlushInterval);
             if (shouldFlush)
             {
-                // クラスター内の平均位置を基準に downhill 方向へ揃えた初速を付与
                 Vector3 clusterVelocity = downhill * Mathf.Max(slideSpeed, actualSlideDist / duration);
-                foreach (var ct in clusterBuffer)
+                int clusterSize = clusterBuffer.Count;
+
+                // 先頭を root として SnowPackFallingPiece で物理落下
+                // 残りは SnowClusterFollower で root に追従（1物体扱い）
+                SnowPackFallingPiece rootFalling = null;
+                for (int ci = 0; ci < clusterBuffer.Count; ci++)
                 {
+                    var ct = clusterBuffer[ci];
                     if (ct == null) continue;
-                    var falling = ct.gameObject.GetComponent<SnowPackFallingPiece>();
-                    if (falling == null) falling = ct.gameObject.AddComponent<SnowPackFallingPiece>();
-                    falling.spawner = this;
-                    falling.groundMask = groundMask;
-                    falling.ActivateRoofSlide(clusterVelocity, roofCollider, roofCenter, downhill, tEnd);
-                    fallingCount++;
-                    UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] detach_requested=true falling_piece_spawned=true cluster_size={clusterBuffer.Count} initial_velocity=({clusterVelocity.x:F2},{clusterVelocity.y:F2},{clusterVelocity.z:F2}) initial_position=({ct.position.x:F2},{ct.position.y:F2},{ct.position.z:F2})");
+                    if (ci == 0)
+                    {
+                        // root ピース
+                        var falling = ct.gameObject.GetComponent<SnowPackFallingPiece>();
+                        if (falling == null) falling = ct.gameObject.AddComponent<SnowPackFallingPiece>();
+                        falling.spawner = this;
+                        falling.groundMask = groundMask;
+                        falling.ActivateRoofSlide(clusterVelocity, roofCollider, roofCenter, downhill, tEnd);
+                        rootFalling = falling;
+                        fallingCount++;
+                        UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] detach_requested=true falling_piece_spawned=true cluster_root=true cluster_size={clusterSize} initial_velocity=({clusterVelocity.x:F2},{clusterVelocity.y:F2},{clusterVelocity.z:F2}) initial_position=({ct.position.x:F2},{ct.position.y:F2},{ct.position.z:F2})");
+                    }
+                    else if (rootFalling != null)
+                    {
+                        // フォロワーピース: root に追従
+                        var follower = ct.gameObject.GetComponent<SnowClusterFollower>();
+                        if (follower == null) follower = ct.gameObject.AddComponent<SnowClusterFollower>();
+                        follower.Init(rootFalling, this);
+                        rootFalling.AddFollower(follower);
+                        UnityEngine.Debug.Log($"[SNOW_DETACH_CHECK] detach_requested=true cluster_follower=true cluster_size={clusterSize} initial_position=({ct.position.x:F2},{ct.position.y:F2},{ct.position.z:F2})");
+                    }
                 }
                 clusterBuffer.Clear();
                 clusterFlushTimer = 0f;
@@ -1687,15 +1706,28 @@ public class SnowPackSpawner : MonoBehaviour
         if (clusterBuffer.Count > 0)
         {
             Vector3 clusterVelocity = downhill * Mathf.Max(slideSpeed, actualSlideDist / duration);
-            foreach (var ct in clusterBuffer)
+            SnowPackFallingPiece rootFalling = null;
+            for (int ci = 0; ci < clusterBuffer.Count; ci++)
             {
+                var ct = clusterBuffer[ci];
                 if (ct == null) continue;
-                var falling = ct.gameObject.GetComponent<SnowPackFallingPiece>();
-                if (falling == null) falling = ct.gameObject.AddComponent<SnowPackFallingPiece>();
-                falling.spawner = this;
-                falling.groundMask = groundMask;
-                falling.ActivateRoofSlide(clusterVelocity, roofCollider, roofCenter, downhill, tEnd);
-                fallingCount++;
+                if (ci == 0)
+                {
+                    var falling = ct.gameObject.GetComponent<SnowPackFallingPiece>();
+                    if (falling == null) falling = ct.gameObject.AddComponent<SnowPackFallingPiece>();
+                    falling.spawner = this;
+                    falling.groundMask = groundMask;
+                    falling.ActivateRoofSlide(clusterVelocity, roofCollider, roofCenter, downhill, tEnd);
+                    rootFalling = falling;
+                    fallingCount++;
+                }
+                else if (rootFalling != null)
+                {
+                    var follower = ct.gameObject.GetComponent<SnowClusterFollower>();
+                    if (follower == null) follower = ct.gameObject.AddComponent<SnowClusterFollower>();
+                    follower.Init(rootFalling, this);
+                    rootFalling.AddFollower(follower);
+                }
             }
             clusterBuffer.Clear();
         }
@@ -2713,10 +2745,10 @@ public class SnowPackSpawner : MonoBehaviour
     }
 
     enum PieceVisualState { Accumulating, Sliding, Cooldown, Returning, Pooled }
-    static readonly Color _colorAccum = Color.blue;       // Normal (テスト表示用)
-    static readonly Color _colorSliding = Color.blue;     // Sliding: 本番は白（debug着色を停止）
-    static readonly Color _colorCooldown = Color.blue;    // Cooldown: 本番は白（debug着色を停止）
-    static readonly Color _colorReturning = Color.blue;   // Returning: 本番は白（debug着色を停止）
+    static readonly Color _colorAccum    = new Color(0.92f, 0.95f, 1f);
+    static readonly Color _colorSliding  = new Color(0.92f, 0.95f, 1f);
+    static readonly Color _colorCooldown = new Color(0.92f, 0.95f, 1f);
+    static readonly Color _colorReturning= new Color(0.92f, 0.95f, 1f);
     static readonly Color _colorPooled = Color.black;      // Pooled (非表示)
 
     int _pieceStateLogThrottle;

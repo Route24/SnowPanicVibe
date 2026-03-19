@@ -205,7 +205,7 @@ public class RoofAlignToSnow : MonoBehaviour
             if (unlit != null)
             {
                 var m = new Material(unlit);
-                MaterialColorHelper.SetColorSafe(m, Color.blue); // テスト用に青
+                MaterialColorHelper.SetColorSafe(m, new Color(0.92f, 0.95f, 1f));
                 rend.sharedMaterial = m;
                 rend.enabled = true;
             }
@@ -215,7 +215,7 @@ public class RoofAlignToSnow : MonoBehaviour
                 if (shader != null)
                 {
                     var m = new Material(shader);
-                    MaterialColorHelper.SetColorSafe(m, Color.blue); // テスト用に青
+                    MaterialColorHelper.SetColorSafe(m, new Color(0.92f, 0.95f, 1f));
                     rend.sharedMaterial = m;
                 }
                 rend.enabled = true;

@@ -49,8 +49,6 @@ public class SnowVisual : MonoBehaviour
     /// <summary>SnowPackSpawner が使用するメッシュを取得。丸み・頂点ノイズ適用。無効時は null。</summary>
     public static Mesh GetPieceMesh()
     {
-        var inst = Instance ?? Object.FindFirstObjectByType<SnowVisual>();
-        if (inst != null && !inst.visualModuleEnabled) return null;
         EnsureInitialized();
         return _roundedMesh;
     }
@@ -92,7 +90,7 @@ public class SnowVisual : MonoBehaviour
             Object.DontDestroyOnLoad(go);
             inst = go.AddComponent<SnowVisual>();
         }
-        float roundness = inst != null ? inst.roundness : 0.15f;
+        float roundness = inst != null ? inst.roundness : 0.48f;
         float noiseStr = inst != null ? inst.vertexNoiseStrength : 0.03f;
         int seed = inst != null ? inst.noiseSeed : 42;
         _roundedMesh = BuildRoundedMesh(roundness, noiseStr, seed);
@@ -101,6 +99,97 @@ public class SnowVisual : MonoBehaviour
     }
 
     static Mesh BuildRoundedMesh(float roundness, float noiseStrength, int seed)
+    {
+        // 常に球状雪塊メッシュを使う（キューブ感を排除）
+        return BuildSnowClumpMesh(noiseStrength, seed);
+    }
+
+    /// <summary>
+    /// 球状の雪塊メッシュ。上面が少し平らで下面が丸い不定形の雪の塊。
+    /// UV球（縦8・横8）ベースに頂点ノイズを加えた低ポリ雪塊。
+    /// </summary>
+    static Mesh BuildSnowClumpMesh(float noiseStrength, int seed)
+    {
+        var m = new Mesh { name = "SnowVisualRoundedMesh" };
+        var rand = new System.Random(seed);
+        float Noise() => (float)(rand.NextDouble() * 2 - 1) * noiseStrength;
+
+        var verts = new System.Collections.Generic.List<Vector3>();
+        var tris  = new System.Collections.Generic.List<int>();
+
+        // UV球パラメータ（ローポリ感を残す）
+        int latDiv = 7;   // 縦分割（少ないほどローポリ）
+        int lonDiv = 8;   // 横分割
+
+        // 上端（頂点）
+        verts.Add(new Vector3(Noise(), 0.5f + Noise() * 0.5f, Noise()));
+
+        // 中間リング
+        for (int lat = 1; lat < latDiv; lat++)
+        {
+            float phi = Mathf.PI * lat / latDiv; // 0→π
+            float sinP = Mathf.Sin(phi);
+            float cosP = Mathf.Cos(phi);
+
+            // 上半球は少し縦に伸ばし、下半球は平らにして「雪の塊」らしく
+            float yScale = cosP > 0 ? 1.1f : 0.7f;
+            float xzScale = 0.5f;
+
+            for (int lon = 0; lon < lonDiv; lon++)
+            {
+                float theta = 2f * Mathf.PI * lon / lonDiv;
+                float x = sinP * Mathf.Cos(theta) * xzScale;
+                float y = cosP * 0.5f * yScale;
+                float z = sinP * Mathf.Sin(theta) * xzScale;
+                verts.Add(new Vector3(x + Noise(), y + Noise() * 0.5f, z + Noise()));
+            }
+        }
+
+        // 下端（底点）- 少し上に寄せて底を平らに見せる
+        verts.Add(new Vector3(Noise(), -0.38f + Noise() * 0.3f, Noise()));
+
+        // トライアングル：上端 → 最初のリング
+        for (int lon = 0; lon < lonDiv; lon++)
+        {
+            int a = 1 + lon;
+            int b = 1 + (lon + 1) % lonDiv;
+            tris.Add(0); tris.Add(b); tris.Add(a);
+        }
+
+        // 中間リング同士
+        for (int lat = 0; lat < latDiv - 2; lat++)
+        {
+            int ringStart = 1 + lat * lonDiv;
+            int nextStart = 1 + (lat + 1) * lonDiv;
+            for (int lon = 0; lon < lonDiv; lon++)
+            {
+                int a = ringStart + lon;
+                int b = ringStart + (lon + 1) % lonDiv;
+                int c = nextStart + lon;
+                int d = nextStart + (lon + 1) % lonDiv;
+                tris.Add(a); tris.Add(c); tris.Add(b);
+                tris.Add(b); tris.Add(c); tris.Add(d);
+            }
+        }
+
+        // 最後のリング → 下端
+        int lastRingStart = 1 + (latDiv - 2) * lonDiv;
+        int bottomIdx = verts.Count - 1;
+        for (int lon = 0; lon < lonDiv; lon++)
+        {
+            int a = lastRingStart + lon;
+            int b = lastRingStart + (lon + 1) % lonDiv;
+            tris.Add(a); tris.Add(bottomIdx); tris.Add(b);
+        }
+
+        m.SetVertices(verts);
+        m.SetTriangles(tris, 0);
+        m.RecalculateNormals();
+        m.RecalculateBounds();
+        return m;
+    }
+
+    static Mesh BuildCubeMesh(float roundness, float noiseStrength, int seed)
     {
         var m = new Mesh { name = "SnowVisualRoundedMesh" };
         var rand = new System.Random(seed);
@@ -114,18 +203,18 @@ public class SnowVisual : MonoBehaviour
             new Vector3(-0.5f, 0.5f, 0.5f), new Vector3(0.5f, 0.5f, 0.5f), new Vector3(0.5f, 0.5f, -0.5f), new Vector3(-0.5f, 0.5f, -0.5f),
             new Vector3(-0.5f, -0.5f, -0.5f), new Vector3(0.5f, -0.5f, -0.5f), new Vector3(0.5f, -0.5f, 0.5f), new Vector3(-0.5f, -0.5f, 0.5f),
         };
-
         for (int i = 0; i < 24; i++)
         {
             var p = v[i];
             var n = p.normalized;
             v[i] = Vector3.Lerp(p, n * 0.5f, roundness)
-                + new Vector3((float)(rand.NextDouble() * 2 - 1) * noiseStrength, (float)(rand.NextDouble() * 2 - 1) * noiseStrength, (float)(rand.NextDouble() * 2 - 1) * noiseStrength);
+                + new Vector3((float)(rand.NextDouble() * 2 - 1) * noiseStrength,
+                              (float)(rand.NextDouble() * 2 - 1) * noiseStrength,
+                              (float)(rand.NextDouble() * 2 - 1) * noiseStrength);
         }
-
-        int[] tris = { 0, 2, 1, 0, 3, 2, 4, 6, 5, 4, 7, 6, 8, 10, 9, 8, 11, 10, 12, 14, 13, 12, 15, 14, 16, 18, 17, 16, 19, 18, 20, 22, 21, 20, 23, 22 };
+        int[] trisArr = { 0,2,1,0,3,2,4,6,5,4,7,6,8,10,9,8,11,10,12,14,13,12,15,14,16,18,17,16,19,18,20,22,21,20,23,22 };
         m.vertices = v;
-        m.triangles = tris;
+        m.triangles = trisArr;
         m.RecalculateNormals();
         m.RecalculateBounds();
         return m;
@@ -137,7 +226,7 @@ public class SnowVisual : MonoBehaviour
         if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
         var mat = new Material(sh);
         if (mat.HasProperty("_BaseColor"))
-            mat.SetColor("_BaseColor", Color.blue);
+            mat.SetColor("_BaseColor", new Color(0.92f, 0.95f, 1f)); // 雪白（わずかに青みがかった白）
         if (mat.HasProperty("_BlueTint"))
             mat.SetFloat("_BlueTint", 0.08f);
         if (mat.HasProperty("_Softness"))

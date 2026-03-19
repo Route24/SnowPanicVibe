@@ -45,7 +45,7 @@ public class RoofSnowSystem : MonoBehaviour
 
     [Header("Visual")]
     public Collider roofSlideCollider;
-    public Color roofSnowColor = Color.blue;
+    public Color roofSnowColor = new Color(0.92f, 0.95f, 1f);
     [Tooltip("Constant snow surface thickness (no global pulsing).")]
     public float roofSnowConstantThickness = 0.08f;
     [Tooltip("雪面を屋根に密着させるオフセット（負で下げる）。")]
@@ -694,7 +694,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         marker.transform.localScale = Vector3.one * 0.5f;
         if (marker.GetComponent<Collider>() != null) marker.GetComponent<Collider>().enabled = false;
         var r = marker.GetComponent<Renderer>();
-        if (r != null && r.material != null) MaterialColorHelper.SetColorSafe(r.material, Color.blue); // テスト用に青
+        if (r != null && r.material != null) MaterialColorHelper.SetColorSafe(r.material, new Color(0.92f, 0.95f, 1f));
         UnityEngine.Object.Destroy(marker, 1f);
         int count = Mathf.Max(6, burstChunkCount);
         float roofSlideTime = 0.35f;
@@ -851,7 +851,7 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
             var mat = sh != null ? new Material(sh) : null;
             if (mat != null)
             {
-                MaterialColorHelper.SetColorSafe(mat, Color.blue); // テスト用に青
+                MaterialColorHelper.SetColorSafe(mat, new Color(0.92f, 0.95f, 1f));
                 r.sharedMaterial = mat;
             }
         }

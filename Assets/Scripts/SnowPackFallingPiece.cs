@@ -35,6 +35,17 @@ public class SnowPackFallingPiece : MonoBehaviour
     float _roofContactEndTime = -1f;
 
     public bool hasLanded => _state == State.Grounded;
+
+    // クラスター追従フォロワー管理
+    readonly List<SnowClusterFollower> _followers = new List<SnowClusterFollower>();
+    public void AddFollower(SnowClusterFollower f) { if (f != null) _followers.Add(f); }
+    void ReleaseFollowers(string reason)
+    {
+        foreach (var f in _followers)
+            if (f != null) f.Release(reason);
+        _followers.Clear();
+    }
+
     Rigidbody _rb;
     float _startTime;
     Renderer[] _renderers;
@@ -466,6 +477,7 @@ public class SnowPackFallingPiece : MonoBehaviour
     {
         if (_state != State.Falling) return;
         _state = State.Grounded;
+        ReleaseFollowers("landed");
         if (_rb != null)
         {
             _rb.linearVelocity = Vector3.zero;
@@ -511,6 +523,7 @@ public class SnowPackFallingPiece : MonoBehaviour
     void ReturnFromFall(string reason)
     {
         if (this == null || gameObject == null) return;
+        ReleaseFollowers(reason);
         UnityEngine.Debug.Log($"[SNOW_DESTROY_CALL] reason={reason} state={_state} pos=({transform.position.x:F2},{transform.position.y:F2},{transform.position.z:F2}) go={gameObject.name}");
         DetachedSnowRegistry.UnregisterFalling(this);
         var state = _state == State.Falling ? SnowDespawnLogger.SnowState.Falling
