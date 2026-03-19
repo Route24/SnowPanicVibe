@@ -33,8 +33,12 @@ public class SnowStrip2D : MonoBehaviour
     const int    GRID_H = 12;   // Y方向セル数（表面=0、奥=GRID_H-1）
 
     // 円形ブラシ（グリッド単位）
-    const float  BRUSH_R   = 5.5f;  // 半径（グリッドセル単位）。4.5→5.5に微拡大でブラシ内ヒット率向上
-    const float  BRUSH_MAX = 0.80f; // 1タップあたりの最大削り量（中心セル）。目標: 約20タップで1軒ゼロ
+    const float  BRUSH_R   = 5.5f;  // 半径（グリッドセル単位）
+    // 1タップ削り量調整: 目標20回で1軒ゼロ
+    // GRID=40x12=480セル, ブラシ内≈95セル, smoothstep平均weight≈0.35
+    // 1タップ削り量 ≈ 95 × 0.35 × BRUSH_MAX
+    // BRUSH_MAX=1.2 → ≈40/タップ → 理論12タップ → 分散タップで実質約20回
+    const float  BRUSH_MAX = 1.2f;
 
     // ── 状態 ─────────────────────────────────────────────────
     float[,] _snow = new float[GRID_W, GRID_H]; // 0=空, 1=満
@@ -248,7 +252,8 @@ public class SnowStrip2D : MonoBehaviour
         // epsilon: ブラシ後に残った微小値をゼロスナップする閾値
         const float CELL_EPSILON      = 0.08f;
         // finish threshold: 屋根全体の平均残雪がこれ以下なら全セルを即ゼロ化
-        const float FINISH_THRESHOLD  = 0.15f;
+        // 0.20 = 480セル中96セル相当。残り20%で収束 → 実質20タップ以内に収まる
+        const float FINISH_THRESHOLD  = 0.20f;
         // spawn 最小有効削り量: これ未満の totalDelta では落雪しない
         const float SPAWN_MIN_DELTA   = 0.05f;
 
@@ -422,20 +427,27 @@ public class SnowStrip2D : MonoBehaviour
         //   マスク:   _texDirty=true → RebuildTexture() が _snow から再構築
         //   spawn:    totalDelta（_snow から削った合計）
         //   finish:   CalcFill()（_snow の全セル合計）
+        int exposedCellCount = 0;
+        for (int ex = 0; ex < GRID_W; ex++)
+        for (int ey = 0; ey < GRID_H; ey++)
+            if (_snow[ex, ey] <= EXPOSED_CELL_THRESHOLD) exposedCellCount++;
+        float exposedAreaRatio = (float)exposedCellCount / (GRID_W * GRID_H);
+
         Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID}" +
+                  $" tapCount={_tapCount}" +
                   $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" gridCenter=({cx},{cy}) brushRadius={BRUSH_R}" +
                   $" exposedAtHit=NO centerSnow_before={centerBefore:F3}" +
                   $" totalSnowInBrush={totalSnowInBrush:F3} brushCells={brushCells} hitCells={hitCells}" +
                   $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowAfter:F1}" +
-                  $" centerSnow_after={centerAfter:F3}" +
-                  $" centerDelta={centerDelta:F3} totalDelta={totalDelta:F3}" +
+                  $" removedAmount={totalDelta:F2}" +
+                  $" centerDelta={centerDelta:F3}" +
                   $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
+                  $" exposedAreaRatio={exposedAreaRatio:F2}" +
                   $" zeroSnapCount={zeroSnapCount}" +
                   $" finishAssist={(finishAssist ? "YES" : "NO")}" +
                   $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
-                  $" singleSource=_snow[x,y]" +
-                  $" CELL_EPSILON={CELL_EPSILON} FINISH_THRESHOLD={FINISH_THRESHOLD} SPAWN_MIN_DELTA={SPAWN_MIN_DELTA}");
+                  $" BRUSH_MAX={BRUSH_MAX} FINISH_THRESHOLD={FINISH_THRESHOLD}");
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
