@@ -359,6 +359,55 @@ public class SnowStrip2D : MonoBehaviour
             if (bx == cx && by == cy) centerDelta = d;
         }
 
+        // ── 滑落: 削った雪を下方向セルへ移す ────────────────
+        //
+        // ルール:
+        //   - 削ったセル (bx, by) ごとに、同 X の1つ下 (bx, by+1) へ雪を移す
+        //   - 下セルの空き容量（1.0 - 現在値）分だけ受け取れる
+        //   - 受け取れなかった分は落雪 spawn に回す（下端も同様）
+        //   - 滑落先セルが露出（空）でも受け取れる（雪を積み上げる）
+        //   - SLIDE_RATIO: 削り量のうち滑落に回す割合（残りは即落雪）
+        //
+        const float SLIDE_RATIO = 0.7f; // 削り量の70%を滑落、30%を即落雪
+
+        float totalSlid    = 0f;
+        float totalFalloff = 0f; // 滑落できなかった分（spawn に回る）
+
+        for (int bx = bx0; bx <= bx1; bx++)
+        for (int by = by0; by <= by1; by++)
+        {
+            float dx   = (bx + 0.5f) - gx;
+            float dy   = (by + 0.5f) - gy;
+            float dist = Mathf.Sqrt(dx * dx + dy * dy);
+            if (dist >= BRUSH_R) continue;
+
+            // このセルで削った量を再計算（ブラシ適用後の差分）
+            float t = 1f - dist / BRUSH_R;
+            float w = t * t * (3f - 2f * t);
+            // 削り量の上限は BRUSH_MAX * w だが、実際に削った量は totalDelta 按分では
+            // なく、セルごとに独立して計算する。ここでは削り量の近似値を使う。
+            // （正確には減算ループで記録すべきだが、シンプルさを優先）
+            float approxRemoved = w * BRUSH_MAX * SLIDE_RATIO;
+            if (approxRemoved <= 0f) continue;
+
+            float slideAmount = approxRemoved;
+
+            if (by + 1 < GRID_H)
+            {
+                // 下セルの空き容量
+                float capacity = Mathf.Max(0f, 1f - _snow[bx, by + 1]);
+                float canSlide = Mathf.Min(slideAmount, capacity);
+                _snow[bx, by + 1] += canSlide;
+                totalSlid    += canSlide;
+                totalFalloff += slideAmount - canSlide;
+            }
+            else
+            {
+                // 下端: 滑落先なし → 全量 falloff
+                totalFalloff += slideAmount;
+            }
+        }
+
         _texDirty = true;
 
         // ── ゼロスナップ: CELL_EPSILON 以下のセルを 0 に丸める ──
@@ -389,13 +438,15 @@ public class SnowStrip2D : MonoBehaviour
         float centerAfter        = _snow[cx, cy];
 
         // ── 停止条件 2: finishAssist 後は spawn しない ────────
-        // 停止条件 3: totalDelta が最小有効量未満なら spawn しない
-        bool spawned   = !finishAssist && totalDelta >= SPAWN_MIN_DELTA;
+        // 停止条件 3: 落雪量（totalFalloff）が最小有効量未満なら spawn しない
+        // spawn 量は totalDelta ではなく totalFalloff（滑落できなかった分）に基づく
+        float spawnBasis = totalFalloff > 0f ? totalFalloff : totalDelta * (1f - SLIDE_RATIO);
+        bool spawned   = !finishAssist && spawnBasis >= SPAWN_MIN_DELTA;
         int  spawnCount = 0;
 
         if (spawned)
         {
-            spawnCount = Mathf.Clamp(Mathf.RoundToInt(totalDelta / BRUSH_MAX * 3f), 1, 4);
+            spawnCount = Mathf.Clamp(Mathf.RoundToInt(spawnBasis / BRUSH_MAX * 3f), 1, 4);
 
             float roofW  = _guiRect.width;
             float spawnX = Mathf.Clamp(guiPos.x, _guiRect.x + 8f, _guiRect.xMax - 8f);
@@ -441,13 +492,16 @@ public class SnowStrip2D : MonoBehaviour
                   $" totalSnowInBrush={totalSnowInBrush:F3} brushCells={brushCells} hitCells={hitCells}" +
                   $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowAfter:F1}" +
                   $" removedAmount={totalDelta:F2}" +
+                  $" slidAmount={totalSlid:F2}" +
+                  $" falloffAmount={totalFalloff:F2}" +
+                  $" spawnBasis={spawnBasis:F2}" +
                   $" centerDelta={centerDelta:F3}" +
                   $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
                   $" exposedAreaRatio={exposedAreaRatio:F2}" +
                   $" zeroSnapCount={zeroSnapCount}" +
                   $" finishAssist={(finishAssist ? "YES" : "NO")}" +
                   $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
-                  $" BRUSH_MAX={BRUSH_MAX} FINISH_THRESHOLD={FINISH_THRESHOLD}");
+                  $" SLIDE_RATIO={SLIDE_RATIO} BRUSH_MAX={BRUSH_MAX} FINISH_THRESHOLD={FINISH_THRESHOLD}");
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_TAP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
