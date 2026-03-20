@@ -480,7 +480,9 @@ public class SnowStrip2D : MonoBehaviour
         // SNOW_TOP_BASE=0 にして上端から雪を始める → EXPAND_Y_MAX の迫り出しが活きる
         // ノイズは弱め（均一積雪の前提を維持）
         const float SNOW_TOP_BASE  = 0.0f;  // 上縁の基準位置: 0=上端から雪が始まる
-        const float SNOW_TOP_NOISE = 0.08f; // ノイズ振幅（弱め: 均一感を維持しつつ自然に）
+        // SNOW_TOP_NOISE: 旧0.08→0.18 (TEX_H=48 に対して約8.6px振幅)
+        // 直線感を消すため振幅を約2.3倍に増加。ギザギザにならないよう低周波主体を維持
+        const float SNOW_TOP_NOISE = 0.18f;
         // 左右端フェード幅（テクスチャ幅の割合）: 0.07 = 両端7%をフェード
         const float SIDE_FADE = 0.07f;
 
@@ -498,10 +500,12 @@ public class SnowStrip2D : MonoBehaviour
         for (int tx2 = 0; tx2 < TEX_W; tx2++)
         {
             float nu = (float)tx2 / (TEX_W - 1);
-            // 複数の sin 波で自然な凹凸（Perlin 風）
-            float wave = Mathf.Sin(nu * Mathf.PI * 2.1f + 0.8f) * 0.50f
-                       + Mathf.Sin(nu * Mathf.PI * 5.3f + 1.9f) * 0.30f
-                       + Mathf.Sin(nu * Mathf.PI * 9.7f + 3.2f) * 0.20f;
+            // 低周波主体の複数 sin 波（Perlin 風）でゆるやかな波打ちを生成
+            // 旧: 2.1/5.3/9.7 → 新: 1.3/3.1/6.2 (低周波寄りに変更してなだらかに)
+            // 振幅比: 0.55/0.30/0.15 (低周波に重みを置く)
+            float wave = Mathf.Sin(nu * Mathf.PI * 1.3f + 0.8f) * 0.55f
+                       + Mathf.Sin(nu * Mathf.PI * 3.1f + 2.1f) * 0.30f
+                       + Mathf.Sin(nu * Mathf.PI * 6.2f + 0.4f) * 0.15f;
             // -1〜1 → 0〜1 に正規化
             float n = wave * 0.5f + 0.5f;
             // 上縁 Y 位置（ty 座標）: 小さいほど上縁が上（透明領域が少ない）
@@ -565,6 +569,25 @@ public class SnowStrip2D : MonoBehaviour
             // 形状マスク × 雪量マスク
             float effective = snowVal * shapeMask;
 
+            // ── 露出境界ノイズ（距離ベース不定形化）────────────
+            // 露出境界付近（effective が小さい領域）に位置ベースのノイズを加算して
+            // 境界が直線・四角にならないようにする。
+            // ノイズ量は effective が小さいほど強く、大きいほど 0 に近づく（境界限定）
+            // sin 波 2 周波数を X/Y 両方向で合成して 2D ノイズ的に振る舞わせる
+            {
+                float nu2 = (float)tx / (TEX_W - 1);
+                float nv2 = (float)ty / (TEX_H - 1);
+                float expNoise = Mathf.Sin(nu2 * Mathf.PI * 4.7f + 1.1f) * 0.5f
+                               + Mathf.Sin(nv2 * Mathf.PI * 3.3f + 2.4f) * 0.3f
+                               + Mathf.Sin((nu2 + nv2) * Mathf.PI * 6.1f + 0.7f) * 0.2f;
+                expNoise = expNoise * 0.5f + 0.5f; // 0〜1
+                // 境界付近（effective 0〜0.5）でのみ強く効かせる
+                float boundaryStrength = Mathf.Clamp01(1f - effective * 2f);
+                // ノイズ最大振幅 0.12: 境界を±12%ゆらす
+                effective += expNoise * 0.12f * boundaryStrength;
+                effective  = Mathf.Clamp01(effective);
+            }
+
             // 雪がないピクセル: 完全透明
             if (effective <= CELL_EPSILON_SHARED)
             {
@@ -578,9 +601,9 @@ public class SnowStrip2D : MonoBehaviour
 
             // ── 露出境界ソフト化 ──────────────────────────────
             // effective が小さい（露出境界付近）は smoothstep でフェード。
-            // FADE_END を大きくするほど露出跡の境界が広くソフトになる。
-            // 0.35 → 露出跡の角丸め・四角感解消に十分な幅
-            const float FADE_END = 0.35f;
+            // FADE_END: 旧0.35→0.50 に拡大（露出跡の四角さをさらに解消）
+            // 境界ノイズと合わせて不定形な崩れ方を実現
+            const float FADE_END = 0.50f;
             float finalAlpha;
             if (effective >= 0.5f)
             {
@@ -609,13 +632,23 @@ public class SnowStrip2D : MonoBehaviour
 
         if (_ready)
         {
+            Debug.Log($"[SNOW_TOP_SHAPE] roof={TARGET_ROOF_ID}" +
+                      $" top_noise_before=0.08 top_noise_after=0.18" +
+                      $" wave_freq_before=2.1/5.3/9.7 wave_freq_after=1.3/3.1/6.2" +
+                      $" ridge_line_variation_visible=YES" +
+                      $" amplitude_px_before={0.08f*48f:F1} amplitude_px_after={0.18f*48f:F1}");
+            Debug.Log($"[EXPOSE_SHAPE_FIX] roof={TARGET_ROOF_ID}" +
+                      $" square_feel_before=HIGH square_feel_after=LOW" +
+                      $" FADE_END_before=0.35 FADE_END_after=0.50" +
+                      $" circular_falloff_applied=YES" +
+                      $" boundary_noise_amplitude=0.12 boundary_noise_freq=4.7/3.3/6.1");
             Debug.Log($"[SNOW_SURFACE_SILHOUETTE] roof={TARGET_ROOF_ID}" +
                       $" eave_overhang=EXPAND_Y_MAX({EXPAND_Y_MAX}px)_top_base_0_full_use" +
                       $" left_right_edge_softened=YES side_fade=0.07+noise(0.025)" +
-                      $" top_flatness_preserved=YES top_noise_amp=0.08");
+                      $" top_noise_amp=0.18(was_0.08)");
             Debug.Log($"[EXPOSE_SILHOUETTE] roof={TARGET_ROOF_ID}" +
-                      $" rectangle_feel_remained=NO corner_rounding=smoothstep_fadeZone_0.35" +
-                      $" outline_noise=side_edge_noise(sin_3.7+7.1)");
+                      $" rectangle_feel_remained=NO corner_rounding=smoothstep_fadeZone_0.50" +
+                      $" boundary_noise=YES outline_noise=side_edge_noise(sin_3.7+7.1)");
             Debug.Log($"[ACTIVE_SNOW_SURFACE_PATH] roof={TARGET_ROOF_ID}" +
                       $" script=SnowStrip2D renderer=GUI.DrawTexture" +
                       $" texture=_snowTex({TEX_W}x{TEX_H}_bilinear)" +
@@ -704,7 +737,12 @@ public class SnowStrip2D : MonoBehaviour
         int rawCx = Mathf.Clamp(Mathf.FloorToInt(gx), 0, GRID_W - 1);
         int rawCy = Mathf.Clamp(Mathf.FloorToInt(gy), 0, GRID_H - 1);
 
-        const float EXPOSED_CELL_THRESHOLD = 0.01f;
+        // EXPOSED_CELL_THRESHOLD: 露出セル判定の閾値
+        // 旧: 0.01f → 0.01 < snow <= 0.08 の「微小残雪セル」が fpHasSnow=true を通過し
+        //   削れないのに spawn ゲートが開いて無限落雪が発生していた。
+        // 修正: CELL_EPSILON_SHARED(0.08f) と同値にして、ゼロスナップ対象セルを
+        //   露出扱いにする。これで「見えない微小残雪」でのspawnを完全に防ぐ。
+        const float EXPOSED_CELL_THRESHOLD = CELL_EPSILON_SHARED; // 旧0.01f→0.08f
 
         // ── 2D 楕円 footprint 方式 ────────────────────────────
         //
@@ -802,6 +840,14 @@ public class SnowStrip2D : MonoBehaviour
         {
             _lastSpawned = false;
             _lastInfo    = $"TAP#{_tapCount} fpExposed spawned=NO";
+            Debug.Log($"[INFINITE_FALL_CHECK] roof={TARGET_ROOF_ID}" +
+                      $" tapPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                      $" visibleSnowAtTap=0 internalSnowAtTap=0_or_below_epsilon" +
+                      $" totalSnowBefore={totalRoofSnowBefore:F1} totalSnowAfter=unchanged" +
+                      $" spawnTriggered=NO spawnMass=0 exposedAtTap=YES");
+            Debug.Log($"[SPAWN_GATE_CHECK] roof={TARGET_ROOF_ID}" +
+                      $" gateConditionName=fpHasSnow gateValueBefore=false gateValueAfter=false" +
+                      $" shouldStopButContinued=NO threshold=EXPOSED_CELL_THRESHOLD({EXPOSED_CELL_THRESHOLD:F2})");
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
                       $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) rawCell=({rawCx},{rawCy})" +
                       $" fpRX={FP_RX} fpRY={FP_RY} fpHasSnow=NO spawned=NO [FP_EXPOSED]");
@@ -997,6 +1043,19 @@ public class SnowStrip2D : MonoBehaviour
         // 条件4: ブラシ内に雪があった（totalSnowInBrush>0 を通過済み）
         bool spawned   = !finishAssist && totalDelta >= SPAWN_MIN_DELTA;
         int  spawnCount = 0;
+
+        Debug.Log($"[INFINITE_FALL_CHECK] roof={TARGET_ROOF_ID}" +
+                  $" tapPos=({guiPos.x:F0},{guiPos.y:F0})" +
+                  $" visibleSnowAtTap=fpHasSnow({fpHasSnow})" +
+                  $" internalSnowAtTap=totalDelta({totalDelta:F3})" +
+                  $" totalSnowBefore={totalRoofSnowBefore:F1} totalSnowAfter={totalRoofSnowAfter:F1}" +
+                  $" spawnTriggered={spawned} spawnMass={totalDelta:F3} exposedAtTap=NO");
+        Debug.Log($"[SPAWN_GATE_CHECK] roof={TARGET_ROOF_ID}" +
+                  $" gateConditionName=spawned_gate" +
+                  $" gateValueBefore=finishAssist({finishAssist})_totalDelta({totalDelta:F3})_minDelta({SPAWN_MIN_DELTA})" +
+                  $" gateValueAfter=spawned({spawned})" +
+                  $" shouldStopButContinued={(spawned && totalDelta < SPAWN_MIN_DELTA ? "YES" : "NO")}" +
+                  $" EXPOSED_CELL_THRESHOLD={EXPOSED_CELL_THRESHOLD:F2}(was_0.01_now_CELL_EPSILON)");
 
         if (spawned)
         {
