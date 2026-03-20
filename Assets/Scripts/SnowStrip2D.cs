@@ -31,8 +31,8 @@ public class SnowStrip2D : MonoBehaviour
     string TARGET_ROOF_ID  => roofId;
     string TARGET_GUIDE_ID => guideId;
     const float  UNDER_EAVE_OFFSET = 0.10f;
-    const float  THICK_RATIO       = 0.90f;  // 旧0.60 → 厚み1.5倍
-    const float  EXPAND_Y_MAX      = 20f;    // 旧12 → 上端への張り出しを増やす
+    const float  THICK_RATIO       = 1.30f;  // 旧0.90 → さらに厚く（屋根高さの1.3倍）
+    const float  EXPAND_Y_MAX      = 30f;    // 旧20 → 上端への張り出しをさらに増やす
 
     // 2D残雪グリッド解像度
     const int    GRID_W = 40;   // X方向セル数
@@ -225,7 +225,8 @@ public class SnowStrip2D : MonoBehaviour
                   $" eaveGuiY={_eaveGuiY:F1} downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
         Debug.Log($"[SNOW_DEPTH_TUNE] roof={TARGET_ROOF_ID}" +
                   $" initialSnowFill=1.0 thickRatio={THICK_RATIO:F2} expandYMax={EXPAND_Y_MAX:F0}" +
-                  $" visualDepthMultiplier={(THICK_RATIO / 0.60f):F2}x");
+                  $" visualDepthMultiplier={(THICK_RATIO / 0.60f):F2}x" +
+                  $" tailRatio=0.18 tailDecay=0.50 tailDepth=3");
     }
 
     // ── Texture2D を _snow から再構築 ─────────────────────────
@@ -233,23 +234,48 @@ public class SnowStrip2D : MonoBehaviour
     {
         if (_snowTex == null) return;
 
-        // 雪色: 白ベース + 薄い青みの陰影（自然な雪に見せる）
-        // r/g/b を少し下げることで背景雪と区別しつつ自然に見える
+        // 雪色: 白ベース + 薄い青みの陰影
         var snowColor = new Color(0.92f, 0.95f, 1.00f);
         Debug.Log($"[SNOW_VISUAL_COLOR] class=SnowStrip2D color=({snowColor.r:F2},{snowColor.g:F2},{snowColor.b:F2})");
+
+        // 表面ノイズ: 各列の上端に小さなランダム凸凹を加える
+        // SURFACE_NOISE: alpha に加算するノイズ量（0=なし、0.15=強め）
+        const float SURFACE_NOISE  = 0.12f;
+        // EDGE_ROUNDNESS: 左右端の alpha をどれだけ絞るか（0=なし、1=完全ゼロ）
+        const float EDGE_ROUNDNESS = 0.35f;
 
         for (int x = 0; x < GRID_W; x++)
         for (int y = 0; y < GRID_H; y++)
         {
             float v    = _snow[x, y];
             int   texY = GRID_H - 1 - y;
-            // 下段（y大）ほど少し暗くして奥行き感（shadow gradient）
+
+            // 下段ほど少し暗くして奥行き感
             float shadow = 1f - (float)y / GRID_H * 0.15f;
+
+            // 表面ノイズ: y=0（表面）付近のセルに凸凹を加える
+            // 表面に近いほど強く、奥に行くほど弱くなる
+            float surfaceProximity = 1f - (float)y / GRID_H; // 表面=1, 奥=0
+            float noise = (Mathf.Sin(x * 1.7f + y * 2.3f) * 0.5f + 0.5f) * SURFACE_NOISE * surfaceProximity;
+            float noisyAlpha = Mathf.Clamp01(v - noise * (1f - v)); // 雪があるところだけノイズ
+
+            // 左右端の丸み: エッジセルの alpha を絞る
+            float edgeFactor = 1f;
+            float normX = (float)x / (GRID_W - 1); // 0〜1
+            float edgeDist = Mathf.Min(normX, 1f - normX) * 2f; // 0(端)〜1(中央)
+            edgeFactor = Mathf.Lerp(1f - EDGE_ROUNDNESS, 1f, edgeDist * edgeDist);
+
+            float finalAlpha = noisyAlpha * edgeFactor;
+
             _snowTex.SetPixel(x, texY,
-                new Color(snowColor.r * shadow, snowColor.g * shadow, snowColor.b * shadow, v));
+                new Color(snowColor.r * shadow, snowColor.g * shadow, snowColor.b * shadow, finalAlpha));
         }
         _snowTex.Apply();
         _texDirty = false;
+
+        Debug.Log($"[SNOW_SURFACE_SHAPE] roof={TARGET_ROOF_ID}" +
+                  $" surfaceNoise={SURFACE_NOISE:F2} edgeRoundness={EDGE_ROUNDNESS:F2}" +
+                  $" overhangAmount={EXPAND_Y_MAX:F0}px thickRatio={THICK_RATIO:F2}");
     }
 
     // ── タップ処理 ────────────────────────────────────────────
@@ -432,34 +458,80 @@ public class SnowStrip2D : MonoBehaviour
             primaryCells++;
         }
 
-        // ── Secondary: primary セルの下1〜2段に弱い追加伝播 ──
+        // ── Tail: 滑落方向への放射状テール（中心 > 中間 > 末端）──
+        // 楕円中心付近のセルのみ、_downhillDir 方向に延びるテールを追加。
+        // テール減算量は primary より必ず小さい（TAIL_RATIO < 1）。
+        //
+        // TAIL_RATIO:  テール1段目の減算割合（primary の何%か）
+        // TAIL_DECAY:  段ごとの減衰係数（1段目→2段目→3段目で弱くなる）
+        // TAIL_DEPTH:  テールの段数
+        // TAIL_WIDTH:  テールの横幅（グリッドセル）
+        const float TAIL_RATIO  = 0.18f; // primary の18%（必ず < 1）
+        const float TAIL_DECAY  = 0.50f; // 段ごとに50%減衰
+        const int   TAIL_DEPTH  = 3;     // 3段
+        const int   TAIL_WIDTH  = 2;     // 中心±2セル幅
+
         int   secondaryCells  = 0;
         float secondaryAmount = 0f;
+        float tailMidAmount   = 0f;
+        float tailEndAmount   = 0f;
+
+        // 楕円中心付近（中心から半径の50%以内）のセルだけを起点にする
+        // → 端のセルからテールが出ると「尾ひれ」になるため
+        float centerX = gx;
+        float centerY = gy;
 
         for (int fx = fpX0; fx <= fpX1; fx++)
         for (int fy = fpY0; fy <= fpY1; fy++)
         {
             if (primaryRemoved[fx, fy] <= 0f) continue;
+
+            // 中心からの距離（楕円正規化）
+            float ex2 = (fx + 0.5f) - centerX;
+            float ey2 = (fy + 0.5f) - centerY;
+            float normD = (ex2 * ex2) / (FP_RX * FP_RX) + (ey2 * ey2) / (FP_RY * FP_RY);
+            if (normD > 0.25f) continue; // 中心50%以内のみ起点にする
+
             float baseD = primaryRemoved[fx, fy];
+            float stepRatio = TAIL_RATIO;
 
-            for (int step = 1; step <= SEC_DEPTH; step++)
+            for (int step = 1; step <= TAIL_DEPTH; step++)
             {
-                int ty = fy + step;
-                if (ty >= GRID_H) break;
-                if (_snow[fx, ty] <= EXPOSED_CELL_THRESHOLD) continue;
-                if (totalDelta + secondaryAmount >= TAP_TOTAL_CAP) goto fp_done;
+                // 滑落方向に step グリッド進む
+                int tx = Mathf.Clamp(fx + Mathf.RoundToInt(_downhillDir.x * step * 1.5f), 0, GRID_W - 1);
+                int ty = Mathf.Clamp(fy + Mathf.RoundToInt(_downhillDir.y * step * 1.5f), 0, GRID_H - 1);
+                if (tx == fx && ty == fy) { stepRatio *= TAIL_DECAY; continue; } // 動いていない
 
-                float sd = Mathf.Min(baseD * SEC_RATIO, _snow[fx, ty]);
-                if (sd <= 0f) continue;
+                // テール横幅: ±TAIL_WIDTH セル
+                for (int tw = -TAIL_WIDTH; tw <= TAIL_WIDTH; tw++)
+                {
+                    int wx = Mathf.Clamp(tx + tw, 0, GRID_W - 1);
+                    if (_snow[wx, ty] <= EXPOSED_CELL_THRESHOLD) continue;
+                    if (totalDelta + secondaryAmount >= TAP_TOTAL_CAP) goto fp_done;
 
-                _snow[fx, ty]  -= sd;
-                secondaryAmount += sd;
-                secondaryCells++;
+                    // 横方向にも減衰（中心列が最大）
+                    float widthDecay = 1f - Mathf.Abs(tw) / (float)(TAIL_WIDTH + 1);
+                    float sd = Mathf.Min(baseD * stepRatio * widthDecay, _snow[wx, ty]);
+                    if (sd <= 0f) continue;
+
+                    _snow[wx, ty]   -= sd;
+                    secondaryAmount += sd;
+                    secondaryCells++;
+
+                    if (step == 1) tailMidAmount += sd;
+                    else           tailEndAmount += sd;
+                }
+                stepRatio *= TAIL_DECAY; // 段ごとに減衰
             }
         }
         fp_done:
 
         totalDelta += secondaryAmount;
+
+        // primary > tail 検証
+        float primaryAvg = primaryCells > 0 ? (totalDelta - secondaryAmount) / primaryCells : 0f;
+        float tailAvg    = secondaryCells > 0 ? secondaryAmount / secondaryCells : 0f;
+        bool  primaryGtTail = primaryAvg > tailAvg;
 
         float totalVisualSlide = secondaryAmount;
         int   hitCells         = primaryCells + secondaryCells;
@@ -470,7 +542,21 @@ public class SnowStrip2D : MonoBehaviour
                   $" primaryCells={primaryCells} secondaryCells={secondaryCells}" +
                   $" totalDelta={totalDelta:F3}");
 
-        // [VISUAL_SLIDE_ENTRY] secondary（下方伝播）量確認
+        // [TAP_PRIMARY_REMOVAL] 主削り量
+        float primaryTotal = totalDelta - secondaryAmount;
+        Debug.Log($"[TAP_PRIMARY_REMOVAL] roof={TARGET_ROOF_ID}" +
+                  $" primaryTotal={primaryTotal:F3} primaryCells={primaryCells}" +
+                  $" primaryAvgPerCell={primaryAvg:F4}");
+
+        // [SLIDE_TAIL_REMOVAL] テール削り量 + primary > tail 検証
+        Debug.Log($"[SLIDE_TAIL_REMOVAL] roof={TARGET_ROOF_ID}" +
+                  $" tailMid={tailMidAmount:F3} tailEnd={tailEndAmount:F3}" +
+                  $" tailTotal={secondaryAmount:F3} tailCells={secondaryCells}" +
+                  $" tailAvgPerCell={tailAvg:F4}" +
+                  $" primaryGtTail={(primaryGtTail ? "YES" : "NO")}" +
+                  $" ratio=primary/tail={(tailAvg > 0f ? primaryAvg / tailAvg : 999f):F1}x");
+
+        // [VISUAL_SLIDE_ENTRY] secondary（テール）量確認
         Debug.Log($"[VISUAL_SLIDE_ENTRY] class=SnowStrip2D method=HandleTap" +
                   $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
                   $" secondaryAmount={secondaryAmount:F3}");
@@ -605,48 +691,54 @@ public class SnowStrip2D : MonoBehaviour
 
             for (int i = 0; i < spawnCount; i++)
             {
-                float jx = Random.Range(-roofW * 0.10f, roofW * 0.10f);
+                float jx = Random.Range(-roofW * 0.12f, roofW * 0.12f);
 
-                // サイズ: 屋根幅の 1/8〜1/10 程度を目標に縮小
-                // 旧: roofW * [0.10, 0.26] → clamp [14, 52]
-                // 新: roofW * [0.05, 0.12] → clamp [7, 22]（半分以下）
-                float sz = Mathf.Clamp(roofW * Random.Range(0.05f, 0.12f), 7f, 22f);
+                // サイズ: 小〜中を中心に（大きすぎる塊を抑制）
+                // 70%確率で小(6〜14px)、30%確率で中(14〜20px)
+                float sz;
+                if (Random.value < 0.70f)
+                    sz = Mathf.Clamp(roofW * Random.Range(0.04f, 0.09f), 6f, 14f);  // 小
+                else
+                    sz = Mathf.Clamp(roofW * Random.Range(0.09f, 0.13f), 14f, 20f); // 中
 
-                // ── 不定形ビジュアルパラメータ ──────────────────
+                // ── 不定形ビジュアルパラメータ（強化版）──────────
                 // scaleJitter: 縦横比を大きくばらつかせる（角張り感を消す）
-                const float SCALE_JITTER_MIN = 0.45f;
-                const float SCALE_JITTER_MAX = 1.55f;
+                // 旧: [0.45, 1.55] → 新: [0.35, 1.70]（さらに幅広く）
+                const float SCALE_JITTER_MIN = 0.35f;
+                const float SCALE_JITTER_MAX = 1.70f;
                 float sx  = Random.Range(SCALE_JITTER_MIN, SCALE_JITTER_MAX);
                 float sy  = Random.Range(SCALE_JITTER_MIN, SCALE_JITTER_MAX);
 
                 // vertexNoise: 回転を大きくばらつかせる
-                const float VERTEX_NOISE_DEG = 45f;
+                // 旧: 45° → 新: 60°（より自然な崩れ感）
+                const float VERTEX_NOISE_DEG = 60f;
                 float rot = Random.Range(-VERTEX_NOISE_DEG, VERTEX_NOISE_DEG);
 
-                // 副塊数: 1〜4個（塊感を出す）
-                int subN = Random.Range(1, 4); // 1,2,3
+                // 副塊数: 2〜4個（塊感を強める。1個だけは禁止）
+                int subN = Random.Range(2, 4); // 2,3
 
                 // 副塊の相対オフセット・スケール（親サイズ比）
-                Vector2 s0o = new Vector2(Random.Range(-0.7f, 0.7f), Random.Range(-0.5f, 0.5f));
-                float   s0s = Random.Range(0.35f, 0.65f);
-                Vector2 s1o = new Vector2(Random.Range(-0.8f, 0.8f), Random.Range(-0.6f, 0.6f));
-                float   s1s = Random.Range(0.25f, 0.55f);
-                Vector2 s2o = new Vector2(Random.Range(-0.9f, 0.9f), Random.Range(-0.7f, 0.7f));
-                float   s2s = Random.Range(0.20f, 0.45f);
+                // オフセット幅を広げて「散らばった塊」感を出す
+                Vector2 s0o = new Vector2(Random.Range(-1.0f, 1.0f), Random.Range(-0.7f, 0.7f));
+                float   s0s = Random.Range(0.40f, 0.70f);
+                Vector2 s1o = new Vector2(Random.Range(-1.1f, 1.1f), Random.Range(-0.8f, 0.8f));
+                float   s1s = Random.Range(0.30f, 0.60f);
+                Vector2 s2o = new Vector2(Random.Range(-1.2f, 1.2f), Random.Range(-0.9f, 0.9f));
+                float   s2s = Random.Range(0.20f, 0.50f);
 
                 // 白〜薄青〜薄灰のばらつき（自然な雪色）
                 Color sc = new Color(
-                    Random.Range(0.85f, 1.00f),
-                    Random.Range(0.90f, 1.00f),
-                    Random.Range(0.95f, 1.00f));
+                    Random.Range(0.83f, 1.00f),
+                    Random.Range(0.88f, 1.00f),
+                    Random.Range(0.94f, 1.00f));
 
                 Debug.Log($"[SNOW_CHUNK_SHAPE] roof={TARGET_ROOF_ID} idx={i}" +
                           $" size={sz:F1} scaleX={sx:F2} scaleY={sy:F2}" +
                           $" rotation={rot:F1} subCount={subN}" +
-                          $" roundness=soft vertexNoise={VERTEX_NOISE_DEG:F0}deg" +
+                          $" roundness=enhanced vertexNoise={VERTEX_NOISE_DEG:F0}deg" +
                           $" scaleJitter=[{SCALE_JITTER_MIN:F2},{SCALE_JITTER_MAX:F2}]" +
                           $" minScale={sz * SCALE_JITTER_MIN:F1} maxScale={sz * SCALE_JITTER_MAX:F1}" +
-                          $" clusterSizeRange=[1,{subN + 1}]" +
+                          $" clusterSizeRange=[{subN},{subN + 1}]" +
                           $" color=({sc.r:F2},{sc.g:F2},{sc.b:F2})");
 
                 // 初速: downhill 方向のみ（上向き成分なし）
@@ -713,6 +805,129 @@ public class SnowStrip2D : MonoBehaviour
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
+
+        // ── コンボ・雪崩判定 ─────────────────────────────────
+        // 雪崩トリガー条件:
+        //   A. 連続ヒット3回以上（_comboCount >= 3）
+        //   B. 巻き込み量が一定以上（_lastEngulfTotal >= 1.5）
+        // 最大連鎖: 3回（_avalancheChain <= 3）
+        // 減衰: 連鎖ごとに追加 spawn 数を減らす
+        const int   AVALANCHE_MAX_CHAIN   = 3;
+        const float AVALANCHE_ENGULF_THR  = 1.5f;
+        const int   AVALANCHE_COMBO_THR   = 3;
+
+        bool avalancheTriggered = false;
+        int  avalancheExtraSpawn = 0;
+        float avalancheEngulf    = _lastEngulfTotal;
+
+        if (spawned && _avalancheChain < AVALANCHE_MAX_CHAIN)
+        {
+            bool condEngulf = _lastEngulfTotal >= AVALANCHE_ENGULF_THR;
+            bool condCombo  = _comboCount >= AVALANCHE_COMBO_THR;
+
+            if (condEngulf || condCombo)
+            {
+                avalancheTriggered = true;
+                _avalancheChain++;
+
+                // 連鎖ごとに追加 spawn を減衰（3→2→1）
+                avalancheExtraSpawn = Mathf.Max(1, AVALANCHE_MAX_CHAIN - _avalancheChain + 1);
+
+                // 広域巻き込み: footprint を広げて周辺セルを追加削除
+                const float AVA_EXTRA_R = 3f; // 追加巻き込み半径
+                const float AVA_TAKE    = 0.25f;
+                float avaRemoved = 0f;
+                int   avaCells   = 0;
+                for (int ax = Mathf.Max(0, rawCx - (int)AVA_EXTRA_R);
+                         ax <= Mathf.Min(GRID_W - 1, rawCx + (int)AVA_EXTRA_R); ax++)
+                for (int ay = Mathf.Max(0, rawCy - (int)AVA_EXTRA_R);
+                         ay <= Mathf.Min(GRID_H - 1, rawCy + (int)AVA_EXTRA_R); ay++)
+                {
+                    if (_snow[ax, ay] > 0.01f)
+                    {
+                        float take = Mathf.Min(_snow[ax, ay] * AVA_TAKE, _snow[ax, ay]);
+                        _snow[ax, ay] -= take;
+                        avaRemoved    += take;
+                        avaCells++;
+                    }
+                }
+                _texDirty = true;
+
+                // 雪崩 spawn を追加
+                float avaSpawnX = Mathf.Clamp(guiPos.x, _guiRect.x + 8f, _guiRect.xMax - 8f);
+                float avaSpawnY = Mathf.Lerp(_guiRect.y, _guiRect.yMax, 0.3f);
+                float avaRoofW  = _guiRect.width;
+                for (int ai = 0; ai < avalancheExtraSpawn; ai++)
+                {
+                    float ajx = Random.Range(-avaRoofW * 0.15f, avaRoofW * 0.15f);
+                    float asz = Mathf.Clamp(avaRoofW * Random.Range(0.06f, 0.14f), 8f, 26f);
+                    float arv = Random.Range(-30f, 30f);
+                    float asx = Random.Range(0.5f, 1.4f);
+                    float asy = Random.Range(0.5f, 1.2f);
+                    Color asc = new Color(
+                        Random.Range(0.88f, 1.00f),
+                        Random.Range(0.92f, 1.00f),
+                        Random.Range(0.96f, 1.00f));
+                    const float AVA_SLIDE_SPD = 75f;
+                    _pieces.Add(new Piece
+                    {
+                        pos          = new Vector2(avaSpawnX + ajx, avaSpawnY),
+                        vel          = _downhillDir * AVA_SLIDE_SPD,
+                        size         = asz,
+                        life         = 5f,
+                        alpha        = 1f,
+                        slideTimer   = 999f,
+                        slideActive  = true,
+                        currentMass  = 0.8f + avaRemoved * 0.2f,
+                        engulfBudget = 2.0f,
+                        engulfTotal  = 0f,
+                        scaleX       = asx,
+                        scaleY       = asy,
+                        rotation     = Random.Range(-40f, 40f),
+                        rotVel       = arv,
+                        chunkCount   = Random.Range(1, 3),
+                        snowColor    = asc,
+                        subCount     = Random.Range(0, 2),
+                        sub0Offset   = new Vector2(Random.Range(-0.6f, 0.6f), Random.Range(-0.4f, 0.4f)),
+                        sub0Scale    = Random.Range(0.3f, 0.6f),
+                        sub1Offset   = Vector2.zero,
+                        sub1Scale    = 0f,
+                        sub2Offset   = Vector2.zero,
+                        sub2Scale    = 0f,
+                        delayTimer   = Random.Range(0.05f, 0.15f),
+                    });
+                }
+
+                Debug.Log($"[AVALANCHE_TRIGGER] roof={TARGET_ROOF_ID}" +
+                          $" triggered=YES chain={_avalancheChain}/{AVALANCHE_MAX_CHAIN}" +
+                          $" condEngulf={condEngulf} condCombo={condCombo}" +
+                          $" engulfAmount={avalancheEngulf:F3} comboCount={_comboCount}" +
+                          $" extraSpawn={avalancheExtraSpawn} avaRemoved={avaRemoved:F3}" +
+                          $" avaCells={avaCells}");
+            }
+            else
+            {
+                // 雪崩未発生: 連鎖リセット
+                _avalancheChain = 0;
+                Debug.Log($"[AVALANCHE_TRIGGER] roof={TARGET_ROOF_ID}" +
+                          $" triggered=NO chain=0" +
+                          $" engulfAmount={avalancheEngulf:F3} comboCount={_comboCount}");
+            }
+        }
+        else if (!spawned)
+        {
+            // 露出セルタップ or 微小削り → コンボリセット
+            _comboCount     = 0;
+            _avalancheChain = 0;
+        }
+
+        // コンボカウント更新（雪にヒットした場合のみ加算）
+        if (spawned) _comboCount++;
+        else         _comboCount = 0;
+
+        // 次タップ用に巻き込み量を記録（UpdatePieces で更新される前の値）
+        // UpdatePieces 側で _lastEngulfTotal を更新するため、ここでは 0 リセット
+        _lastEngulfTotal = 0f;
     }
 
     float CalcFill()
@@ -844,11 +1059,14 @@ public class SnowStrip2D : MonoBehaviour
                                 if (take <= 0f) continue;
 
                                 _snow[sx, fgy] -= take;
-                                p.currentMass  += take * 0.5f; // 吸収量の50%だけ mass 増
+                                p.currentMass  += take * 0.5f;
                                 p.engulfTotal  += take;
                                 frameEngulf    += take;
                                 contactCells++;
                                 _texDirty = true;
+                                // 雪崩判定用: 全 Piece 中の最大巻き込み量を追跡
+                                if (p.engulfTotal > _lastEngulfTotal)
+                                    _lastEngulfTotal = p.engulfTotal;
                             }
 
                             Debug.Log($"[ENGULF_ENTRY] roof={TARGET_ROOF_ID}" +
