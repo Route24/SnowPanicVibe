@@ -31,8 +31,12 @@ public class SnowStrip2D : MonoBehaviour
     string TARGET_ROOF_ID  => roofId;
     string TARGET_GUIDE_ID => guideId;
     const float  UNDER_EAVE_OFFSET = 0.10f;
-    const float  THICK_RATIO       = 1.30f;  // 旧0.90 → さらに厚く（屋根高さの1.3倍）
-    const float  EXPAND_Y_MAX      = 30f;    // 旧20 → 上端への張り出しをさらに増やす
+    // THICK_RATIO: 描画矩形の高さ = 屋根高さ × THICK_RATIO
+    // 0.75 = 屋根高さの75%（屋根内に収まる自然な積雪厚み）
+    const float  THICK_RATIO       = 0.75f;
+    // EXPAND_Y_MAX: 上端（雪庇）方向への張り出しピクセル数
+    // 軒先方向だけ少し張り出す。左右は _guiRect.width のまま（はみ出しなし）
+    const float  EXPAND_Y_MAX      = 14f;
 
     // 2D残雪グリッド解像度
     const int    GRID_W = 40;   // X方向セル数
@@ -63,6 +67,16 @@ public class SnowStrip2D : MonoBehaviour
     // テクスチャ（毎フレーム更新）
     Texture2D _snowTex;
     bool      _texDirty = true;
+
+    // 落雪用不定形シルエットテクスチャ（6種類）
+    // Texture2D.whiteTexture（四角形）の代わりに使用して雪塊らしく見せる
+    Texture2D[] _chunkTextures;
+    bool        _chunkTexBuilt = false;
+
+    // 雪煙用ソフト円形テクスチャ（Texture2D.whiteTexture の四角感を消す）
+    Texture2D   _puffTex;
+    // 積雪上縁ノイズテクスチャ（直線エッジを自然化）
+    Texture2D   _snowEdgeTex;
 
     // 落下片
     struct Piece
@@ -114,11 +128,166 @@ public class SnowStrip2D : MonoBehaviour
     void OnEnable()
     {
         InitSnow();
+        BuildChunkTextures();
+        BuildPuffTexture();
+        BuildSnowEdgeTexture();
     }
 
     void OnDestroy()
     {
-        if (_snowTex != null) { Destroy(_snowTex); _snowTex = null; }
+        if (_snowTex    != null) { Destroy(_snowTex);    _snowTex    = null; }
+        if (_puffTex    != null) { Destroy(_puffTex);    _puffTex    = null; }
+        if (_snowEdgeTex!= null) { Destroy(_snowEdgeTex);_snowEdgeTex= null; }
+        if (_chunkTextures != null)
+        {
+            foreach (var t in _chunkTextures)
+                if (t != null) Destroy(t);
+            _chunkTextures = null;
+        }
+        _chunkTexBuilt = false;
+    }
+
+    // ── 雪煙用ソフト円形グラデーションテクスチャを生成 ────────
+    void BuildPuffTexture()
+    {
+        if (_puffTex != null) return;
+        const int S = 32;
+        _puffTex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+        _puffTex.wrapMode   = TextureWrapMode.Clamp;
+        _puffTex.filterMode = FilterMode.Bilinear;
+        var pixels = new Color[S * S];
+        float seed = 5.3f;
+        for (int y = 0; y < S; y++)
+        for (int x = 0; x < S; x++)
+        {
+            float u = (float)x / (S - 1) * 2f - 1f;
+            float v = (float)y / (S - 1) * 2f - 1f;
+            float dist = Mathf.Sqrt(u * u + v * v);
+            // ガウシアン的なソフトフェード
+            float alpha = Mathf.Clamp01(1f - dist * dist * 1.3f);
+            alpha = Mathf.Pow(alpha, 1.5f);
+            // 軽いノイズで輪郭を不定形に（四角感を完全に消す）
+            float n = Mathf.PerlinNoise(u * 4f + seed, v * 4f + seed) * 0.25f;
+            alpha = Mathf.Clamp01(alpha - n * (1f - alpha * 0.5f));
+            if (dist > 0.98f) alpha = 0f;
+            pixels[y * S + x] = new Color(1f, 1f, 1f, alpha);
+        }
+        _puffTex.SetPixels(pixels);
+        _puffTex.Apply();
+    }
+
+    // ── 積雪上縁ノイズテクスチャを生成（直線エッジを自然化）──
+    void BuildSnowEdgeTexture()
+    {
+        if (_snowEdgeTex != null) return;
+        const int W = 64;
+        const int H = 8;
+        _snowEdgeTex = new Texture2D(W, H, TextureFormat.RGBA32, false);
+        _snowEdgeTex.wrapMode   = TextureWrapMode.Clamp;
+        _snowEdgeTex.filterMode = FilterMode.Bilinear;
+        var pixels = new Color[W * H];
+        float seed = 11.7f;
+        for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++)
+        {
+            float u = (float)x / (W - 1);
+            float v = (float)y / (H - 1); // 0=上端, 1=下端
+            // 上端に向かってフェードアウト（v=0 で alpha 低い）
+            float baseAlpha = v * 0.9f + 0.1f;
+            // ノイズで凹凸
+            float n1 = Mathf.PerlinNoise(u * 6f + seed, v * 3f + seed);
+            float n2 = Mathf.PerlinNoise(u * 14f + seed * 2f, v * 5f) * 0.3f;
+            float threshold = 0.25f + (1f - v) * 0.45f;
+            float alpha = (n1 + n2 > threshold) ? baseAlpha : baseAlpha * 0.15f;
+            // 左右端をフェードアウト（端の直角感を消す）
+            float edgeFade = Mathf.Min(u, 1f - u) * 8f;
+            alpha *= Mathf.Clamp01(edgeFade);
+            pixels[y * W + x] = new Color(0.95f, 0.97f, 1f, Mathf.Clamp01(alpha));
+        }
+        _snowEdgeTex.SetPixels(pixels);
+        _snowEdgeTex.Apply();
+    }
+
+    // ── 落雪用不定形シルエットテクスチャを生成 ───────────────
+    // 丸み・楕円・不定形の6種を生成して Texture2D.whiteTexture（四角）を置き換える
+    void BuildChunkTextures()
+    {
+        if (_chunkTexBuilt) return;
+        const int S = 32;
+        _chunkTextures = new Texture2D[6];
+
+        for (int ti = 0; ti < 6; ti++)
+        {
+            float sd  = ti * 37.1f + 3f;
+            float sd2 = ti * 19.3f + 7f;
+            var tex = new Texture2D(S, S, TextureFormat.RGBA32, false);
+            tex.wrapMode   = TextureWrapMode.Clamp;
+            tex.filterMode = FilterMode.Bilinear;
+            var pixels = new Color[S * S];
+
+            for (int y = 0; y < S; y++)
+            for (int x = 0; x < S; x++)
+            {
+                float u = (float)x / (S - 1) * 2f - 1f; // -1〜1
+                float v = (float)y / (S - 1) * 2f - 1f;
+                float dist;
+
+                switch (ti)
+                {
+                    case 0: // 丸塊（中央重め）
+                        dist = Mathf.Sqrt(u * u + v * v);
+                        break;
+                    case 1: // 横楕円（横1.5倍）
+                        dist = Mathf.Sqrt((u / 1.5f) * (u / 1.5f) + v * v);
+                        break;
+                    case 2: // 縦楕円（縦1.4倍）
+                        dist = Mathf.Sqrt(u * u + (v / 1.4f) * (v / 1.4f));
+                        break;
+                    case 3: // しずく（下方向に伸びる）
+                    {
+                        float vy = v < 0f ? v * 0.65f : v * 1.3f;
+                        dist = Mathf.Sqrt(u * u + vy * vy);
+                        break;
+                    }
+                    case 4: // 欠け円（右下が少し欠ける）
+                        dist = Mathf.Sqrt(u * u + v * v);
+                        dist += Mathf.Max(0f, u * 0.25f + v * 0.18f);
+                        break;
+                    default: // 不定形多角（ノイズで角を出す）
+                        dist = Mathf.Sqrt(u * u + v * v);
+                        float angle = Mathf.Atan2(v, u);
+                        dist += Mathf.Abs(Mathf.Cos(angle * 3.5f)) * 0.18f;
+                        break;
+                }
+
+                // ソフトエッジ: 中心 alpha=1、外縁=0（ガウシアン的）
+                float alpha = Mathf.Clamp01(1f - dist * dist * 1.4f);
+                alpha = Mathf.Pow(alpha, 1.6f);
+
+                // Perlinノイズで輪郭を崩す（四角感を消す）
+                float noise = Mathf.PerlinNoise(u * 3.5f + sd, v * 3.5f + sd) * 0.22f;
+                alpha = Mathf.Clamp01(alpha - noise * (1f - alpha * 0.4f));
+
+                // 外縁完全透明
+                if (dist > 1.05f) alpha = 0f;
+
+                // 上端ハイライト・下端影
+                float highlight = (v < -0.3f && alpha > 0.1f) ? 0.10f : 0f;
+                float shadow    = (v >  0.3f && alpha > 0.1f) ? -0.08f : 0f;
+                float bright    = 1f + highlight + shadow;
+
+                pixels[y * S + x] = new Color(
+                    Mathf.Clamp01(0.93f * bright),
+                    Mathf.Clamp01(0.96f * bright),
+                    Mathf.Clamp01(1.00f * bright),
+                    Mathf.Clamp01(alpha));
+            }
+            tex.SetPixels(pixels);
+            tex.Apply();
+            _chunkTextures[ti] = tex;
+        }
+        _chunkTexBuilt = true;
+        Debug.Log("[SNOW_CHUNK_TEX_2D] chunk_textures_built=6 shape=soft_rounded_irregular cube_path_active=NO");
     }
 
     void Start()
@@ -136,6 +305,17 @@ public class SnowStrip2D : MonoBehaviour
         Debug.Log($"[2D_ALIVE] SnowStrip2D started. roof={TARGET_ROOF_ID}" +
                   $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}" +
                   $" screen=({Screen.width}x{Screen.height})");
+        Debug.Log($"[SNOW_RENDER_PATHS] roof={TARGET_ROOF_ID}" +
+                  $" initial_surface=SnowStrip2D.OnGUI._snowTex+_snowEdgeTex(noise)" +
+                  $" roof_slide=SnowStrip2D.OnGUI._pieces+_chunkTextures(soft_rounded_6types)" +
+                  $" airborne=SnowStrip2D.OnGUI._pieces+_chunkTextures" +
+                  $" ground_impact=SnowStrip2D.OnGUI._puffs(kind=2_large)" +
+                  $" puff=SnowStrip2D.OnGUI._puffTex(soft_circle_noise)" +
+                  $" cube_path_active=NO 3D_renderer=NONE WorkSnowForcer_pieces=DISABLED");
+        Debug.Log($"[SNOW_SURFACE_VISUAL] roof={TARGET_ROOF_ID}" +
+                  $" softened=YES edge_tex=_snowEdgeTex(noise) puff_tex=_puffTex(soft_circle)");
+        Debug.Log($"[SNOW_PUFF_SIZE] roof={TARGET_ROOF_ID}" +
+                  $" hit_small=kindScale1.0 eave_medium=kindScale1.6 ground_large=kindScale2.4");
 
         BuildRoofData();
     }
@@ -234,15 +414,36 @@ public class SnowStrip2D : MonoBehaviour
     {
         if (_snowTex == null) return;
 
-        // 雪色: 白ベース + 薄い青みの陰影
-        var snowColor = new Color(0.92f, 0.95f, 1.00f);
-        Debug.Log($"[SNOW_VISUAL_COLOR] class=SnowStrip2D color=({snowColor.r:F2},{snowColor.g:F2},{snowColor.b:F2})");
+        // 上面色: 明るい白（光が当たる面）
+        var topColor  = new Color(0.95f, 0.97f, 1.00f);
+        // 側面色: 少し暗い青白（影面）
+        var sideColor = new Color(0.80f, 0.86f, 0.95f);
 
-        // 表面ノイズ: 各列の上端に小さなランダム凸凹を加える
-        // SURFACE_NOISE: alpha に加算するノイズ量（0=なし、0.15=強め）
-        const float SURFACE_NOISE  = 0.12f;
-        // EDGE_ROUNDNESS: 左右端の alpha をどれだけ絞るか（0=なし、1=完全ゼロ）
-        const float EDGE_ROUNDNESS = 0.35f;
+        // ── 自然化パラメータ ──────────────────────────────────
+        // 上端エッジの丸み: y=0 付近の alpha を絞る（雪面上縁の柔らかさ）
+        // 0.55 は上端 alpha=0.45 になり半透明に見えた → 0.20 に下げて最低 0.80 を確保
+        const float TOP_EDGE_ROUNDNESS  = 0.20f;
+        // 左右端エッジの丸み
+        // 0.42 は端 alpha=0.58 になり半透明に見えた → 0.15 に下げて最低 0.85 を確保
+        const float SIDE_EDGE_ROUNDNESS = 0.15f;
+        // 上面ノイズ: 列ごとに異なる高さゆらぎ（sin波の位相をずらす）
+        const float SURFACE_NOISE       = 0.05f;
+        // 上面/側面の陰影差
+        const float TOP_SIDE_DIFF       = 0.18f;
+
+        // 列ごとの上端ゆらぎオフセット（0〜1 の alpha 削り量）
+        // 複数の sin 波を重ねて「ほぼ平らだが完全な直線ではない」状態を作る
+        var colTopNoise = new float[GRID_W];
+        for (int x = 0; x < GRID_W; x++)
+        {
+            float nx = (float)x / (GRID_W - 1);
+            // 低周波（大きなうねり）+ 高周波（細かいゆらぎ）を合成
+            float wave = Mathf.Sin(nx * Mathf.PI * 2.3f + 1.1f) * 0.6f
+                       + Mathf.Sin(nx * Mathf.PI * 5.7f + 2.4f) * 0.3f
+                       + Mathf.Sin(nx * Mathf.PI * 11.3f + 0.7f) * 0.1f;
+            // -1〜1 → 0〜1 に正規化して SURFACE_NOISE をかける
+            colTopNoise[x] = (wave * 0.5f + 0.5f) * SURFACE_NOISE;
+        }
 
         for (int x = 0; x < GRID_W; x++)
         for (int y = 0; y < GRID_H; y++)
@@ -250,32 +451,61 @@ public class SnowStrip2D : MonoBehaviour
             float v    = _snow[x, y];
             int   texY = GRID_H - 1 - y;
 
-            // 下段ほど少し暗くして奥行き感
-            float shadow = 1f - (float)y / GRID_H * 0.15f;
+            // 上面(y=0)〜側面(y=GRID_H-1) のグラデーション
+            float yRatio    = (float)y / (GRID_H - 1);
+            Color baseColor = Color.Lerp(topColor, sideColor, yRatio * TOP_SIDE_DIFF * 3f);
 
-            // 表面ノイズ: y=0（表面）付近のセルに凸凹を加える
-            // 表面に近いほど強く、奥に行くほど弱くなる
-            float surfaceProximity = 1f - (float)y / GRID_H; // 表面=1, 奥=0
-            float noise = (Mathf.Sin(x * 1.7f + y * 2.3f) * 0.5f + 0.5f) * SURFACE_NOISE * surfaceProximity;
-            float noisyAlpha = Mathf.Clamp01(v - noise * (1f - v)); // 雪があるところだけノイズ
+            // ── 上端エッジの丸み ──────────────────────────────
+            // y=0 付近の alpha を smoothstep で絞る（上縁の直角感を消す）
+            // 上端2〜3セルだけ効かせる
+            float topEdgeFactor = 1f;
+            if (y < 3)
+            {
+                float t = (float)y / 3f; // 0(上端)→1(内側)
+                float smooth = t * t * (3f - 2f * t); // smoothstep
+                topEdgeFactor = Mathf.Lerp(1f - TOP_EDGE_ROUNDNESS, 1f, smooth);
+            }
 
-            // 左右端の丸み: エッジセルの alpha を絞る
-            float edgeFactor = 1f;
-            float normX = (float)x / (GRID_W - 1); // 0〜1
-            float edgeDist = Mathf.Min(normX, 1f - normX) * 2f; // 0(端)〜1(中央)
-            edgeFactor = Mathf.Lerp(1f - EDGE_ROUNDNESS, 1f, edgeDist * edgeDist);
+            // ── 左右端エッジの丸み ────────────────────────────
+            float normX      = (float)x / (GRID_W - 1);
+            float edgeDist   = Mathf.Min(normX, 1f - normX) * 2f; // 0(端)〜1(中央)
+            float sideEdgeFactor = Mathf.Lerp(1f - SIDE_EDGE_ROUNDNESS, 1f, edgeDist * edgeDist);
 
-            float finalAlpha = noisyAlpha * edgeFactor;
+            // ── 上面ノイズ（列ごとの高さゆらぎ）──────────────
+            // 表面付近のみ適用
+            float surfaceProximity = Mathf.Clamp01(1f - yRatio * 2.5f);
+            float noiseAlpha = v - colTopNoise[x] * surfaceProximity;
+
+            float finalAlpha = Mathf.Clamp01(noiseAlpha) * topEdgeFactor * sideEdgeFactor;
 
             _snowTex.SetPixel(x, texY,
-                new Color(snowColor.r * shadow, snowColor.g * shadow, snowColor.b * shadow, finalAlpha));
+                new Color(baseColor.r, baseColor.g, baseColor.b, finalAlpha));
         }
         _snowTex.Apply();
         _texDirty = false;
 
-        Debug.Log($"[SNOW_SURFACE_SHAPE] roof={TARGET_ROOF_ID}" +
-                  $" surfaceNoise={SURFACE_NOISE:F2} edgeRoundness={EDGE_ROUNDNESS:F2}" +
-                  $" overhangAmount={EXPAND_Y_MAX:F0}px thickRatio={THICK_RATIO:F2}");
+        // [SNOW_SURFACE_FIT] 積雪サイズ確認ログ
+        if (_ready)
+        {
+            Debug.Log($"[SNOW_SURFACE_FIT] roof={TARGET_ROOF_ID}" +
+                      $" roofWidth={_guiRect.width:F0} snowWidth={_guiRect.width:F0}" +
+                      $" overhangFront={EXPAND_Y_MAX:F0}px thickRatio={THICK_RATIO:F2}" +
+                      $" leftRightOverhang=0px(roofAligned)");
+        }
+
+        if (_ready)
+        {
+            Debug.Log($"[SNOW_SURFACE_SOFTEN] roof={TARGET_ROOF_ID}" +
+                      $" topEdgeRoundness={TOP_EDGE_ROUNDNESS:F2}" +
+                      $" sideEdgeRoundness={SIDE_EDGE_ROUNDNESS:F2}" +
+                      $" surfaceNoise={SURFACE_NOISE:F2}" +
+                      $" topSideDiff={TOP_SIDE_DIFF:F2}" +
+                      $" overhangConnectionSoftened=YES");
+            Debug.Log($"[SNOW_ALPHA_CHECK] roof={TARGET_ROOF_ID}" +
+                      $" alpha_changed=NO topEdge_min={(1f-TOP_EDGE_ROUNDNESS):F2}" +
+                      $" sideEdge_min={(1f-SIDE_EDGE_ROUNDNESS):F2}" +
+                      $" fully_opaque_at_full_snow=YES");
+        }
     }
 
     // ── タップ処理 ────────────────────────────────────────────
@@ -334,8 +564,9 @@ public class SnowStrip2D : MonoBehaviour
 
         // ── 停止条件定数 ──────────────────────────────────────
         // epsilon: ブラシ後に残った微小値をゼロスナップする閾値
-        // 0.15 = 視認できないレベルの残雪（テクスチャ上ほぼ透明）を自動ゼロ化
-        const float CELL_EPSILON      = 0.15f;
+        // 0.15 → 0.08 に下げた理由: 0.15 だと FP_MAX=0.85 時に中心セルが 0.15 以下になり
+        // 初撃で確定露出してしまった。0.08 なら FP_MAX=0.75 でも中心セルは 0.25 残る
+        const float CELL_EPSILON      = 0.08f;
         // finish threshold: 屋根全体の平均残雪がこれ以下なら全セルを即ゼロ化
         // 0.05 = 480セル中24セル相当（残り5%）。突然全消えに見えない小さい値
         const float FINISH_THRESHOLD  = 0.05f;
@@ -370,7 +601,33 @@ public class SnowStrip2D : MonoBehaviour
         const float FP_RY_OLD     = 4f;   // 旧値（ログ用）
         const float FP_RX         = 8f;   // X方向半径（旧6→8: 約1.33倍）
         const float FP_RY         = 5.5f; // Y方向半径（旧4→5.5: 約1.38倍）
-        const float FP_MAX        = 1.0f; // 中心での最大削り量
+
+        // FP_MAX にランダム係数を乗せて初撃のばらつきを作る
+        // 初期積雪 1.0 に対して:
+        //   small(40%):  0.20〜0.40 → 中心セル残り 0.60〜0.80（露出しない）
+        //   normal(40%): 0.40〜0.60 → 中心セル残り 0.40〜0.60（少し削れる）
+        //   large(20%):  0.60〜0.75 → 中心セル残り 0.25〜0.40（はっきり削れる）
+        // CELL_EPSILON=0.08 なので 0.08 以下にならない限りゼロスナップしない
+        // → 初撃で確定露出しない
+        float hitRnd = Random.value;
+        float fpMaxRnd;
+        string firstHitVariation;
+        if (hitRnd < 0.40f)
+        {
+            fpMaxRnd = Random.Range(0.20f, 0.40f);
+            firstHitVariation = "small";
+        }
+        else if (hitRnd < 0.80f)
+        {
+            fpMaxRnd = Random.Range(0.40f, 0.60f);
+            firstHitVariation = "normal";
+        }
+        else
+        {
+            fpMaxRnd = Random.Range(0.60f, 0.75f);
+            firstHitVariation = "large";
+        }
+        float FP_MAX      = fpMaxRnd;  // 中心での最大削り量（ランダム）
         const float SEC_RATIO     = 0.25f; // secondary = primary の25%
         Debug.Log($"[HIT_RANGE] roof={TARGET_ROOF_ID}" +
                   $" oldRadiusX={FP_RX_OLD} oldRadiusY={FP_RY_OLD}" +
@@ -426,6 +683,9 @@ public class SnowStrip2D : MonoBehaviour
             Debug.Log($"[SNOW_PUFF_SUPPRESSED_EXPOSED] roof={TARGET_ROOF_ID}" +
                       $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
                       $" reason=fpExposed suppressed=YES");
+            Debug.Log($"[SNOW_EXPOSED_CHECK] roof={TARGET_ROOF_ID}" +
+                      $" exposed_cube_visible=NO render_path=SnowStrip2D_snowTex_alpha" +
+                      $" exposed_shows_as=transparent_in_snowTex(natural_reveal)");
             return;
         }
 
@@ -547,6 +807,21 @@ public class SnowStrip2D : MonoBehaviour
         Debug.Log($"[TAP_PRIMARY_REMOVAL] roof={TARGET_ROOF_ID}" +
                   $" primaryTotal={primaryTotal:F3} primaryCells={primaryCells}" +
                   $" primaryAvgPerCell={primaryAvg:F4}");
+
+        // [SNOW_FIRST_HIT_VARIATION] 初撃ばらつきログ
+        float fillAfterFirstHit = CalcFill();
+        bool  exposedAfterHit   = fillAfterFirstHit < 0.95f; // 5%以上削れたら露出あり
+        Debug.Log($"[SNOW_FIRST_HIT_VARIATION] roof={TARGET_ROOF_ID}" +
+                  $" variation={firstHitVariation} fpMax={FP_MAX:F2}" +
+                  $" firstHitRemoved={primaryTotal:F3}" +
+                  $" exposedAfterFirstHit={(exposedAfterHit ? "YES" : "NO")}" +
+                  $" fillBefore={fillBefore:F3} fillAfterHit={fillAfterFirstHit:F3}");
+        Debug.Log($"[FIRST_HIT_EXPOSE_CHECK] roof={TARGET_ROOF_ID}" +
+                  $" firstHitRemovedAmount={primaryTotal:F3}" +
+                  $" exposedAfterFirstHit={(exposedAfterHit ? "YES" : "NO")}" +
+                  $" exposureThreshold=CELL_EPSILON(0.08)" +
+                  $" firstHitVariationEnabled=YES fpMaxRange=[0.20-0.75]" +
+                  $" variation={firstHitVariation}");
 
         // [SLIDE_TAIL_REMOVAL] テール削り量 + primary > tail 検証
         Debug.Log($"[SLIDE_TAIL_REMOVAL] roof={TARGET_ROOF_ID}" +
@@ -1204,24 +1479,23 @@ public class SnowStrip2D : MonoBehaviour
     void DrawSubChunk(Piece p, Vector2 offsetRatio, float scaleRatio, Color baseColor, float rot)
     {
         float sz  = p.size * scaleRatio;
-        float w2  = sz * p.scaleX * 0.5f;
-        float h2  = sz * p.scaleY * 0.5f;
+        float w2  = sz * p.scaleX;
+        float h2  = sz * p.scaleY;
         float cx  = p.pos.x + offsetRatio.x * p.size;
         float cy  = p.pos.y + offsetRatio.y * p.size;
+
+        // 副塊用テクスチャ: 親と異なる種類を選ぶ（ばらつき感）
+        bool hasChunkTex = _chunkTextures != null && _chunkTexBuilt;
+        int subTexIdx = Mathf.Clamp((p.subCount + 2) % 6, 0, 5);
+        Texture2D subTex = (hasChunkTex && _chunkTextures[subTexIdx] != null)
+            ? _chunkTextures[subTexIdx] : _chunkTextures?[0] ?? Texture2D.whiteTexture;
 
         Color c   = new Color(baseColor.r, baseColor.g, baseColor.b, baseColor.a * 0.85f);
         var saved = GUI.matrix;
         GUIUtility.RotateAroundPivot(rot, new Vector2(cx, cy));
         GUI.color = c;
-        GUI.DrawTexture(new Rect(cx - w2, cy - h2, w2 * 2f, h2 * 2f), Texture2D.whiteTexture);
-
-        // 副塊にも丸み補助
-        float rnd = Mathf.Min(w2, h2) * 0.3f;
-        GUI.color = new Color(c.r, c.g, c.b, c.a * 0.45f);
-        GUI.DrawTexture(new Rect(cx - w2 * 0.65f, cy - h2 - rnd * 0.5f,
-                                  w2 * 1.3f, rnd), Texture2D.whiteTexture);
-        GUI.DrawTexture(new Rect(cx - w2 * 0.65f, cy + h2 - rnd * 0.5f,
-                                  w2 * 1.3f, rnd), Texture2D.whiteTexture);
+        GUI.DrawTexture(new Rect(cx - w2 * 0.5f, cy - h2 * 0.5f, w2, h2),
+                        subTex, ScaleMode.StretchToFill, alphaBlend: true);
         GUI.matrix = saved;
     }
 
@@ -1252,6 +1526,9 @@ public class SnowStrip2D : MonoBehaviour
         if (!Application.isPlaying) return;
         if (!_ready || _snowTex == null) return;
 
+        // OnGUI 開始時に必ず Color.white にリセット（前フレームの汚染を防ぐ）
+        GUI.color = Color.white;
+
         // 描画矩形: 常に固定サイズ。_snowTex のアルファが唯一のマスク。
         // fillAvg で高さを縮めない → 帯状症状を根本解消。
         float snowTop = _guiRect.y - EXPAND_Y_MAX;
@@ -1263,6 +1540,8 @@ public class SnowStrip2D : MonoBehaviour
         if (fillAvg > 0f)
         {
             // _snowTex のアルファマスクで円形に削れた見た目を表現
+            // GUI.color は必ず Color.white（alpha=1）で描画する
+            // → GUI.color.a が 1 未満だと DrawTexture 全体が半透明になる
             GUI.color = Color.white;
             GUI.DrawTexture(
                 new Rect(_guiRect.x, snowTop, _guiRect.width, snowH),
@@ -1271,10 +1550,25 @@ public class SnowStrip2D : MonoBehaviour
                 alphaBlend: true
             );
 
-            // 上端ラインを白系に（雪面エッジ）
-            GUI.color = new Color(0.85f, 0.92f, 1.0f, 0.85f);
-            GUI.DrawTexture(new Rect(_guiRect.x, snowTop, _guiRect.width, 3f),
-                            Texture2D.whiteTexture);
+            // ── 上縁の自然なエッジ描画 ────────────────────────
+            // _snowEdgeTex（ノイズ付きソフトエッジ）を使用
+            // Texture2D.whiteTexture（直線帯）→ ノイズテクスチャで四角感を消す
+            float edgeW = _guiRect.width;
+            float edgeX = _guiRect.x;
+            Texture2D edgeTex = (_snowEdgeTex != null) ? _snowEdgeTex : Texture2D.whiteTexture;
+
+            // 上縁ノイズ帯（雪面の凹凸感）
+            GUI.color = new Color(0.96f, 0.98f, 1.0f, 0.55f);
+            GUI.DrawTexture(new Rect(edgeX, snowTop - 2f, edgeW, 10f),
+                            edgeTex, ScaleMode.StretchToFill, alphaBlend: true);
+            // 薄い光沢層（雪面の光反射）
+            GUI.color = new Color(1f, 1f, 1f, 0.20f);
+            GUI.DrawTexture(new Rect(edgeX + edgeW * 0.05f, snowTop + 1f,
+                                     edgeW * 0.90f, 5f),
+                            edgeTex, ScaleMode.StretchToFill, alphaBlend: true);
+
+            // 描画後は必ず Color.white にリセット（後続の描画への汚染防止）
+            GUI.color = Color.white;
         }
         else
         {
@@ -1285,9 +1579,12 @@ public class SnowStrip2D : MonoBehaviour
             GUI.color = new Color(1f, 0.2f, 0.2f, 0.8f);
             GUI.DrawTexture(new Rect(_guiRect.x, _guiRect.y - 4f, _guiRect.width, 4f),
                             Texture2D.whiteTexture);
+            GUI.color = Color.white;
         }
 
-        // ── 落下片（不定形・ランダムサイズ・副塊クラスタ）──────
+        // ── 落下片（不定形シルエットテクスチャ使用・副塊クラスタ）──────
+        // Texture2D.whiteTexture（四角形）ではなく _chunkTextures（ソフト円形）を使用
+        bool hasChunkTex = _chunkTextures != null && _chunkTexBuilt;
         foreach (var p in _pieces)
         {
             if (p.alpha <= 0f) continue;
@@ -1295,66 +1592,72 @@ public class SnowStrip2D : MonoBehaviour
             Color c = p.snowColor;
             c.a = p.alpha;
 
+            // 使用するテクスチャ: subCount を texIdx として使用（0〜5）
+            int texIdx = Mathf.Clamp(p.subCount, 0, 5);
+            Texture2D mainTex = (hasChunkTex && _chunkTextures[texIdx] != null)
+                ? _chunkTextures[texIdx] : _chunkTextures?[0] ?? Texture2D.whiteTexture;
+
+            float w2 = p.size * p.scaleX;
+            float h2 = p.size * p.scaleY;
+
             var savedMatrix = GUI.matrix;
             GUIUtility.RotateAroundPivot(p.rotation, new Vector2(p.pos.x, p.pos.y));
 
-            // ── 丸み表現: 中心矩形 + 4方向に小さめ矩形を重ねる ──
-            // これにより角が「埋まって」丸く見える
-            float w2 = p.size * p.scaleX * 0.5f;
-            float h2 = p.size * p.scaleY * 0.5f;
-
-            // 中心ブロック
+            // 不定形シルエットテクスチャで描画（四角形にならない）
             GUI.color = c;
-            GUI.DrawTexture(new Rect(p.pos.x - w2, p.pos.y - h2, w2 * 2f, h2 * 2f),
-                            Texture2D.whiteTexture);
-
-            // 丸み補助: 上下左右に少し大きめの矩形を半透明で重ねる
-            float rnd = Mathf.Min(w2, h2) * 0.35f; // roundness radius
-            GUI.color = new Color(c.r, c.g, c.b, c.a * 0.55f);
-            GUI.DrawTexture(new Rect(p.pos.x - w2 * 0.7f, p.pos.y - h2 - rnd * 0.6f,
-                                     w2 * 1.4f, rnd * 1.2f), Texture2D.whiteTexture); // 上
-            GUI.DrawTexture(new Rect(p.pos.x - w2 * 0.7f, p.pos.y + h2 - rnd * 0.6f,
-                                     w2 * 1.4f, rnd * 1.2f), Texture2D.whiteTexture); // 下
-            GUI.DrawTexture(new Rect(p.pos.x - w2 - rnd * 0.6f, p.pos.y - h2 * 0.7f,
-                                     rnd * 1.2f, h2 * 1.4f), Texture2D.whiteTexture); // 左
-            GUI.DrawTexture(new Rect(p.pos.x + w2 - rnd * 0.6f, p.pos.y - h2 * 0.7f,
-                                     rnd * 1.2f, h2 * 1.4f), Texture2D.whiteTexture); // 右
+            GUI.DrawTexture(new Rect(p.pos.x - w2 * 0.5f, p.pos.y - h2 * 0.5f, w2, h2),
+                            mainTex, ScaleMode.StretchToFill, alphaBlend: true);
 
             GUI.matrix = savedMatrix;
 
             // ── 副塊クラスタ（subCount 個）──────────────────────
-            // 親とは別の回転・位置で描画（クラスタ感を出す）
             if (p.subCount >= 1)
-            {
                 DrawSubChunk(p, p.sub0Offset, p.sub0Scale, c, p.rotation + Random.Range(-15f, 15f));
-            }
             if (p.subCount >= 2)
-            {
                 DrawSubChunk(p, p.sub1Offset, p.sub1Scale, c, p.rotation + Random.Range(-20f, 20f));
-            }
             if (p.subCount >= 3)
-            {
                 DrawSubChunk(p, p.sub2Offset, p.sub2Scale, c, p.rotation + Random.Range(-25f, 25f));
-            }
         }
+        // 落下片描画後は必ず Color.white にリセット（後続描画への alpha 汚染防止）
+        GUI.color = Color.white;
 
-        // ── 雪煙パーティクル ─────────────────────────────────
+        // ── 雪煙パーティクル（ソフト円形テクスチャ + kind でサイズ3段階）──
+        // kind=0: hit（小）  kind=1: eave（中）  kind=2: ground（大）
+        // Texture2D.whiteTexture（四角）→ _puffTex（ソフト円形）に変更
+        Texture2D puffDrawTex = (_puffTex != null) ? _puffTex : Texture2D.whiteTexture;
         foreach (var pf in _puffs)
         {
             if (pf.alpha <= 0f) continue;
             float progress = 1f - pf.life / pf.maxLife;
-            float sz = pf.size * (0.5f + progress * 1.2f); // 膨らんで薄くなる
-            float a  = pf.alpha * (1f - progress * 0.8f);
-            GUI.color = new Color(0.95f, 0.97f, 1f, a * 0.7f);
-            GUI.DrawTexture(new Rect(pf.pos.x - sz * 0.5f, pf.pos.y - sz * 0.5f, sz, sz),
-                            Texture2D.whiteTexture);
+
+            // kind によるサイズ係数（小:1.0 / 中:1.6 / 大:2.4）
+            float kindScale = pf.kind == 2 ? 2.4f : (pf.kind == 1 ? 1.6f : 1.0f);
+            float sz = pf.size * kindScale * (0.4f + progress * 1.4f); // 膨らんで薄くなる
+            float szY = sz * Random.Range(0.75f, 1.25f); // 縦横ランダム（不定形感）
+
+            float a  = pf.alpha * (1f - progress * 0.85f);
+            // kind によるアルファ係数（大きいほど少し薄め）
+            float alphaScale = pf.kind == 2 ? 0.55f : (pf.kind == 1 ? 0.65f : 0.75f);
+            GUI.color = new Color(0.95f, 0.97f, 1f, a * alphaScale);
+
+            // 回転で不定形感を強調（毎フレームランダムだと flickering するので life ベース）
+            float puffAngle  = pf.life * 73.1f + pf.kind * 45f;
+            var   puffCenter = new Vector2(pf.pos.x, pf.pos.y);
+            var   savedPuffMatrix = GUI.matrix;
+            GUIUtility.RotateAroundPivot(puffAngle, puffCenter);
+            GUI.DrawTexture(new Rect(pf.pos.x - sz * 0.5f, pf.pos.y - szY * 0.5f, sz, szY),
+                            puffDrawTex, ScaleMode.StretchToFill, alphaBlend: true);
+            GUI.matrix = savedPuffMatrix;
         }
+        // 雪煙描画後は必ず Color.white にリセット
+        GUI.color = Color.white;
 
         // ── fill ゲージ（左端黄バー）──────────────────────────
         GUI.color = new Color(1f, 1f, 0f, 0.85f);
         float barH = _guiRect.height * fillAvg;
         GUI.DrawTexture(new Rect(_guiRect.x - 6f, _guiRect.yMax - barH, 5f, barH),
                         Texture2D.whiteTexture);
+        GUI.color = Color.white;
 
         // ── デバッグテキスト（屋根直下）──────────────────────
         var style = new GUIStyle(GUI.skin.label)

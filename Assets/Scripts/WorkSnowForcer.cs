@@ -137,6 +137,7 @@ public class WorkSnowForcer : MonoBehaviour
 
     bool      _applied  = false;
     bool      _roofsReady = false;
+    bool      _renderPathLogged = false;
     Texture2D _whiteTex;
     Texture2D _snowEdgeTex;       // 前縁凹凸用テクスチャ（ノイズ生成）
     Texture2D[] _chunkTextures;   // 不定形雪塊シルエット（4種類）
@@ -1412,50 +1413,16 @@ public class WorkSnowForcer : MonoBehaviour
             }
         }
 
-        // ② 落下中の不定形雪塊（シルエットテクスチャ使用）
-        bool hasChunkTex = _chunkTextures != null && _chunkTextures.Length == 6;
-        foreach (var p in _pieces)
+        // ② 落下中の雪塊 / ③ 着地済み雪塊 / ④ 雪煙 は SnowStrip2D が描画するためスキップ
+        // （WorkSnowForcer の _pieces / _landedPieces / _smoke は HandleTap が break で
+        //   スキップされているため常に空だが、念のため描画ループも無効化する）
+        if (!_renderPathLogged)
         {
-            var center = new Vector2(p.pos.x, p.pos.y);
-            GUIUtility.RotateAroundPivot(p.rot, center);
-
-            Texture2D tex = (hasChunkTex && _chunkTextures[p.texIdx] != null)
-                ? _chunkTextures[p.texIdx] : _whiteTex;
-
-            // 本体（不定形シルエット）
-            GUI.color = new Color(1f, 1f, 1f, p.alpha);
-            GUI.DrawTexture(new Rect(p.pos.x - p.size * 0.5f, p.pos.y - p.sizeY * 0.5f,
-                                     p.size, p.sizeY), tex);
-
-            GUIUtility.RotateAroundPivot(-p.rot, center);
-        }
-
-        // ③ 着地済み雪塊（フェードアウト・不定形）
-        foreach (var lp in _landedPieces)
-        {
-            float alpha = Mathf.Clamp01(lp.remainLife / 3f);
-            Texture2D tex = (hasChunkTex && _chunkTextures[lp.texIdx] != null)
-                ? _chunkTextures[lp.texIdx] : _whiteTex;
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(lp.pos.x - lp.size * 0.5f, lp.pos.y - lp.sizeY * 0.5f,
-                                     lp.size, lp.sizeY), tex);
-        }
-
-        // ④ 雪煙パーティクル（ソフト円形テクスチャ + 回転 + サイズ揺らぎ）
-        Texture2D smokeTex = (_smokeTex != null) ? _smokeTex : _whiteTex;
-        foreach (var s in _smoke)
-        {
-            float t     = Mathf.Clamp01(s.life / s.maxLife);
-            float alpha = t * t * 0.80f;
-            float sz    = s.size * (1f + (1f - t) * 0.9f); // 膨らみ増加
-            float szY   = sz * Random.Range(0.80f, 1.20f);  // 縦横を少しランダムに
-            // 回転: 各パーティクルに固有の角度（ランダムに見せるため life を seed に）
-            float angle = s.life * 137.5f; // 黄金角ベースで分散
-            var center  = new Vector2(s.pos.x, s.pos.y);
-            GUIUtility.RotateAroundPivot(angle, center);
-            GUI.color = new Color(1f, 1f, 1f, alpha);
-            GUI.DrawTexture(new Rect(s.pos.x - sz * 0.5f, s.pos.y - szY * 0.5f, sz, szY), smokeTex);
-            GUIUtility.RotateAroundPivot(-angle, center);
+            _renderPathLogged = true;
+            Debug.Log($"[SNOW_RENDER_PATH] active=SnowStrip2D" +
+                      $" disabled_WorkSnowForcer_pieces=YES disabled_WorkSnowForcer_landedPieces=YES" +
+                      $" disabled_WorkSnowForcer_smoke=YES" +
+                      $" cube_path_active=NO exposed_cube_visible=NO");
         }
 
         GUI.color = Color.white;
