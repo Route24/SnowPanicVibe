@@ -31,8 +31,8 @@ public class SnowStrip2D : MonoBehaviour
     string TARGET_ROOF_ID  => roofId;
     string TARGET_GUIDE_ID => guideId;
     const float  UNDER_EAVE_OFFSET = 0.10f;
-    const float  THICK_RATIO       = 0.60f;
-    const float  EXPAND_Y_MAX      = 12f;
+    const float  THICK_RATIO       = 0.90f;  // 旧0.60 → 厚み1.5倍
+    const float  EXPAND_Y_MAX      = 20f;    // 旧12 → 上端への張り出しを増やす
 
     // 2D残雪グリッド解像度
     const int    GRID_W = 40;   // X方向セル数
@@ -55,6 +55,10 @@ public class SnowStrip2D : MonoBehaviour
     int      _tapCount;
     string   _lastInfo = "---";
     bool     _lastSpawned;
+    // コンボ・雪崩管理
+    int      _comboCount;        // 連続ヒット数（露出セルタップでリセット）
+    float    _lastEngulfTotal;   // 直前タップの累計巻き込み量（雪崩判定用）
+    int      _avalancheChain;    // 現在の雪崩連鎖数（上限で止める）
 
     // テクスチャ（毎フレーム更新）
     Texture2D _snowTex;
@@ -74,6 +78,7 @@ public class SnowStrip2D : MonoBehaviour
         public float   scaleX;        // 横方向スケール比
         public float   scaleY;        // 縦方向スケール比
         public float   rotation;      // 表示回転（度）
+        public float   rotVel;        // 回転角速度（度/秒）
         public float   chunkCount;    // 副塊数係数（1〜4）
         public Color   snowColor;     // 個別雪色（白〜薄青）
         // 副塊レイアウト（最大3個）
@@ -81,6 +86,8 @@ public class SnowStrip2D : MonoBehaviour
         public Vector2 sub1Offset; public float sub1Scale;
         public Vector2 sub2Offset; public float sub2Scale;
         public int     subCount;       // 実際の副塊数（0〜3）
+        // 滑落開始遅延
+        public float   delayTimer;    // >0 = まだ動かない（ため）
     }
     readonly List<Piece> _pieces = new List<Piece>();
 
@@ -216,6 +223,9 @@ public class SnowStrip2D : MonoBehaviour
         _ready = true;
         Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} guiRect={_guiRect}" +
                   $" eaveGuiY={_eaveGuiY:F1} downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
+        Debug.Log($"[SNOW_DEPTH_TUNE] roof={TARGET_ROOF_ID}" +
+                  $" initialSnowFill=1.0 thickRatio={THICK_RATIO:F2} expandYMax={EXPAND_Y_MAX:F0}" +
+                  $" visualDepthMultiplier={(THICK_RATIO / 0.60f):F2}x");
     }
 
     // ── Texture2D を _snow から再構築 ─────────────────────────
@@ -330,10 +340,16 @@ public class SnowStrip2D : MonoBehaviour
         //
         // TAP_TOTAL_CAP: 1タップ総削り量の上限（暴走防止）
         //
-        const float FP_RX         = 6f;   // X方向半径（グリッドセル単位）
-        const float FP_RY         = 4f;   // Y方向半径
+        const float FP_RX_OLD     = 6f;   // 旧値（ログ用）
+        const float FP_RY_OLD     = 4f;   // 旧値（ログ用）
+        const float FP_RX         = 8f;   // X方向半径（旧6→8: 約1.33倍）
+        const float FP_RY         = 5.5f; // Y方向半径（旧4→5.5: 約1.38倍）
         const float FP_MAX        = 1.0f; // 中心での最大削り量
         const float SEC_RATIO     = 0.25f; // secondary = primary の25%
+        Debug.Log($"[HIT_RANGE] roof={TARGET_ROOF_ID}" +
+                  $" oldRadiusX={FP_RX_OLD} oldRadiusY={FP_RY_OLD}" +
+                  $" newRadiusX={FP_RX} newRadiusY={FP_RY}" +
+                  $" expandRatioX={(FP_RX/FP_RX_OLD):F2}x expandRatioY={(FP_RY/FP_RY_OLD):F2}x");
         const int   SEC_DEPTH     = 2;    // 下方向2段まで
         const float TAP_TOTAL_CAP = 80f;  // 1タップ上限（暴走防止）
 
@@ -498,7 +514,43 @@ public class SnowStrip2D : MonoBehaviour
 
         if (spawned)
         {
-            spawnCount = Mathf.Clamp(Mathf.RoundToInt(totalDelta / BRUSH_MAX * 3f), 1, 4);
+            // ── 落雪量3段階バラつき ────────────────────────────
+            // 基準: totalDelta / BRUSH_MAX（0〜1程度）
+            // ランダム係数を乗せて小/通常/大に分岐
+            float baseRatio = totalDelta / BRUSH_MAX;
+            float rnd       = Random.value; // 0〜1
+
+            string fallVariation;
+            if (rnd < 0.25f || baseRatio < 0.3f)
+            {
+                // 小崩れ: 25%確率 or 削り量少ない時
+                spawnCount    = Random.Range(1, 3); // 1〜2
+                fallVariation = "small";
+            }
+            else if (rnd < 0.80f)
+            {
+                // 通常: 55%確率
+                spawnCount    = Random.Range(2, 5); // 2〜4
+                fallVariation = "normal";
+            }
+            else
+            {
+                // 大崩れ: 20%確率
+                spawnCount    = Random.Range(5, 8); // 5〜7
+                fallVariation = "large";
+            }
+
+            // コンボ中は大崩れ確率UP（通常→大 に格上げ）
+            if (_avalancheChain > 0 && fallVariation == "normal")
+            {
+                spawnCount    = Random.Range(4, 7);
+                fallVariation = "large(combo)";
+            }
+
+            Debug.Log($"[SNOW_FALL_VARIATION] roof={TARGET_ROOF_ID}" +
+                      $" variation={fallVariation} spawnCount={spawnCount}" +
+                      $" totalDelta={totalDelta:F3} baseRatio={baseRatio:F2}" +
+                      $" rnd={rnd:F2} comboCount={_comboCount}");
 
             // [SPAWN_ENTRY] spawn実行確認
             Debug.Log($"[SPAWN_ENTRY] class=SnowStrip2D method=HandleTap" +
@@ -507,8 +559,14 @@ public class SnowStrip2D : MonoBehaviour
 
             // スポーン位置: 屋根上端ではなくタップ位置（屋根面上）
             // → 「上に飛び出す」現象を防ぐ
-            const float SLIDE_DURATION = 0.35f; // スライドフェーズの秒数
-            const float SLIDE_SPD      = 160f;  // スライド初速（GUI座標/秒）
+            const float SLIDE_DURATION  = 0.35f;  // スライドフェーズの秒数
+            const float SLIDE_SPD       = 75f;    // 旧160→75: 重い雪らしいゆっくり滑落
+            const float RELEASE_DELAY   = 0.20f;  // 叩いてから動き出すまでの"ため"（秒）
+
+            Debug.Log($"[SNOW_RELEASE_DELAY] roof={TARGET_ROOF_ID}" +
+                      $" releaseDelaySec={RELEASE_DELAY:F2}");
+            Debug.Log($"[SNOW_SLIDE_SPEED] roof={TARGET_ROOF_ID}" +
+                      $" slideSpeedBefore=160 slideSpeedAfter={SLIDE_SPD:F0}");
 
             float roofW  = _guiRect.width;
             // spawn X: タップ位置付近（屋根面上）
@@ -594,6 +652,9 @@ public class SnowStrip2D : MonoBehaviour
                 // 初速: downhill 方向のみ（上向き成分なし）
                 Vector2 slideVel = _downhillDir * SLIDE_SPD;
 
+                // 回転角速度: 滑落中にゆっくり回転（自然な崩れ感）
+                float rv = Random.Range(-18f, 18f); // 度/秒
+
                 _pieces.Add(new Piece
                 {
                     pos          = new Vector2(spawnX + jx, spawnY),
@@ -609,12 +670,14 @@ public class SnowStrip2D : MonoBehaviour
                     scaleX       = sx,
                     scaleY       = sy,
                     rotation     = rot,
+                    rotVel       = rv,
                     chunkCount   = subN,
                     snowColor    = sc,
                     subCount     = subN,
                     sub0Offset   = s0o, sub0Scale = s0s,
                     sub1Offset   = s1o, sub1Scale = s1s,
                     sub2Offset   = s2o, sub2Scale = s2s,
+                    delayTimer   = RELEASE_DELAY + Random.Range(-0.03f, 0.05f),
                 });
             }
 
@@ -692,8 +755,22 @@ public class SnowStrip2D : MonoBehaviour
         {
             var p = _pieces[i];
 
+            // ── 滑落開始遅延（"ため"フェーズ）──────────────────
+            if (p.delayTimer > 0f)
+            {
+                p.delayTimer -= dt;
+                p.life       -= dt;
+                p.alpha       = Mathf.Clamp01(p.life * 0.8f);
+                if (p.life <= 0f) _pieces.RemoveAt(i);
+                else              _pieces[i] = p;
+                continue; // まだ動かない
+            }
+
             if (p.slideActive)
             {
+                // 滑落中: 回転角速度を適用（自然な崩れ感）
+                p.rotation += p.rotVel * dt;
+
                 bool transitionToFall = false;
 
                 if (_ready && _guiRect.width > 1f)
@@ -844,6 +921,11 @@ public class SnowStrip2D : MonoBehaviour
                 {
                     p.slideActive = false;
                     p.vel = new Vector2(p.vel.x * 0.3f, Mathf.Max(p.vel.y, 80f));
+                    // 軒先で姿勢変化: 回転速度を増やす（引っかかりで崩れる感）
+                    p.rotVel += Random.Range(-60f, 60f);
+                    Debug.Log($"[SNOW_CHUNK_BREAK] roof={TARGET_ROOF_ID}" +
+                              $" eaveInteraction=YES rotVel={p.rotVel:F1}" +
+                              $" splitCount=0 rotationApplied=YES");
                 }
 
                 p.slideTimer = p.slideActive ? 999f : 0f;
@@ -851,8 +933,9 @@ public class SnowStrip2D : MonoBehaviour
             else
             {
                 // ── 自由落下フェーズ ──────────────────────────
-                p.vel.y += 500f * dt;
-                p.pos   += p.vel * dt;
+                p.vel.y    += 500f * dt;
+                p.pos      += p.vel * dt;
+                p.rotation += p.rotVel * dt; // 落下中も回転継続
             }
 
             p.life  -= dt;
