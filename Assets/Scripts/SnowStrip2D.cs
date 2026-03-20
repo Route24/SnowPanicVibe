@@ -39,15 +39,18 @@ public class SnowStrip2D : MonoBehaviour
     const float  EXPAND_Y_MAX      = 14f;
 
     // 2D残雪グリッド解像度
-    const int    GRID_W = 40;   // X方向セル数
-    const int    GRID_H = 12;   // Y方向セル数（表面=0、奥=GRID_H-1）
+    // 旧: 40x12 → 1セルが屋根の1/40×1/12。露出跡が格子状に見えていた
+    // 新: 120x36 → 3倍高解像度。1セルが約1.7px相当になり格子感が消える
+    const int    GRID_W = 120;  // X方向セル数（旧40の3倍）
+    const int    GRID_H =  36;  // Y方向セル数（旧12の3倍）
 
     // 円形ブラシ（グリッド単位）
-    const float  BRUSH_R   = 5.5f;  // 半径（グリッドセル単位）
+    // GRID解像度3倍に合わせて3倍にスケール（実際の屋根面積に対する比率を維持）
+    const float  BRUSH_R   = 16.5f;  // 半径（旧5.5×3）
     // 1タップ削り量調整: 目標20回で1軒ゼロ
-    // GRID=40x12=480セル, ブラシ内≈95セル, smoothstep平均weight≈0.35
-    // 1タップ削り量 ≈ 95 × 0.35 × BRUSH_MAX
-    // BRUSH_MAX=1.2 → ≈40/タップ → 理論12タップ → 分散タップで実質約20回
+    // GRID=120x36=4320セル, ブラシ内≈855セル, smoothstep平均weight≈0.35
+    // 1タップ削り量 ≈ 855 × 0.35 × BRUSH_MAX / 4320 ≈ 旧と同等比率
+    // BRUSH_MAX は旧値維持（削り量比率はセル数が増えても総量で調整）
     const float  BRUSH_MAX = 1.2f;
 
     // ── 状態 ─────────────────────────────────────────────────
@@ -67,9 +70,10 @@ public class SnowStrip2D : MonoBehaviour
     // テクスチャ（毎フレーム更新）
     Texture2D _snowTex;
     bool      _texDirty = true;
-    // 高解像度テクスチャサイズ（GRID_W/H の4倍 → ブロック感を消す）
-    const int TEX_W = 160; // GRID_W * 4
-    const int TEX_H =  48; // GRID_H * 4
+    // テクスチャサイズ: 160×48 固定（GRID が高解像度になったので補間不要レベル）
+    // グリッド 120×36 → テクスチャ 160×48 ≈ 1.33倍（ほぼ等倍補間）
+    const int TEX_W = 160; // 固定
+    const int TEX_H =  48; // 固定
 
     // 落雪用不定形シルエットテクスチャ（6種類）
     // Texture2D.whiteTexture（四角形）の代わりに使用して雪塊らしく見せる
@@ -319,6 +323,20 @@ public class SnowStrip2D : MonoBehaviour
                   $" ground_impact=SnowStrip2D.OnGUI._puffs(kind=2_large)" +
                   $" puff=SnowStrip2D.OnGUI._puffTex(soft_circle)" +
                   $" cube_path_active=NO 3D_renderer=NONE WorkSnowForcer_pieces=DISABLED");
+        Debug.Log($"[SNOW_GRID_RESOLUTION] roof={TARGET_ROOF_ID}" +
+                  $" old_grid=40x12 new_grid={GRID_W}x{GRID_H}" +
+                  $" old_total_cells=480 new_total_cells={GRID_W * GRID_H}" +
+                  $" scale_factor=3x reason=expose_rectangle_from_low_resolution_cells");
+        Debug.Log($"[SNOW_GRID_SCALE] roof={TARGET_ROOF_ID}" +
+                  $" brush_radius_before=5.5 brush_radius_after={BRUSH_R}" +
+                  $" FP_RX_before=8 FP_RX_after=24 FP_RY_before=5.5 FP_RY_after=16.5" +
+                  $" TAP_TOTAL_CAP_before=80 TAP_TOTAL_CAP_after=720" +
+                  $" AVA_EXTRA_R_before=3 AVA_EXTRA_R_after=9" +
+                  $" CELL_EPSILON_unchanged={CELL_EPSILON_SHARED}" +
+                  $" FINISH_THRESHOLD_unchanged=0.05");
+        Debug.Log($"[EXPOSE_SHAPE_CHECK] roof={TARGET_ROOF_ID}" +
+                  $" grid_upgraded=YES cell_size_before=1/40x1/12 cell_size_after=1/120x1/36" +
+                  $" cell_pattern_visible=EXPECT_NO square_feel=EXPECT_REDUCED");
         Debug.Log($"[EXPOSE_SHAPE] roof={TARGET_ROOF_ID}" +
                   $" exposed_shape_softened=YES square_like_remained=NO" +
                   $" fade_zone=CELL_EPSILON_SHARED(0.08)_to_0.30_smoothstep");
@@ -703,8 +721,9 @@ public class SnowStrip2D : MonoBehaviour
         //
         const float FP_RX_OLD     = 6f;   // 旧値（ログ用）
         const float FP_RY_OLD     = 4f;   // 旧値（ログ用）
-        const float FP_RX         = 8f;   // X方向半径（旧6→8: 約1.33倍）
-        const float FP_RY         = 5.5f; // Y方向半径（旧4→5.5: 約1.38倍）
+        // グリッド解像度 3倍（40→120, 12→36）に合わせてブラシ半径も3倍
+        const float FP_RX         = 24f;  // X方向半径（旧8×3）
+        const float FP_RY         = 16.5f;// Y方向半径（旧5.5×3）
 
         // FP_MAX にランダム係数を乗せて初撃のばらつきを作る
         // 初期積雪 1.0 に対して:
@@ -737,8 +756,10 @@ public class SnowStrip2D : MonoBehaviour
                   $" oldRadiusX={FP_RX_OLD} oldRadiusY={FP_RY_OLD}" +
                   $" newRadiusX={FP_RX} newRadiusY={FP_RY}" +
                   $" expandRatioX={(FP_RX/FP_RX_OLD):F2}x expandRatioY={(FP_RY/FP_RY_OLD):F2}x");
-        const int   SEC_DEPTH     = 2;    // 下方向2段まで
-        const float TAP_TOTAL_CAP = 80f;  // 1タップ上限（暴走防止）
+        const int   SEC_DEPTH     = 2;     // 下方向2段まで
+        // TAP_TOTAL_CAP: 1タップ総削り量の上限（暴走防止）
+        // グリッド解像度3倍→セル数9倍。削り量も9倍スケール（暴走防止値も同様）
+        const float TAP_TOTAL_CAP = 720f; // 旧80×9（グリッド9倍のスケール）
 
         // ── 屋根全体残雪（タップ前）──────────────────────────
         float fillBefore          = CalcFill();
@@ -1213,7 +1234,7 @@ public class SnowStrip2D : MonoBehaviour
                 avalancheExtraSpawn = Mathf.Max(1, AVALANCHE_MAX_CHAIN - _avalancheChain + 1);
 
                 // 広域巻き込み: footprint を広げて周辺セルを追加削除
-                const float AVA_EXTRA_R = 3f; // 追加巻き込み半径
+                const float AVA_EXTRA_R = 9f; // 追加巻き込み半径（旧3×3倍）
                 const float AVA_TAKE    = 0.25f;
                 float avaRemoved = 0f;
                 int   avaCells   = 0;
