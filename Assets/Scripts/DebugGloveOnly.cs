@@ -17,35 +17,9 @@ public class DebugGloveOnly : MonoBehaviour
 
     void Start()
     {
-        // Inspector 未設定の場合は Resources から取得
-        if (gloveTex == null)
-            gloveTex = Resources.Load<Texture2D>("GloveMitten");
-
-        // ロード結果をログ
-        if (gloveTex != null)
-        {
-            Debug.Log($"[DEBUG_GLOVE_TEXTURE]" +
-                      $" render_path=OnGUI" +
-                      $" source_type=Texture2D" +
-                      $" texture_null=NO" +
-                      $" sprite_null=N/A" +
-                      $" source_name={gloveTex.name}" +
-                      $" source_width={gloveTex.width}" +
-                      $" source_height={gloveTex.height}" +
-                      $" fallback_green_box_used=NO" +
-                      $" glove_visible_as_image=YES");
-        }
-        else
-        {
-            Debug.LogError($"[DEBUG_GLOVE_TEXTURE]" +
-                           $" render_path=OnGUI" +
-                           $" source_type=Texture2D" +
-                           $" texture_null=YES" +
-                           $" source_name=Resources/GloveMitten" +
-                           $" fallback_green_box_used=YES" +
-                           $" glove_visible_as_image=NO" +
-                           $" *** Resources/GloveMitten.png NOT FOUND ***");
-        }
+        // GloveTool.cs がマウス追従を担当するため DebugGloveOnly は無効化
+        enabled = false;
+        Debug.Log("[DEBUG_GLOVE_ONLY] disabled – GloveTool handles mouse follow");
     }
 
     Texture2D GetTex()

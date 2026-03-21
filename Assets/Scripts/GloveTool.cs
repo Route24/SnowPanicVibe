@@ -77,15 +77,19 @@ public class GloveTool : MonoBehaviour
 
         if (Time.frameCount % 180 == 1)
         {
-            Debug.Log($"[DEBUG_GLOVE_FOLLOW]" +
-                      $" source_ok=YES" +
+            Debug.Log($"[DEBUG_GLOVE_FOLLOW_ONLY]" +
                       $" draw_called=YES" +
-                      $" mouse_x={mx:F0} mouse_y={my:F0}" +
-                      $" glove_x={gx:F0} glove_y={gy:F0}" +
-                      $" fixed_center_draw=NO" +
-                      $" placeholder_drawn=NO" +
-                      $" glove_count_on_screen=1" +
-                      $" mouse_follow_visible=YES");
+                      $" texture_loaded={(gloveTex != null ? "YES" : "NO")}" +
+                      $" mouse_screen_x={mx:F0}" +
+                      $" mouse_screen_y={(Screen.height - my):F0}" +
+                      $" gui_x={gx:F0}" +
+                      $" gui_y={gy:F0}" +
+                      $" glove_w={w:F0}" +
+                      $" glove_h={h:F0}" +
+                      $" center_fixed_path=NO" +
+                      $" placeholder_rect=NO" +
+                      $" glove_count=1" +
+                      $" follow_visible=YES");
         }
     }
 
