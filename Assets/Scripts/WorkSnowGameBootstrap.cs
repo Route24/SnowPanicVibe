@@ -69,6 +69,7 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         SetupGroundColliders();
         InjectRoofDefinitions();
         SetupGameSystems();
+        SetupDebugGlove();
     }
 
     // ── 上段・下段の地面コライダーを生成 ──────────────────────────
@@ -197,5 +198,26 @@ public class WorkSnowGameBootstrap : MonoBehaviour
     {
         Debug.Log("[WORK_SNOW_GAME] SetupGameSystems SKIPPED" +
                   " – WorkSnowForcer handles all snow visuals in WORK_SNOW scene");
+    }
+
+    // ── デバッグ手袋表示（PHASE 1 固定表示確認用）──────────────
+    // GloveTool は無効化済み。DebugGloveOnly が画面中央に手袋を固定表示する。
+    void SetupDebugGlove()
+    {
+        if (Object.FindFirstObjectByType<DebugGloveOnly>() != null)
+        {
+            Debug.Log("[WORK_SNOW_GAME] DebugGloveOnly already exists – skipped");
+            return;
+        }
+
+        var go = new GameObject("DebugGloveOnly");
+        var dbg = go.AddComponent<DebugGloveOnly>();
+
+        var tex = Resources.Load<Texture2D>("GloveMitten");
+        if (tex != null)
+            dbg.gloveTex = tex;
+
+        Debug.Log($"[WORK_SNOW_GAME] DebugGloveOnly created" +
+                  $" tex={(tex != null ? "GloveMitten" : "fallback_green")}");
     }
 }

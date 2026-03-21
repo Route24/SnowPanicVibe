@@ -69,6 +69,7 @@
     <Compile Include="Assets/Scripts/AvalancheFeedback.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowSegment.cs" />
     <Compile Include="Assets/Scripts/RoofSnowVisToggle.cs" />
+    <Compile Include="Assets/Scripts/GloveTool.cs" />
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
     <Compile Include="Assets/Scripts/SnowMvpBootstrap.cs" />
     <Compile Include="Assets/Scripts/WorkSnowGameBootstrap.cs" />
