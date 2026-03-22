@@ -164,12 +164,12 @@ public class GloveTool : MonoBehaviour, IToolUI
                     _state     = GloveState.Ready;
                     IsBlocking = false;
                     Debug.Log("[PHASE4_COOLDOWN] cooldown_active=NO  ready=YES");
-                    Debug.Log("[GLOVE_COOLDOWN_LOCK]" +
-                              " glove_is_gray=NO glove_is_translucent=NO" +
-                              " click_received_while_gray=N/A" +
-                              " hit_triggered_while_gray=NO" +
-                              " cooldown_lock_working=YES" +
-                              " click_restored_when_color_back=YES");
+                    Debug.Log("[GLOVE_COOLDOWN_BLOCK_ONLY]" +
+                              " cooldown_visual_active=NO" +
+                              " mouse_click_received_while_cd=N/A" +
+                              " hit_logic_fired_while_cd=NO" +
+                              " cooldown_block_success=YES" +
+                              " click_restored_after_cd=YES");
                 }
                 break;
         }

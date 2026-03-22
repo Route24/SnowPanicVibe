@@ -261,8 +261,26 @@ public class SnowStrip2D : MonoBehaviour
     //
     void HandleTap()
     {
-        // [TAP_ENTRY] このメソッドが実際に呼ばれていることを確認するトレースログ
-        // class=SnowStrip2D  method=HandleTap  instanceId=GetInstanceID()
+        // クールタイム中（GloveTool がブロック中）は叩き処理を発火しない
+        if (GloveTool.IsBlocking)
+        {
+            // クリックは来ているが叩き処理は止まっている
+            bool anyInput = false;
+#if ENABLE_INPUT_SYSTEM
+            anyInput = (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame);
+#else
+            anyInput = Input.GetMouseButtonDown(0);
+#endif
+            if (anyInput)
+                Debug.Log($"[GLOVE_COOLDOWN_BLOCK_ONLY]" +
+                          $" cooldown_visual_active=YES" +
+                          $" mouse_click_received_while_cd=YES" +
+                          $" hit_logic_fired_while_cd=NO" +
+                          $" cooldown_block_success=YES" +
+                          $" click_restored_after_cd=NO_NOT_YET" +
+                          $" roof={TARGET_ROOF_ID}");
+            return;
+        }
         bool pressed = false;
         Vector2 screenPos = Vector2.zero;
 
