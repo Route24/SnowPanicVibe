@@ -126,9 +126,14 @@ public class SnowStrip2D : MonoBehaviour
             if (img != null) { img.enabled = false; img.color = Color.clear; }
         }
 
+        // 屋根数を ToolUIRenderer に通知（全軒OnGUI完了の検出に使う）
+        var allStrips = Object.FindObjectsByType<SnowStrip2D>(FindObjectsSortMode.None);
+        ToolUIRenderer.RegisterRoofCount(allStrips.Length);
+
         Debug.Log($"[2D_ALIVE] SnowStrip2D started. roof={TARGET_ROOF_ID}" +
                   $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}" +
-                  $" screen=({Screen.width}x{Screen.height})");
+                  $" screen=({Screen.width}x{Screen.height})" +
+                  $" total_roofs={allStrips.Length}");
 
         BuildRoofData();
     }
@@ -1074,8 +1079,9 @@ public class SnowStrip2D : MonoBehaviour
 
         GUI.color = Color.white;
 
-        // 全軒の OnGUI 末尾から手袋描画を委譲
-        // GloveTool 側で1フレーム1回だけ描画するよう制御
-        GloveTool.DrawFrontmost(TARGET_ROOF_ID);
+        // 道具UI前面描画の共通エントリポイント
+        // ToolUIRenderer が「全軒OnGUI完了後の最後の1回」に全道具UIを描画する
+        // 新しい道具も ToolUIRenderer.Register() で登録するだけで前面保証される
+        ToolUIRenderer.DrawAll(TARGET_ROOF_ID);
     }
 }

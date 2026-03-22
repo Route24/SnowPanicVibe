@@ -4,85 +4,56 @@ using UnityEngine.InputSystem;
 #endif
 
 /// <summary>
-/// 毛糸の手袋ツール（診断モード）
-/// BRだけ雪より前に出る原因を特定するためのログを追加。
+/// 毛糸の手袋ツール
+///
+/// 描画: ToolUIRenderer に IToolUI として登録。
+///       SnowStrip2D.OnGUI() 末尾 → ToolUIRenderer.DrawAll() → DrawToolUI() の経路で
+///       全積雪描画完了後に描画されるため、全6軒で確実に前面表示される。
+///
+/// 新しい道具（シャベル等）も同じく IToolUI を実装して
+/// ToolUIRenderer.Register() で登録すれば前面表示が自動保証される。
 /// </summary>
 [DefaultExecutionOrder(1000)]
-public class GloveTool : MonoBehaviour
+public class GloveTool : MonoBehaviour, IToolUI
 {
     public static bool IsBlocking { get; private set; } = false;
     public Texture2D gloveTex;
 
-    static GloveTool _inst;
-
-    // 1フレームの OnGUI(Repaint) 内での呼び出しカウント
-    // LateUpdate でリセットするが、OnGUI は LateUpdate より後に呼ばれることもある
-    int _callCountThisRepaint;
-    int _lastRepaintFrame = -1;
-
+    // 後方互換（SnowStrip2D が呼ぶ場合のフォールバック）
     public static void DrawFrontmost(string callerRoofId = "?")
     {
-        if (_inst != null) _inst.DrawGlove(callerRoofId);
-    }
-
-    // LateUpdate: Update フェーズ後にリセット
-    // ただし OnGUI は LateUpdate の前後どちらでも呼ばれうる
-    void LateUpdate()
-    {
-        _callCountThisRepaint = 0;
-        _lastRepaintFrame = -1;
+        ToolUIRenderer.DrawAll(callerRoofId);
     }
 
     void Start()
     {
-        _inst = this;
         if (gloveTex == null)
             gloveTex = Resources.Load<Texture2D>("GloveMitten");
-        Debug.Log($"[GLOVE_TOOL] started tex={(gloveTex != null ? gloveTex.name : "NULL")}");
+
+        // ToolUIRenderer に登録 → 全道具共通の前面描画パスに乗る
+        ToolUIRenderer.Register(this);
+
+        Debug.Log($"[GLOVE_TOOL] started" +
+                  $" tex={(gloveTex != null ? gloveTex.name : "NULL")}" +
+                  $" registered_in=ToolUIRenderer");
     }
 
     void OnDestroy()
     {
-        if (_inst == this) _inst = null;
+        ToolUIRenderer.Unregister(this);
         IsBlocking = false;
     }
 
-    public void DrawGlove(string callerRoofId)
+    // ─── IToolUI 実装 ────────────────────────────────────────
+    // ToolUIRenderer.DrawAll() から呼ばれる
+    // SnowStrip2D の全 OnGUI 完了後に描画されるため前面保証
+    public void DrawToolUI()
     {
-        if (!Application.isPlaying) return;
-        if (Event.current.type != EventType.Repaint) return;
         if (gloveTex == null) return;
 
-        int frame = Time.frameCount;
-
-        // 同一フレームの同一 Repaint パスでのカウント
-        if (_lastRepaintFrame != frame)
-        {
-            _lastRepaintFrame = frame;
-            _callCountThisRepaint = 0;
-        }
-        _callCountThisRepaint++;
-        int thisCall = _callCountThisRepaint;
-
-        // 診断ログ（最初の10フレームと以降も定期的に）
-        bool doLog = frame < 300 || frame % 180 == 1;
-        if (doLog)
-        {
-            Debug.Log($"[DEBUG_GLOVE_BR_DIFF]" +
-                      $" frame={frame}" +
-                      $" caller={callerRoofId}" +
-                      $" call_num={thisCall}" +
-                      $" mouse_screen_pos=({Input.mousePosition.x:F0},{Input.mousePosition.y:F0})" +
-                      $" BR_special_case_exists={(callerRoofId == "Roof_BR" ? "YES" : "NO")}" +
-                      $" snow_draw_called_before_glove=YES" +
-                      $" glove_draw_called_before_snow=NO" +
-                      $" root_cause_candidate=call_{thisCall}_from_{callerRoofId}_is_last_OnGUI");
-        }
-
-        // 描画は毎回実行（重複は後述で調査後に制御）
         Vector2 mouseScreen = Input.mousePosition;
         float mx = mouseScreen.x;
-        float my = Screen.height - mouseScreen.y;
+        float my = Screen.height - mouseScreen.y; // GUI座標: Y軸上=0
 
         float h = Screen.height * 0.12f;
         float w = h * ((float)gloveTex.width / gloveTex.height);
@@ -94,4 +65,7 @@ public class GloveTool : MonoBehaviour
         GUI.DrawTexture(new Rect(gx, gy, w, h), gloveTex, ScaleMode.ScaleToFit, alphaBlend: true);
         GUI.color = Color.white;
     }
+
+    // 後方互換（呼び出し元が残っていても無害）
+    public void DrawGlove(string callerRoofId = "?") { }
 }

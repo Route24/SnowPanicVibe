@@ -51,6 +51,7 @@
   <ItemGroup>
     <Compile Include="Assets/Scripts/SnowPackSpawner.cs" />
     <Compile Include="Assets/Scripts/SnowfallEventBurst.cs" />
+    <Compile Include="Assets/Scripts/ToolUIRenderer.cs" />
     <Compile Include="Assets/Scripts/BillboardSnowKiller.cs" />
     <Compile Include="Assets/Scripts/MvpSnowChunkMotion.cs" />
     <Compile Include="Assets/Scripts/SnowSizeDiagnostics.cs" />
