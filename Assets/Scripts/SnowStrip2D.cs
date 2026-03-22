@@ -1073,5 +1073,9 @@ public class SnowStrip2D : MonoBehaviour
         GUI.Label(new Rect(tx+2, ty+25, 168, 14), _lastInfo, style);
 
         GUI.color = Color.white;
+
+        // 全軒の OnGUI 末尾から手袋描画を委譲
+        // GloveTool 側で1フレーム1回だけ描画するよう制御
+        GloveTool.DrawFrontmost(TARGET_ROOF_ID);
     }
 }

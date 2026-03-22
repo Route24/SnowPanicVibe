@@ -200,24 +200,28 @@ public class WorkSnowGameBootstrap : MonoBehaviour
                   " – WorkSnowForcer handles all snow visuals in WORK_SNOW scene");
     }
 
-    // ── デバッグ手袋表示（PHASE 1 固定表示確認用）──────────────
-    // GloveTool は無効化済み。DebugGloveOnly が画面中央に手袋を固定表示する。
+    // ── 手袋ツール生成（GloveTool マウス追従表示）──────────────
     void SetupDebugGlove()
     {
-        if (Object.FindFirstObjectByType<DebugGloveOnly>() != null)
+        // 既存の GloveTool があればスキップ
+        if (Object.FindFirstObjectByType<GloveTool>() != null)
         {
-            Debug.Log("[WORK_SNOW_GAME] DebugGloveOnly already exists – skipped");
+            Debug.Log("[WORK_SNOW_GAME] GloveTool already exists – skipped");
             return;
         }
 
-        var go = new GameObject("DebugGloveOnly");
-        var dbg = go.AddComponent<DebugGloveOnly>();
+        var go   = new GameObject("GloveTool");
+        var tool = go.AddComponent<GloveTool>();
 
         var tex = Resources.Load<Texture2D>("GloveMitten");
         if (tex != null)
-            dbg.gloveTex = tex;
-
-        Debug.Log($"[WORK_SNOW_GAME] DebugGloveOnly created" +
-                  $" tex={(tex != null ? "GloveMitten" : "fallback_green")}");
+        {
+            tool.gloveTex = tex;
+            Debug.Log($"[WORK_SNOW_GAME] GloveTool created tex=GloveMitten({tex.width}x{tex.height})");
+        }
+        else
+        {
+            Debug.LogWarning("[WORK_SNOW_GAME] GloveMitten not found in Resources – GloveTool will use fallback load in Start()");
+        }
     }
 }

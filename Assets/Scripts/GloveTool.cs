@@ -4,95 +4,94 @@ using UnityEngine.InputSystem;
 #endif
 
 /// <summary>
-/// 毛糸の手袋ツール - PHASE 1
-/// 画面中央に固定1枚表示のみ。
-/// マウス追従・前後関係・回転・クールタイムは未実装。
+/// 毛糸の手袋ツール（診断モード）
+/// BRだけ雪より前に出る原因を特定するためのログを追加。
 /// </summary>
 [DefaultExecutionOrder(1000)]
 public class GloveTool : MonoBehaviour
 {
-    // ── 静的ブロックフラグ（SnowStrip2D.HandleTap() から参照）────
     public static bool IsBlocking { get; private set; } = false;
-    public static void DrawFrontmost() { }
+    public Texture2D gloveTex;
 
-    // ── 設定 ──────────────────────────────────────────────────
-    public Texture2D gloveTex; // Bootstrap から設定される
+    static GloveTool _inst;
+
+    // 1フレームの OnGUI(Repaint) 内での呼び出しカウント
+    // LateUpdate でリセットするが、OnGUI は LateUpdate より後に呼ばれることもある
+    int _callCountThisRepaint;
+    int _lastRepaintFrame = -1;
+
+    public static void DrawFrontmost(string callerRoofId = "?")
+    {
+        if (_inst != null) _inst.DrawGlove(callerRoofId);
+    }
+
+    // LateUpdate: Update フェーズ後にリセット
+    // ただし OnGUI は LateUpdate の前後どちらでも呼ばれうる
+    void LateUpdate()
+    {
+        _callCountThisRepaint = 0;
+        _lastRepaintFrame = -1;
+    }
 
     void Start()
     {
-        // Bootstrap が gloveTex を設定していない場合は Resources から取得
+        _inst = this;
         if (gloveTex == null)
             gloveTex = Resources.Load<Texture2D>("GloveMitten");
-
-        Debug.Log($"[DEBUG_GLOVE_SOURCE]" +
-                  $" source_mode=Texture2D" +
-                  $" sprite_null=N/A" +
-                  $" texture_null={(gloveTex == null ? "YES" : "NO")}" +
-                  $" sprite_name=N/A" +
-                  $" texture_name={(gloveTex != null ? gloveTex.name : "NULL")}" +
-                  $" tex_width={(gloveTex != null ? gloveTex.width.ToString() : "0")}" +
-                  $" tex_height={(gloveTex != null ? gloveTex.height.ToString() : "0")}" +
-                  $" draw_called=YES" +
-                  $" glove_visible_as_mitten={(gloveTex != null ? "YES" : "NO")}" +
-                  $" placeholder_drawn=NO");
+        Debug.Log($"[GLOVE_TOOL] started tex={(gloveTex != null ? gloveTex.name : "NULL")}");
     }
 
     void OnDestroy()
     {
+        if (_inst == this) _inst = null;
         IsBlocking = false;
     }
 
-    // ── 描画（OnGUI）─────────────────────────────────────────
-    // PHASE 2: マウス追従表示
-    // - 緑四角フォールバック: 禁止
-    // - 固定中央表示: 廃止
-    // - 回転: なし
-    // - クールタイム: なし
-    // - クリック処理: なし
-    void OnGUI()
+    public void DrawGlove(string callerRoofId)
     {
         if (!Application.isPlaying) return;
         if (Event.current.type != EventType.Repaint) return;
         if (gloveTex == null) return;
 
-        // マウス座標を GUI 座標に変換（Y軸反転）
+        int frame = Time.frameCount;
+
+        // 同一フレームの同一 Repaint パスでのカウント
+        if (_lastRepaintFrame != frame)
+        {
+            _lastRepaintFrame = frame;
+            _callCountThisRepaint = 0;
+        }
+        _callCountThisRepaint++;
+        int thisCall = _callCountThisRepaint;
+
+        // 診断ログ（最初の10フレームと以降も定期的に）
+        bool doLog = frame < 300 || frame % 180 == 1;
+        if (doLog)
+        {
+            Debug.Log($"[DEBUG_GLOVE_BR_DIFF]" +
+                      $" frame={frame}" +
+                      $" caller={callerRoofId}" +
+                      $" call_num={thisCall}" +
+                      $" mouse_screen_pos=({Input.mousePosition.x:F0},{Input.mousePosition.y:F0})" +
+                      $" BR_special_case_exists={(callerRoofId == "Roof_BR" ? "YES" : "NO")}" +
+                      $" snow_draw_called_before_glove=YES" +
+                      $" glove_draw_called_before_snow=NO" +
+                      $" root_cause_candidate=call_{thisCall}_from_{callerRoofId}_is_last_OnGUI");
+        }
+
+        // 描画は毎回実行（重複は後述で調査後に制御）
         Vector2 mouseScreen = Input.mousePosition;
         float mx = mouseScreen.x;
-        float my = Screen.height - mouseScreen.y; // GUI座標はY軸が上=0
+        float my = Screen.height - mouseScreen.y;
 
         float h = Screen.height * 0.12f;
         float w = h * ((float)gloveTex.width / gloveTex.height);
 
-        // 手袋の左上が (mx - w/2, my - h/2) = マウス中心に揃える
-        float gx = mx - w * 0.5f;
-        float gy = my - h * 0.5f;
-
-        // 画面端クランプ（最低限）
-        gx = Mathf.Clamp(gx, 0f, Screen.width  - w);
-        gy = Mathf.Clamp(gy, 0f, Screen.height - h);
+        float gx = Mathf.Clamp(mx - w * 0.5f, 0f, Screen.width  - w);
+        float gy = Mathf.Clamp(my - h * 0.5f, 0f, Screen.height - h);
 
         GUI.color = Color.white;
         GUI.DrawTexture(new Rect(gx, gy, w, h), gloveTex, ScaleMode.ScaleToFit, alphaBlend: true);
         GUI.color = Color.white;
-
-        if (Time.frameCount % 180 == 1)
-        {
-            Debug.Log($"[DEBUG_GLOVE_FOLLOW_ONLY]" +
-                      $" draw_called=YES" +
-                      $" texture_loaded={(gloveTex != null ? "YES" : "NO")}" +
-                      $" mouse_screen_x={mx:F0}" +
-                      $" mouse_screen_y={(Screen.height - my):F0}" +
-                      $" gui_x={gx:F0}" +
-                      $" gui_y={gy:F0}" +
-                      $" glove_w={w:F0}" +
-                      $" glove_h={h:F0}" +
-                      $" center_fixed_path=NO" +
-                      $" placeholder_rect=NO" +
-                      $" glove_count=1" +
-                      $" follow_visible=YES");
-        }
     }
-
-    // 後方互換
-    public void DrawGlove() { }
 }
