@@ -70,7 +70,7 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         InjectRoofDefinitions();
         SetupGameSystems();
         SetupDebugGlove();
-        SetupShovelTool();
+        // SetupShovelTool(); // 骨格確認完了 → 手袋仕上げフェーズ中は停止
     }
 
     // ── 上段・下段の地面コライダーを生成 ──────────────────────────
