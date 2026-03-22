@@ -70,6 +70,7 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         InjectRoofDefinitions();
         SetupGameSystems();
         SetupDebugGlove();
+        SetupShovelTool();
     }
 
     // ── 上段・下段の地面コライダーを生成 ──────────────────────────
@@ -198,6 +199,30 @@ public class WorkSnowGameBootstrap : MonoBehaviour
     {
         Debug.Log("[WORK_SNOW_GAME] SetupGameSystems SKIPPED" +
                   " – WorkSnowForcer handles all snow visuals in WORK_SNOW scene");
+    }
+
+    // ── シャベルツール生成（骨格確認用）──────────────────────────
+    void SetupShovelTool()
+    {
+        if (Object.FindFirstObjectByType<ShovelTool>() != null)
+        {
+            Debug.Log("[WORK_SNOW_GAME] ShovelTool already exists – skipped");
+            return;
+        }
+
+        var go   = new GameObject("ShovelTool");
+        var tool = go.AddComponent<ShovelTool>();
+
+        var tex = Resources.Load<Texture2D>("ShovelTool");
+        if (tex != null)
+        {
+            tool.shovelTex = tex;
+            Debug.Log($"[WORK_SNOW_GAME] ShovelTool created tex=ShovelTool({tex.width}x{tex.height})");
+        }
+        else
+        {
+            Debug.LogWarning("[WORK_SNOW_GAME] ShovelTool not found in Resources – ShovelTool will use fallback load in Start()");
+        }
     }
 
     // ── 手袋ツール生成（GloveTool マウス追従表示）──────────────

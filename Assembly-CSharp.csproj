@@ -55,6 +55,7 @@
     <Compile Include="Assets/Scripts/BillboardSnowKiller.cs" />
     <Compile Include="Assets/Scripts/MvpSnowChunkMotion.cs" />
     <Compile Include="Assets/Scripts/SnowSizeDiagnostics.cs" />
+    <Compile Include="Assets/Scripts/ShovelTool.cs" />
     <Compile Include="Assets/Scripts/SnowPanicMinimalSample.cs" />
     <Compile Include="Assets/Scripts/RoofSnowCleanup.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineSelfTestOverlay.cs" />
