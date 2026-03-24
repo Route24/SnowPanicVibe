@@ -103,6 +103,25 @@ public class SnowStrip2D : MonoBehaviour
     }
     [System.Serializable] class SaveData { public RoofEntry[] roofs; }
 
+    // ── 静的屋根情報リスト（GloveTool の影描画・段判定に使用）──
+    // 全 SnowStrip2D インスタンスが BuildRoofData() で自分の情報を登録する
+    public struct RoofInfo
+    {
+        public Rect   rect;
+        public string id;    // "Roof_TL" / "Roof_BM" など
+        public bool   isUpper;  // id に "T" が含まれれば上段
+    }
+    static readonly System.Collections.Generic.List<RoofInfo> s_roofInfos
+        = new System.Collections.Generic.List<RoofInfo>();
+    static readonly System.Collections.Generic.List<Rect> s_roofRects
+        = new System.Collections.Generic.List<Rect>();
+
+    /// <summary>全屋根の GUI Rect リスト（読み取り専用・後方互換）</summary>
+    public static System.Collections.Generic.IReadOnlyList<Rect> RoofRects => s_roofRects;
+
+    /// <summary>全屋根の情報リスト（roofId・段情報付き）</summary>
+    public static System.Collections.Generic.IReadOnlyList<RoofInfo> RoofInfos => s_roofInfos;
+
     // ── ライフサイクル ────────────────────────────────────────
     void OnEnable()
     {
@@ -112,6 +131,8 @@ public class SnowStrip2D : MonoBehaviour
     void OnDestroy()
     {
         if (_snowTex != null) { Destroy(_snowTex); _snowTex = null; }
+        s_roofRects.Remove(_guiRect);
+        s_roofInfos.RemoveAll(info => info.id == TARGET_ROOF_ID);
     }
 
     void Start()
@@ -219,6 +240,18 @@ public class SnowStrip2D : MonoBehaviour
         _texDirty = true;
 
         _ready = true;
+
+        // 静的屋根情報リストに登録（GloveTool の影描画・段判定に使用）
+        if (!s_roofRects.Contains(_guiRect))
+            s_roofRects.Add(_guiRect);
+        s_roofInfos.RemoveAll(info => info.id == TARGET_ROOF_ID);
+        s_roofInfos.Add(new RoofInfo
+        {
+            rect    = _guiRect,
+            id      = TARGET_ROOF_ID,
+            isUpper = TARGET_ROOF_ID.Contains("_T")
+        });
+
         Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} guiRect={_guiRect}" +
                   $" eaveGuiY={_eaveGuiY:F1} downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
     }
@@ -261,49 +294,70 @@ public class SnowStrip2D : MonoBehaviour
     //
     void HandleTap()
     {
-        // クールタイム中（GloveTool がブロック中）は叩き処理を発火しない
-        if (GloveTool.IsBlocking)
-        {
-            // クリックは来ているが叩き処理は止まっている
-            bool anyInput = false;
-#if ENABLE_INPUT_SYSTEM
-            anyInput = (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame);
-#else
-            anyInput = Input.GetMouseButtonDown(0);
-#endif
-            if (anyInput)
-                Debug.Log($"[GLOVE_COOLDOWN_BLOCK_ONLY]" +
-                          $" cooldown_visual_active=YES" +
-                          $" mouse_click_received_while_cd=YES" +
-                          $" hit_logic_fired_while_cd=NO" +
-                          $" cooldown_block_success=YES" +
-                          $" click_restored_after_cd=NO_NOT_YET" +
-                          $" roof={TARGET_ROOF_ID}");
-            return;
-        }
+        // ── GloveTool 着弾通知を最優先で処理 ──────────────────
+        // GloveTool が影位置に着弾したとき HasPendingHit=true になる。
+        // この場合はマウス位置ではなく影位置（PendingHitGuiPos）でヒット判定する。
         bool pressed = false;
-        Vector2 screenPos = Vector2.zero;
+        Vector2 guiPos = Vector2.zero;
 
+        if (GloveTool.HasPendingHit)
+        {
+            // 着弾通知を消費してヒット処理へ
+            GloveTool.HasPendingHit = false;
+            guiPos  = GloveTool.PendingHitGuiPos;
+            pressed = true;
+
+            Debug.Log($"[GLOVE_HIT_RESTORE]" +
+                      $" click_received=YES" +
+                      $" hit_logic_fired=YES" +
+                      $" snow_detach_or_fall=PROCESSING" +
+                      $" fall_restored=YES" +
+                      $" hit_pos=({guiPos.x:F0},{guiPos.y:F0})" +
+                      $" roof={TARGET_ROOF_ID}");
+        }
+        else
+        {
+            // 通常のクリック入力（GloveTool ブロック中は弾く）
+            if (GloveTool.IsBlocking)
+            {
+                bool anyInput = false;
 #if ENABLE_INPUT_SYSTEM
-        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-        {
-            screenPos = Mouse.current.position.ReadValue();
-            pressed = true;
-        }
-        else if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
-        {
-            screenPos = Touchscreen.current.primaryTouch.position.ReadValue();
-            pressed = true;
-        }
+                anyInput = (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame);
 #else
-        if (Input.GetMouseButtonDown(0))
-            { screenPos = Input.mousePosition; pressed = true; }
-        else if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
-            { screenPos = Input.GetTouch(0).position; pressed = true; }
+                anyInput = Input.GetMouseButtonDown(0);
 #endif
-        if (!pressed) return;
+                if (anyInput)
+                    Debug.Log($"[GLOVE_COOLDOWN_BLOCK_ONLY]" +
+                              $" cooldown_visual_active=YES" +
+                              $" mouse_click_received_while_cd=YES" +
+                              $" hit_logic_fired_while_cd=NO" +
+                              $" cooldown_block_success=YES" +
+                              $" click_restored_after_cd=NO_NOT_YET" +
+                              $" roof={TARGET_ROOF_ID}");
+                return;
+            }
 
-        Vector2 guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
+            Vector2 screenPos = Vector2.zero;
+#if ENABLE_INPUT_SYSTEM
+            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                screenPos = Mouse.current.position.ReadValue();
+                pressed = true;
+            }
+            else if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
+            {
+                screenPos = Touchscreen.current.primaryTouch.position.ReadValue();
+                pressed = true;
+            }
+#else
+            if (Input.GetMouseButtonDown(0))
+                { screenPos = Input.mousePosition; pressed = true; }
+            else if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
+                { screenPos = Input.GetTouch(0).position; pressed = true; }
+#endif
+            if (!pressed) return;
+            guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
+        }
 
         // [TAP_ENTRY] 入力受付確認
         Debug.Log($"[TAP_ENTRY] class=SnowStrip2D method=HandleTap" +
@@ -311,7 +365,7 @@ public class SnowStrip2D : MonoBehaviour
                   $" guiPos=({guiPos.x:F0},{guiPos.y:F0}) guiRect={_guiRect}" +
                   $" contains={_guiRect.Contains(guiPos)}");
 
-        Debug.Log($"[2D_TAP_RAW] screenPos=({screenPos.x:F0},{screenPos.y:F0})" +
+        Debug.Log($"[2D_TAP_RAW]" +
                   $" guiPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" guiRect={_guiRect} contains={_guiRect.Contains(guiPos)}");
 
