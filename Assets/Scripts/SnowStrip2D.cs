@@ -428,38 +428,58 @@ public class SnowStrip2D : MonoBehaviour
         const int   SEC_DEPTH     = 2;    // 下方向2段まで
         const float TAP_TOTAL_CAP = 80f;  // 1タップ上限（暴走防止）
 
-        // ── [DEBUG] 強制3段階モード: small→medium→large→small… ──
-        // _tapCount % 3 で強制ローテーション（状態依存なし）
-        // small=0, medium=1, large=2
-        int   forcedModeIndex = _tapCount % 3;
+        // ── 状態依存 hit_class 分類 ──────────────────────────────
+        // ヒット中心周辺 5×5 セルの平均雪量（localMetric）で small/medium/large を決定
+        // forced 時と同じ差分値を使用:
+        //   small  : ×0.30  (radius×0.30, power×0.30)
+        //   medium : ×1.0   (baseline)
+        //   large  : ×3.0   (radius×3.0, power×3.0)
+        //
+        // threshold_low  = 0.25  → これ未満は small
+        // threshold_high = 0.60  → これ以上は large
+        const float THRESHOLD_LOW  = 0.25f;
+        const float THRESHOLD_HIGH = 0.60f;
+
+        float localSum = 0f;
+        int   localN   = 0;
+        for (int lx = Mathf.Max(0, rawCx - 2); lx <= Mathf.Min(GRID_W - 1, rawCx + 2); lx++)
+        for (int ly = Mathf.Max(0, rawCy - 2); ly <= Mathf.Min(GRID_H - 1, rawCy + 2); ly++)
+        {
+            localSum += _snow[lx, ly];
+            localN++;
+        }
+        float localMetric = localN > 0 ? localSum / localN : 0f;
+
         string hitClass;
         float  hitFP_RX, hitFP_RY, hitFP_MAX;
 
-        switch (forcedModeIndex)
+        if (localMetric < THRESHOLD_LOW)
         {
-            case 0:  // small: baseline の 0.3x
-                hitClass  = "small";
-                hitFP_RX  = FP_RX * 0.30f;
-                hitFP_RY  = FP_RY * 0.30f;
-                hitFP_MAX = 0.30f;
-                break;
-            case 1:  // medium: baseline
-                hitClass  = "medium";
-                hitFP_RX  = FP_RX;
-                hitFP_RY  = FP_RY;
-                hitFP_MAX = 1.0f;
-                break;
-            default: // large: baseline の 3.0x
-                hitClass  = "large";
-                hitFP_RX  = FP_RX * 3.0f;
-                hitFP_RY  = FP_RY * 3.0f;
-                hitFP_MAX = 3.0f;
-                break;
+            hitClass  = "small";
+            hitFP_RX  = FP_RX * 0.30f;
+            hitFP_RY  = FP_RY * 0.30f;
+            hitFP_MAX = 0.30f;
+        }
+        else if (localMetric < THRESHOLD_HIGH)
+        {
+            hitClass  = "medium";
+            hitFP_RX  = FP_RX;
+            hitFP_RY  = FP_RY;
+            hitFP_MAX = 1.0f;
+        }
+        else
+        {
+            hitClass  = "large";
+            hitFP_RX  = FP_RX * 3.0f;
+            hitFP_RY  = FP_RY * 3.0f;
+            hitFP_MAX = 3.0f;
         }
 
-        Debug.Log($"[FORCED_HIT_MODE] roof={TARGET_ROOF_ID}" +
-                  $" hit_index={_tapCount}" +
-                  $" forced_mode={hitClass}" +
+        Debug.Log($"[STATE_DEPENDENT_HIT_CLASS] roof={TARGET_ROOF_ID}" +
+                  $" local_snow_metric={localMetric:F3}" +
+                  $" threshold_low={THRESHOLD_LOW}" +
+                  $" threshold_high={THRESHOLD_HIGH}" +
+                  $" hit_class={hitClass}" +
                   $" detach_radius=({hitFP_RX:F1},{hitFP_RY:F1})" +
                   $" detach_power={hitFP_MAX:F2}");
 
@@ -808,17 +828,16 @@ public class SnowStrip2D : MonoBehaviour
                   $" slide_accel_mode=ease-in" +
                   $" slide_init_spd=10 slide_max_spd=260");
 
-        Debug.Log($"[FORCED_VARIANCE_RESULT]" +
-                  $" hit_index={_tapCount}" +
-                  $" forced_mode={hitClass}" +
+        Debug.Log($"[STATE_VARIANCE_RESULT]" +
+                  $" hit_class={hitClass}" +
                   $" initial_detach_count={spawnCount}" +
                   $" totalDelta={totalDelta:F3}" +
-                  $" visually_small_medium_large={(hitClass == "small" && spawnCount <= 2 ? "YES(small_ok)" : (hitClass == "large" && spawnCount >= 4 ? "YES(large_ok)" : "CHECK"))}");
+                  $" visually_clear=CHECK_IN_GAME");
 
-        Debug.Log($"[DIAGNOSIS]" +
-                  $" forced_difference_visible=CHECK_IN_GAME" +
-                  $" if_yes_root_cause=state_dependent_selection_side" +
-                  $" if_no_root_cause=detach_difference_not_propagating_side");
+        Debug.Log($"[CAUSE_CONFIRMATION]" +
+                  $" forced_mode_visible=YES" +
+                  $" state_mode_visible=CHECK_IN_GAME" +
+                  $" root_cause_confirmed=state_dependent_selection_side");
 
         Debug.Log($"[SLIDE_ACCELERATION]" +
                   $" speed_mode=ease-in" +
