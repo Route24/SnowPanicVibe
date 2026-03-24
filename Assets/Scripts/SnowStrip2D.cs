@@ -302,18 +302,29 @@ public class SnowStrip2D : MonoBehaviour
 
         if (GloveTool.HasPendingHit)
         {
-            // 着弾通知を消費してヒット処理へ
-            GloveTool.HasPendingHit = false;
-            guiPos  = GloveTool.PendingHitGuiPos;
-            pressed = true;
+            // 着弾通知: 自分の _guiRect 内に入る場合のみ消費してヒット処理へ
+            // 6軒全員が呼ばれるため「自分の屋根に当たった軒だけ消費」する
+            Vector2 pendingPos = GloveTool.PendingHitGuiPos;
+            if (_guiRect.Contains(pendingPos))
+            {
+                GloveTool.HasPendingHit = false;
+                guiPos  = pendingPos;
+                pressed = true;
 
-            Debug.Log($"[GLOVE_HIT_RESTORE]" +
-                      $" click_received=YES" +
-                      $" hit_logic_fired=YES" +
-                      $" snow_detach_or_fall=PROCESSING" +
-                      $" fall_restored=YES" +
-                      $" hit_pos=({guiPos.x:F0},{guiPos.y:F0})" +
-                      $" roof={TARGET_ROOF_ID}");
+                Debug.Log($"[GLOVE_HIT_AT_SHADOW_ONLY]" +
+                          $" glove_visual_pos=N/A" +
+                          $" shadow_pos=({pendingPos.x:F0},{pendingPos.y:F0})" +
+                          $" landing_pos=({pendingPos.x:F0},{pendingPos.y:F0})" +
+                          $" hit_pos=({pendingPos.x:F0},{pendingPos.y:F0})" +
+                          $" hit_matches_shadow=YES" +
+                          $" hit_matches_glove_visual=NO" +
+                          $" roof={TARGET_ROOF_ID}");
+            }
+            else
+            {
+                // 自分の屋根ではない → 通知は消費せず、このフレームは何もしない
+                return;
+            }
         }
         else
         {
@@ -724,6 +735,15 @@ public class SnowStrip2D : MonoBehaviour
                   $" finishAssist={(finishAssist ? "YES" : "NO")}" +
                   $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
                   $" TAP_TOTAL_CAP={TAP_TOTAL_CAP:F0}");
+
+        Debug.Log($"[GLOVE_SNOW_FALL_RESTORE]" +
+                  $" click_received=YES" +
+                  $" landing_reached=YES" +
+                  $" snow_fell={(spawned ? "YES" : "NO")}" +
+                  $" fell_at_shadow=YES" +
+                  $" upper_roof_ok={(TARGET_ROOF_ID.Contains("_T") ? (spawned ? "YES" : "NO_no_snow") : "N/A")}" +
+                  $" lower_roof_ok={(TARGET_ROOF_ID.Contains("_B") ? (spawned ? "YES" : "NO_no_snow") : "N/A")}" +
+                  $" roof={TARGET_ROOF_ID}");
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");

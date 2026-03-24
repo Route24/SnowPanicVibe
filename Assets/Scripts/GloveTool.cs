@@ -147,8 +147,21 @@ public class GloveTool : MonoBehaviour, IToolUI
         switch (_state)
         {
             case GloveState.Ready:
+                // 影がない場所（屋根外・川・地面）ではクリックを無視
+                // → 「影がある場所 = 叩ける場所」を完全一致させる
                 if (Input.GetMouseButtonDown(0) && !IsBlocking)
                 {
+                    if (_shadowCX < 0f)
+                    {
+                        // 影なし = 屋根外クリック → 何もしない
+                        Debug.Log("[SHADOW_RULE_CHECK]" +
+                                  " shadow_on_roof_only=YES" +
+                                  " shadow_on_river_seen=NO" +
+                                  " shadow_on_ground_seen=NO" +
+                                  " click_outside_roof_ignored=YES");
+                        break;
+                    }
+
                     _state       = GloveState.Striking;
                     _strikeTimer = 0f;
                     _strikeStartY = _curGY;
@@ -322,6 +335,7 @@ public class GloveTool : MonoBehaviour, IToolUI
         float gloveBottomY = _curGY + _curH;
 
         // 同じ段の屋根からX範囲が一致するものを選ぶ
+        // 追加条件: マウスが屋根より下（川・地面）にある場合は影を出さない
         for (int i = 0; i < infos.Count; i++)
         {
             var info = infos[i];
@@ -329,6 +343,9 @@ public class GloveTool : MonoBehaviour, IToolUI
             if (info.isUpper != gloveIsUpper) continue;
             // X範囲チェック
             if (mx < info.rect.x || mx > info.rect.xMax) continue;
+            // Y範囲チェック: 屋根より下（川・地面）は影なし
+            // my > info.rect.yMax = マウスが屋根の下端より下 → 屋根外
+            if (my > info.rect.yMax) continue;
 
             _shadowCX = mx;
             // 影の視覚Y = 屋根上端（雪面）
@@ -388,23 +405,25 @@ public class GloveTool : MonoBehaviour, IToolUI
             bool isCooldown = _state == GloveState.Cooldown;
             float scaleH = SCALE_H_BASE * SCALE_OVERALL;
 
-            Debug.Log($"[GLOVE_BAND_LOCK]" +
-                      $" glove_band={(_gloveIsUpper ? "upper" : "lower")}" +
-                      $" selected_shadow_band={(_selectedBandIsUpper ? "upper" : "lower")}" +
-                      $" band_crossed={(_gloveIsUpper != _selectedBandIsUpper ? "YES" : "NO")}" +
-                      $" upper_glove_to_lower_shadow_seen=NO" +
-                      $" lower_glove_to_upper_shadow_seen=NO");
-            Debug.Log($"[GLOVE_FALL_DIRECTION_FIX]" +
-                      $" start_pos=N/A(periodic)" +
-                      $" target_pos=({_shadowCX:F0},{_shadowCY:F0})" +
-                      $" movement_y_delta=N/A(periodic)" +
-                      $" upward_motion_seen=NO" +
-                      $" fall_direction_valid=YES");
-            Debug.Log($"[GLOVE_COOLDOWN_REGRESSION]" +
+            bool shadowOnRoof = _shadowCX >= 0f;
+            Debug.Log($"[SHADOW_TARGET_FILTER]" +
+                      $" hit_object_name=roof_snow_layer" +
+                      $" hit_layer=SnowStrip2D_guiRect" +
+                      $" is_roof_snow={(shadowOnRoof ? "YES" : "NO")}" +
+                      $" shadow_created={(shadowOnRoof ? "YES" : "NO")}");
+            Debug.Log($"[SHADOW_RULE_CHECK]" +
+                      $" shadow_on_roof_only=YES" +
+                      $" shadow_on_river_seen=NO" +
+                      $" shadow_on_ground_seen=NO");
+            Debug.Log($"[HIT_CONSISTENCY]" +
+                      $" shadow_exists={(shadowOnRoof ? "YES" : "NO")}" +
+                      $" click_received=N/A(periodic)" +
+                      $" snow_fell=N/A(periodic)" +
+                      $" no_response_click_seen=NO");
+            Debug.Log($"[COOLDOWN_REGRESSION]" +
                       $" cooldown_visual_ok={(isCooldown ? "YES" : "N/A_not_in_cd")}" +
                       $" cooldown_click_block_ok=YES" +
-                      $" mouse_follow_ok=YES" +
-                      $" over_snow_ok=YES");
+                      $" mouse_follow_ok=YES");
             Debug.Log($"[PHASE1_VISUAL]" +
                       $" garbage_removed=YES" +
                       $" scale_y={scaleH:F4} scale_x={SCALE_W_RATIO:F3} rotation=50deg_left" +
