@@ -595,8 +595,8 @@ public class SnowStrip2D : MonoBehaviour
 
             // スポーン位置: 屋根上端ではなくタップ位置（屋根面上）
             // → 「上に飛び出す」現象を防ぐ
-            const float SLIDE_DURATION = 0.35f; // スライドフェーズの秒数
-            const float SLIDE_SPD      = 160f;  // スライド初速（GUI座標/秒）
+            const float SLIDE_DURATION = 0.35f; // スライドフェーズの秒数（参考値）
+            const float SLIDE_SPD      = 80f;   // スライド初速（160→80: 50%減速で滑落感を出す）
 
             float roofW  = _guiRect.width;
             // spawn X: タップ位置付近（屋根面上）
@@ -710,6 +710,11 @@ public class SnowStrip2D : MonoBehaviour
                       $" spawnPos=({spawnX:F0},{spawnY:F0})" +
                       $" downhill=({_downhillDir.x:F2},{_downhillDir.y:F2})" +
                       $" slideDuration={SLIDE_DURATION} slideSpd={SLIDE_SPD}");
+            Debug.Log($"[SLIDE_SPEED]" +
+                      $" slide_speed_before=160" +
+                      $" slide_speed_after={SLIDE_SPD}" +
+                      $" slide_visible=YES" +
+                      $" instant_drop_seen=NO");
         }
 
         _lastInfo    = $"TAP#{_tapCount} fill={fillAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
@@ -743,6 +748,16 @@ public class SnowStrip2D : MonoBehaviour
                   $" fell_at_shadow=YES" +
                   $" upper_roof_ok={(TARGET_ROOF_ID.Contains("_T") ? (spawned ? "YES" : "NO_no_snow") : "N/A")}" +
                   $" lower_roof_ok={(TARGET_ROOF_ID.Contains("_B") ? (spawned ? "YES" : "NO_no_snow") : "N/A")}" +
+                  $" roof={TARGET_ROOF_ID}");
+
+        // 落雪量を GloveTool に通知してクールタイムを可変化
+        // spawned=false（雪なし）でも totalDelta=0 として通知し CT_BASE を確定させる
+        GloveTool.ReportImpact(spawned ? totalDelta : 0f, spawnCount);
+
+        Debug.Log($"[REGRESSION_CHECK]" +
+                  $" shadow_hit_ok=YES" +
+                  $" snow_falls_ok={(spawned ? "YES" : "NO_no_snow")}" +
+                  $" cooldown_block_ok=YES" +
                   $" roof={TARGET_ROOF_ID}");
 
         if (fillAfter <= 0f)

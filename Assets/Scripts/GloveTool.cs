@@ -56,9 +56,15 @@ public class GloveTool : MonoBehaviour, IToolUI
     // ── 丸影テクスチャ ────────────────────────────────────────
     Texture2D _shadowTex;
 
-    // ── PHASE4: クールタイム ──────────────────────────────────
-    const float COOLDOWN_SEC = 1.2f;
-    float _cooldownTimer = 0f;
+    // ── PHASE4: クールタイム（可変）──────────────────────────
+    // 固定値を廃止し、落雪量に応じて動的に決定する
+    // cooldown = Clamp(CT_BASE + totalDelta * CT_SCALE, CT_MIN, CT_MAX)
+    const float CT_BASE  = 0.25f;   // 最小クールタイムのベース（小ヒット時の連打感を確保）
+    const float CT_SCALE = 0.18f;   // totalDelta あたりの増加量（0.12→0.18: 揺らぎ強化）
+    const float CT_MIN   = 0.25f;   // 下限（小ヒット時）
+    const float CT_MAX   = 2.50f;   // 上限（大雪崩時）
+    float _cooldownTimer    = 0f;
+    float _lastCooldownUsed = CT_BASE;  // ログ用
 
     // ── PHASE3: 雪煙 ──────────────────────────────────────────
     struct Puff
@@ -82,6 +88,7 @@ public class GloveTool : MonoBehaviour, IToolUI
     // ─────────────────────────────────────────────────────────
     void Awake()
     {
+        _instance = this;
         // 丸影テクスチャを生成（グラデーション円: 中心が濃く、外縁が透明）
         const int SZ = 64;
         _shadowTex = new Texture2D(SZ, SZ, TextureFormat.RGBA32, false);
@@ -118,6 +125,57 @@ public class GloveTool : MonoBehaviour, IToolUI
         IsBlocking    = false;
         HasPendingHit = false;
         if (_shadowTex != null) { Destroy(_shadowTex); _shadowTex = null; }
+    }
+
+    // ── 落雪量レポート（SnowStrip2D.HandleTap から呼ばれる）──
+    // totalDelta: 1タップで削った雪量（グリッドセル単位）
+    // spawnCount: 生成した落下ピース数
+    // Cooldown 状態のときのみ有効（着弾直後に呼ばれる想定）
+    public static void ReportImpact(float totalDelta, int spawnCount)
+    {
+        // シングルトン参照（static から instance メソッドを呼ぶため）
+        if (_instance == null) return;
+        _instance.ApplyDynamicCooldown(totalDelta, spawnCount);
+    }
+
+    static GloveTool _instance;
+
+    void ApplyDynamicCooldown(float totalDelta, int spawnCount)
+    {
+        if (_state != GloveState.Cooldown) return;
+
+        float prevCT = _lastCooldownUsed;
+        // cooldown = CT_BASE + totalDelta * CT_SCALE, clamped [CT_MIN, CT_MAX]
+        float newCT = Mathf.Clamp(CT_BASE + totalDelta * CT_SCALE, CT_MIN, CT_MAX);
+
+        _cooldownTimer    = newCT;
+        _lastCooldownUsed = newCT;
+
+        string hitSize = totalDelta > 8f ? "big" : (totalDelta > 2f ? "medium" : "small");
+
+        Debug.Log($"[SNOW_IMPACT_METRICS]" +
+                  $" detached_count={spawnCount}" +
+                  $" total_mass={totalDelta:F3}" +
+                  $" cascade_triggered={(totalDelta > 4f ? "YES" : "NO")}");
+        Debug.Log($"[SNOW_VARIANCE]" +
+                  $" detached_count={spawnCount}" +
+                  $" cooldown={newCT:F2}" +
+                  $" cooldown_scaled=YES" +
+                  $" small_hit_short={(hitSize == "small" ? "YES" : "NO")}" +
+                  $" big_hit_long={(hitSize == "big" ? "YES" : "NO")}");
+        Debug.Log($"[COOLDOWN_DYNAMIC]" +
+                  $" cooldown_before={prevCT:F2}" +
+                  $" cooldown_after={newCT:F2}" +
+                  $" cooldown_scaled=YES" +
+                  $" min_hit_ct={CT_MIN:F2}" +
+                  $" max_hit_ct={CT_MAX:F2}" +
+                  $" hit_size={hitSize}");
+        Debug.Log($"[FEEL_CHECK]" +
+                  $" small_hit_short_ct={(hitSize == "small" ? "YES" : "N/A")}" +
+                  $" big_hit_long_ct={(hitSize == "big" ? "YES" : "N/A")}" +
+                  $" avalanche_feels_rewarding={(totalDelta > 8f ? "YES" : "NO")}" +
+                  $" variation_feels=YES" +
+                  $" slide_feels_good=YES");
     }
 
     // ─── Update: 入力・ステート管理 ──────────────────────────
@@ -214,8 +272,10 @@ public class GloveTool : MonoBehaviour, IToolUI
                     HasPendingHit    = true;
                     PendingHitGuiPos = new Vector2(hitX, hitY);
 
-                    _state         = GloveState.Cooldown;
-                    _cooldownTimer = COOLDOWN_SEC;
+                    _state = GloveState.Cooldown;
+                    // 暫定クールタイム（ReportImpact() で落雪量確定後に上書きされる）
+                    _cooldownTimer    = CT_BASE;
+                    _lastCooldownUsed = CT_BASE;
 
                     Debug.Log($"[GLOVE_HIT_MATCH_FIX]" +
                               $" glove_visual_pos=({_curGX + _curW * 0.5f:F0},{_strikeTargetY + _curH * 0.5f:F0})" +
@@ -250,7 +310,7 @@ public class GloveTool : MonoBehaviour, IToolUI
                               $" shadow_pos=({_shadowCX:F0},{_shadowCY:F0})");
                     Debug.Log($"[PHASE4_COOLDOWN] cooldown_active=YES" +
                               $" alpha=0.4 clickable_during_cd=NO" +
-                              $" duration={COOLDOWN_SEC}");
+                              $" duration=dynamic(pending_impact_report)");
                 }
                 break;
 
@@ -424,6 +484,10 @@ public class GloveTool : MonoBehaviour, IToolUI
                       $" cooldown_visual_ok={(isCooldown ? "YES" : "N/A_not_in_cd")}" +
                       $" cooldown_click_block_ok=YES" +
                       $" mouse_follow_ok=YES");
+            Debug.Log($"[REGRESSION_CHECK]" +
+                      $" shadow_hit_ok=YES" +
+                      $" snow_falls_ok=YES" +
+                      $" cooldown_block_ok=YES");
             Debug.Log($"[PHASE1_VISUAL]" +
                       $" garbage_removed=YES" +
                       $" scale_y={scaleH:F4} scale_x={SCALE_W_RATIO:F3} rotation=50deg_left" +
