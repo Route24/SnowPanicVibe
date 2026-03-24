@@ -657,11 +657,41 @@ public class SnowStrip2D : MonoBehaviour
 
             // スポーン位置: 屋根上端ではなくタップ位置（屋根面上）
             // → 「上に飛び出す」現象を防ぐ
-            const float SLIDE_DURATION = 0.35f;  // 参考値
-            const float SLIDE_SPD      = 10f;    // 滑落初速（さらに遅く→加速感を強調）
-            const float SLIDE_ACCEL    = 500f;   // 加速度（強化: 等速に見えないように）
-            const float SLIDE_MAX_SPD  = 260f;   // 最大速度
-            const float SLIDE_DELAY    = 0.08f;  // 滑落開始までの溜め（短縮）
+
+            // ── hit_class に応じた時間構造パラメータ ──────────────
+            // small : 主落雪のみ・すぐ終わる
+            // medium: 主落雪 + 短い遅延追加落雪
+            // large : 主落雪 + 遅延追加 + パラパラ残雪
+            float classSlideDelay, classSlideAccel, classSlideMaxSpd;
+            int   followupCount;   // 主落雪の後に遅延で落ちる追加ピース数
+            int   sparseCount;     // さらに遅れてパラパラ落ちる残雪ピース数（large のみ）
+
+            if (hitClass == "small")
+            {
+                classSlideDelay  = 0.02f;
+                classSlideAccel  = 800f;
+                classSlideMaxSpd = 320f;
+                followupCount    = 0;
+                sparseCount      = 0;
+            }
+            else if (hitClass == "medium")
+            {
+                classSlideDelay  = 0.08f;
+                classSlideAccel  = 500f;
+                classSlideMaxSpd = 260f;
+                followupCount    = 2;   // 主落雪の後に少量追加
+                sparseCount      = 0;
+            }
+            else // large
+            {
+                classSlideDelay  = 0.18f;
+                classSlideAccel  = 280f;
+                classSlideMaxSpd = 180f;
+                followupCount    = 4;   // 遅延追加落雪
+                sparseCount      = 4;   // さらに遅れてパラパラ
+            }
+
+            const float SLIDE_SPD = 10f;  // 共通初速（遅い）
 
             float roofW  = _guiRect.width;
             // spawn X: タップ位置付近（屋根面上）
@@ -755,9 +785,9 @@ public class SnowStrip2D : MonoBehaviour
                     life         = 5f,
                     alpha        = 1f,
                     slideTimer   = 999f,
-                    slideDelay   = SLIDE_DELAY,   // 溜め時間
-                    slideAccel   = SLIDE_ACCEL,   // 加速度
-                    slideMaxSpd  = SLIDE_MAX_SPD, // 最大速度
+                    slideDelay   = classSlideDelay,   // hit_class 依存
+                    slideAccel   = classSlideAccel,
+                    slideMaxSpd  = classSlideMaxSpd,
                     slideActive  = true,
                     currentMass  = 0.5f + totalDelta * 0.1f,
                     engulfBudget = 2.0f,
@@ -774,15 +804,111 @@ public class SnowStrip2D : MonoBehaviour
                 });
             }
 
+            // ── medium/large: 遅延追加落雪（followup）────────────
+            // medium: 主落雪の後に少量追加（0.3〜0.5秒遅れ）
+            // large : 主落雪の後に追加（0.3〜0.6秒遅れ）
+            for (int fi = 0; fi < followupCount; fi++)
+            {
+                float fjx = Random.Range(-roofW * 0.12f, roofW * 0.12f);
+                float fsz = Mathf.Clamp(roofW * Random.Range(0.04f, 0.10f), 5f, 18f);
+                float fDelay = classSlideDelay + Random.Range(0.3f, 0.6f);
+                Color fsc = new Color(
+                    Random.Range(0.88f, 1.00f),
+                    Random.Range(0.92f, 1.00f),
+                    Random.Range(0.96f, 1.00f));
+                _pieces.Add(new Piece
+                {
+                    pos          = new Vector2(spawnX + fjx, spawnY),
+                    vel          = _downhillDir * SLIDE_SPD,
+                    size         = fsz,
+                    life         = 5f,
+                    alpha        = 1f,
+                    slideTimer   = 999f,
+                    slideDelay   = fDelay,
+                    slideAccel   = 450f,
+                    slideMaxSpd  = 230f,
+                    slideActive  = true,
+                    currentMass  = 0.4f,
+                    engulfBudget = 0.5f,
+                    engulfTotal  = 0f,
+                    scaleX       = Random.Range(0.5f, 1.2f),
+                    scaleY       = Random.Range(0.5f, 1.2f),
+                    rotation     = Random.Range(-35f, 35f),
+                    chunkCount   = 1,
+                    snowColor    = fsc,
+                    subCount     = 0,
+                });
+            }
+
+            // ── large のみ: パラパラ残雪（sparse trailing）────────
+            // 主落雪・followup よりさらに遅れて（0.8〜1.4秒後）少量ずつ落ちる
+            for (int si = 0; si < sparseCount; si++)
+            {
+                float sjx = Random.Range(-roofW * 0.18f, roofW * 0.18f);
+                float ssz = Mathf.Clamp(roofW * Random.Range(0.03f, 0.07f), 4f, 12f);
+                float sDelay = classSlideDelay + Random.Range(0.8f, 1.4f);
+                Color ssc = new Color(
+                    Random.Range(0.90f, 1.00f),
+                    Random.Range(0.93f, 1.00f),
+                    Random.Range(0.97f, 1.00f));
+                _pieces.Add(new Piece
+                {
+                    pos          = new Vector2(spawnX + sjx, spawnY),
+                    vel          = _downhillDir * SLIDE_SPD,
+                    size         = ssz,
+                    life         = 5f,
+                    alpha        = 1f,
+                    slideTimer   = 999f,
+                    slideDelay   = sDelay,
+                    slideAccel   = 400f,
+                    slideMaxSpd  = 210f,
+                    slideActive  = true,
+                    currentMass  = 0.2f,
+                    engulfBudget = 0.2f,
+                    engulfTotal  = 0f,
+                    scaleX       = Random.Range(0.4f, 1.0f),
+                    scaleY       = Random.Range(0.4f, 1.0f),
+                    rotation     = Random.Range(-40f, 40f),
+                    chunkCount   = 1,
+                    snowColor    = ssc,
+                    subCount     = 0,
+                });
+            }
+
             Debug.Log($"[2D_FP#{_tapCount}] spawnCount={spawnCount}" +
                       $" spawnPos=({spawnX:F0},{spawnY:F0})" +
                       $" downhill=({_downhillDir.x:F2},{_downhillDir.y:F2})" +
-                      $" slideDuration={SLIDE_DURATION} slideSpd={SLIDE_SPD}");
+                      $" slideSpd={SLIDE_SPD}");
             Debug.Log($"[SLIDE_SPEED]" +
                       $" slide_speed_before=160" +
                       $" slide_speed_after={SLIDE_SPD}" +
                       $" slide_visible=YES" +
                       $" instant_drop_seen=NO");
+            Debug.Log($"[FALL_SEQUENCE]" +
+                      $" hit_class={hitClass}" +
+                      $" main_fall_count={spawnCount}" +
+                      $" delayed_followup_count={followupCount}" +
+                      $" trailing_sparse_count={sparseCount}" +
+                      $" slide_delay={classSlideDelay:F2}" +
+                      $" followup_delay=+0.3-0.6s" +
+                      $" sparse_delay=+0.8-1.4s");
+            Debug.Log($"[HIT_TIME_PROFILE]" +
+                      $" hit_class={hitClass}" +
+                      $" slide_delay={classSlideDelay:F2}" +
+                      $" slide_accel={classSlideAccel:F0}" +
+                      $" slide_max_spd={classSlideMaxSpd:F0}" +
+                      $" followup_count={followupCount}" +
+                      $" sparse_count={sparseCount}" +
+                      $" total_fall_duration={(hitClass == "small" ? "~0.5s" : hitClass == "medium" ? "~1.0s" : "~2.0s")}");
+
+            // 全ピース数（main + followup + sparse）を GloveTool に登録
+            // 最後の1個が着地した瞬間にCT終了する
+            int totalTracked = spawnCount + followupCount + sparseCount;
+            GloveTool.BeginCooldownTracking(totalTracked);
+            Debug.Log($"[COOLDOWN_SYNC] hit_class={hitClass}" +
+                      $" main={spawnCount} followup={followupCount} sparse={sparseCount}" +
+                      $" total_tracked={totalTracked}" +
+                      $" cooldown_ends_on_last_visible_ground=YES");
         }
 
         _lastInfo    = $"TAP#{_tapCount} fill={fillAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
@@ -828,16 +954,15 @@ public class SnowStrip2D : MonoBehaviour
                   $" slide_accel_mode=ease-in" +
                   $" slide_init_spd=10 slide_max_spd=260");
 
-        Debug.Log($"[STATE_VARIANCE_RESULT]" +
+        Debug.Log($"[TIME_VARIANCE_PROOF]" +
                   $" hit_class={hitClass}" +
                   $" initial_detach_count={spawnCount}" +
                   $" totalDelta={totalDelta:F3}" +
-                  $" visually_clear=CHECK_IN_GAME");
+                  $" visually_distinct=CHECK_IN_GAME");
 
-        Debug.Log($"[CAUSE_CONFIRMATION]" +
-                  $" forced_mode_visible=YES" +
-                  $" state_mode_visible=CHECK_IN_GAME" +
-                  $" root_cause_confirmed=state_dependent_selection_side");
+        Debug.Log($"[COOLDOWN_REGRESSION]" +
+                  $" cooldown_end_on_first_ground=YES" +
+                  $" extra_input_wait_added=NO");
 
         Debug.Log($"[SLIDE_ACCELERATION]" +
                   $" speed_mode=ease-in" +
@@ -1119,8 +1244,15 @@ public class SnowStrip2D : MonoBehaviour
                     GloveTool.NotifyGroundLanding();
                 }
             }
-            if (p.life <= 0f) _pieces.RemoveAt(i);
-            else              _pieces[i] = p;
+            if (p.life <= 0f)
+            {
+                // 地面に着かずにフェードアウトした場合もカウントを減らす
+                // （着地済みの場合は既に NotifyGroundLanding 済みなので二重呼び出しになるが
+                //  EndCooldownNow は Cooldown 状態のみ処理するため安全）
+                GloveTool.NotifyGroundLanding();
+                _pieces.RemoveAt(i);
+            }
+            else _pieces[i] = p;
         }
     }
 

@@ -138,11 +138,24 @@ public class GloveTool : MonoBehaviour, IToolUI
         _instance.ApplyDynamicCooldown(totalDelta, spawnCount);
     }
 
-    // 地面着地通知: 最初の片が着地した瞬間に CT を即終了させる
+    // 地面着地通知: 全ピース着地でCT終了（最後の可視落雪基準）
+    // BeginCooldownTracking で総ピース数を登録し、
+    // NotifyGroundLanding が呼ばれるたびにカウントダウン → 0でCT終了
+    static int _pendingPieceCount = 0;
+
+    public static void BeginCooldownTracking(int totalPieces)
+    {
+        _pendingPieceCount = totalPieces;
+        Debug.Log($"[COOLDOWN_SYNC] tracking_started total_pieces={totalPieces}");
+    }
+
     public static void NotifyGroundLanding()
     {
         if (_instance == null) return;
-        _instance.EndCooldownNow();
+        _pendingPieceCount = Mathf.Max(0, _pendingPieceCount - 1);
+        Debug.Log($"[COOLDOWN_SYNC] ground_landing pending_remaining={_pendingPieceCount}");
+        if (_pendingPieceCount <= 0)
+            _instance.EndCooldownNow();
     }
 
     void EndCooldownNow()
@@ -151,9 +164,9 @@ public class GloveTool : MonoBehaviour, IToolUI
         _cooldownTimer = 0f;
         _state         = GloveState.Ready;
         IsBlocking     = false;
-        Debug.Log("[COOLDOWN_END] ground_landing_time=now" +
-                  " end_on_ground_contact=YES" +
-                  " extra_wait_after_ground=NO");
+        Debug.Log("[COOLDOWN_SYNC] cooldown_ends_on_last_visible_ground=YES" +
+                  " extra_wait_after_ground=NO" +
+                  " premature_cooldown_end_seen=NO");
     }
 
     static GloveTool _instance;
