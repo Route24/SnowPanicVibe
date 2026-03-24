@@ -138,6 +138,24 @@ public class GloveTool : MonoBehaviour, IToolUI
         _instance.ApplyDynamicCooldown(totalDelta, spawnCount);
     }
 
+    // 地面着地通知: 最初の片が着地した瞬間に CT を即終了させる
+    public static void NotifyGroundLanding()
+    {
+        if (_instance == null) return;
+        _instance.EndCooldownNow();
+    }
+
+    void EndCooldownNow()
+    {
+        if (_state != GloveState.Cooldown) return;
+        _cooldownTimer = 0f;
+        _state         = GloveState.Ready;
+        IsBlocking     = false;
+        Debug.Log("[COOLDOWN_END] ground_landing_time=now" +
+                  " end_on_ground_contact=YES" +
+                  " extra_wait_after_ground=NO");
+    }
+
     static GloveTool _instance;
 
     void ApplyDynamicCooldown(float totalDelta, int spawnCount)

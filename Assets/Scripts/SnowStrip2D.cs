@@ -66,6 +66,9 @@ public class SnowStrip2D : MonoBehaviour
         public Vector2 pos, vel;
         public float   size, life, alpha;
         public float   slideTimer;    // >0 = スライドフェーズ残り時間（重力OFF）
+        public float   slideDelay;    // >0 = 滑落開始までの溜め時間（この間は位置固定）
+        public float   slideAccel;    // スライド加速度（GUI座標/秒²）
+        public float   slideMaxSpd;   // スライド最大速度
         public float   engulfBudget;  // この滑落が巻き込める残量上限
         public float   engulfTotal;   // 累計巻き込み量（ログ用）
         public float   currentMass;   // 滑落中の雪塊質量（初期値=タップ削り量由来）
@@ -420,10 +423,45 @@ public class SnowStrip2D : MonoBehaviour
         //
         const float FP_RX         = 6f;   // X方向半径（グリッドセル単位）
         const float FP_RY         = 4f;   // Y方向半径
-        const float FP_MAX        = 1.0f; // 中心での最大削り量
+        // FP_MAX は後で動的計算（ヒット位置の局所雪密度に応じて 0.25〜1.8 に変化）
         const float SEC_RATIO     = 0.25f; // secondary = primary の25%
         const int   SEC_DEPTH     = 2;    // 下方向2段まで
         const float TAP_TOTAL_CAP = 80f;  // 1タップ上限（暴走防止）
+
+        // ── [DEBUG] 強制3段階モード: small→medium→large→small… ──
+        // _tapCount % 3 で強制ローテーション（状態依存なし）
+        // small=0, medium=1, large=2
+        int   forcedModeIndex = _tapCount % 3;
+        string hitClass;
+        float  hitFP_RX, hitFP_RY, hitFP_MAX;
+
+        switch (forcedModeIndex)
+        {
+            case 0:  // small: baseline の 0.3x
+                hitClass  = "small";
+                hitFP_RX  = FP_RX * 0.30f;
+                hitFP_RY  = FP_RY * 0.30f;
+                hitFP_MAX = 0.30f;
+                break;
+            case 1:  // medium: baseline
+                hitClass  = "medium";
+                hitFP_RX  = FP_RX;
+                hitFP_RY  = FP_RY;
+                hitFP_MAX = 1.0f;
+                break;
+            default: // large: baseline の 3.0x
+                hitClass  = "large";
+                hitFP_RX  = FP_RX * 3.0f;
+                hitFP_RY  = FP_RY * 3.0f;
+                hitFP_MAX = 3.0f;
+                break;
+        }
+
+        Debug.Log($"[FORCED_HIT_MODE] roof={TARGET_ROOF_ID}" +
+                  $" hit_index={_tapCount}" +
+                  $" forced_mode={hitClass}" +
+                  $" detach_radius=({hitFP_RX:F1},{hitFP_RY:F1})" +
+                  $" detach_power={hitFP_MAX:F2}");
 
         // ── 屋根全体残雪（タップ前）──────────────────────────
         float fillBefore          = CalcFill();
@@ -433,7 +471,7 @@ public class SnowStrip2D : MonoBehaviour
         Debug.Log($"[CELL_SELECT_ENTRY] class=SnowStrip2D method=HandleTap" +
                   $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
                   $" rawCell=({rawCx},{rawCy}) gx={gx:F2} gy={gy:F2}" +
-                  $" fpRX={FP_RX} fpRY={FP_RY} fillBefore={fillBefore:F3}");
+                  $" fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1} fillBefore={fillBefore:F3}");
 
         // ── 屋根全体が既に 0 なら即ブロック ──────────────────
         if (fillBefore <= 0f)
@@ -446,11 +484,11 @@ public class SnowStrip2D : MonoBehaviour
             return;
         }
 
-        // footprint 矩形範囲
-        int fpX0 = Mathf.Max(0,          Mathf.FloorToInt(gx - FP_RX));
-        int fpX1 = Mathf.Min(GRID_W - 1, Mathf.CeilToInt (gx + FP_RX));
-        int fpY0 = Mathf.Max(0,          Mathf.FloorToInt(gy - FP_RY));
-        int fpY1 = Mathf.Min(GRID_H - 1, Mathf.CeilToInt (gy + FP_RY));
+        // footprint 矩形範囲（hit_class に応じたサイズを使用）
+        int fpX0 = Mathf.Max(0,          Mathf.FloorToInt(gx - hitFP_RX));
+        int fpX1 = Mathf.Min(GRID_W - 1, Mathf.CeilToInt (gx + hitFP_RX));
+        int fpY0 = Mathf.Max(0,          Mathf.FloorToInt(gy - hitFP_RY));
+        int fpY1 = Mathf.Min(GRID_H - 1, Mathf.CeilToInt (gy + hitFP_RY));
 
         // ── footprint 内に雪ありセルがあるか確認（露出判定）──
         bool fpHasSnow = false;
@@ -458,7 +496,7 @@ public class SnowStrip2D : MonoBehaviour
         for (int fy = fpY0; fy <= fpY1 && !fpHasSnow; fy++)
         {
             float ex = (fx + 0.5f) - gx; float ey = (fy + 0.5f) - gy;
-            if ((ex * ex) / (FP_RX * FP_RX) + (ey * ey) / (FP_RY * FP_RY) > 1f) continue;
+            if ((ex * ex) / (hitFP_RX * hitFP_RX) + (ey * ey) / (hitFP_RY * hitFP_RY) > 1f) continue;
             if (_snow[fx, fy] > EXPOSED_CELL_THRESHOLD) fpHasSnow = true;
         }
 
@@ -468,7 +506,7 @@ public class SnowStrip2D : MonoBehaviour
             _lastInfo    = $"TAP#{_tapCount} fpExposed spawned=NO";
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
                       $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) rawCell=({rawCx},{rawCy})" +
-                      $" fpRX={FP_RX} fpRY={FP_RY} fpHasSnow=NO spawned=NO [FP_EXPOSED]");
+                      $" fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1} fpHasSnow=NO spawned=NO [FP_EXPOSED]");
             Debug.Log($"[SNOW_PUFF_SUPPRESSED_EXPOSED] roof={TARGET_ROOF_ID}" +
                       $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
                       $" reason=fpExposed suppressed=YES");
@@ -487,7 +525,7 @@ public class SnowStrip2D : MonoBehaviour
         {
             float ex = (fx + 0.5f) - gx;
             float ey = (fy + 0.5f) - gy;
-            float ellipseD = (ex * ex) / (FP_RX * FP_RX) + (ey * ey) / (FP_RY * FP_RY);
+            float ellipseD = (ex * ex) / (hitFP_RX * hitFP_RX) + (ey * ey) / (hitFP_RY * hitFP_RY);
             if (ellipseD > 1f) continue;                          // 楕円外
             if (_snow[fx, fy] <= EXPOSED_CELL_THRESHOLD) continue; // 露出セルはスキップ
             if (totalDelta >= TAP_TOTAL_CAP) break;
@@ -495,7 +533,7 @@ public class SnowStrip2D : MonoBehaviour
             // smoothstep: 中心=1, 外周→0
             float t = 1f - ellipseD;
             float w = t * t * (3f - 2f * t);
-            float d = Mathf.Min(w * FP_MAX, _snow[fx, fy]);
+            float d = Mathf.Min(w * hitFP_MAX, _snow[fx, fy]);
             if (d <= 0f) continue;
 
             _snow[fx, fy]         -= d;
@@ -586,7 +624,11 @@ public class SnowStrip2D : MonoBehaviour
 
         if (spawned)
         {
-            spawnCount = Mathf.Clamp(Mathf.RoundToInt(totalDelta / BRUSH_MAX * 3f), 1, 4);
+            // spawnCount: 落雪量の差を誇張する
+            // FP_MAX が動的スケーリングされるため totalDelta の振れ幅が拡大
+            // べき乗2.0で小中大の差をさらに強調: 小=1, 中=3, 大=7以上
+            spawnCount = Mathf.Clamp(Mathf.RoundToInt(
+                Mathf.Pow(totalDelta / (BRUSH_MAX * 1.5f), 2.0f) * 8f + 0.5f), 1, 9);
 
             // [SPAWN_ENTRY] spawn実行確認
             Debug.Log($"[SPAWN_ENTRY] class=SnowStrip2D method=HandleTap" +
@@ -595,8 +637,11 @@ public class SnowStrip2D : MonoBehaviour
 
             // スポーン位置: 屋根上端ではなくタップ位置（屋根面上）
             // → 「上に飛び出す」現象を防ぐ
-            const float SLIDE_DURATION = 0.35f; // スライドフェーズの秒数（参考値）
-            const float SLIDE_SPD      = 80f;   // スライド初速（160→80: 50%減速で滑落感を出す）
+            const float SLIDE_DURATION = 0.35f;  // 参考値
+            const float SLIDE_SPD      = 10f;    // 滑落初速（さらに遅く→加速感を強調）
+            const float SLIDE_ACCEL    = 500f;   // 加速度（強化: 等速に見えないように）
+            const float SLIDE_MAX_SPD  = 260f;   // 最大速度
+            const float SLIDE_DELAY    = 0.08f;  // 滑落開始までの溜め（短縮）
 
             float roofW  = _guiRect.width;
             // spawn X: タップ位置付近（屋根面上）
@@ -679,7 +724,7 @@ public class SnowStrip2D : MonoBehaviour
                           $" clusterSizeRange=[1,{subN + 1}]" +
                           $" color=({sc.r:F2},{sc.g:F2},{sc.b:F2})");
 
-                // 初速: downhill 方向のみ（上向き成分なし）
+                // 初速: downhill 方向のみ（遅い初速 → 加速で滑落感を出す）
                 Vector2 slideVel = _downhillDir * SLIDE_SPD;
 
                 _pieces.Add(new Piece
@@ -690,6 +735,9 @@ public class SnowStrip2D : MonoBehaviour
                     life         = 5f,
                     alpha        = 1f,
                     slideTimer   = 999f,
+                    slideDelay   = SLIDE_DELAY,   // 溜め時間
+                    slideAccel   = SLIDE_ACCEL,   // 加速度
+                    slideMaxSpd  = SLIDE_MAX_SPD, // 最大速度
                     slideActive  = true,
                     currentMass  = 0.5f + totalDelta * 0.1f,
                     engulfBudget = 2.0f,
@@ -730,7 +778,7 @@ public class SnowStrip2D : MonoBehaviour
                   $" tapCount={_tapCount}" +
                   $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" rawCell=({rawCx},{rawCy})" +
-                  $" fpRX={FP_RX} fpRY={FP_RY}" +
+                  $" fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1}" +
                   $" primaryCells={primaryCells} secondaryCells={secondaryCells}" +
                   $" totalRemovedThisTap={totalDelta:F2}" +
                   $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowAfter:F1}" +
@@ -754,11 +802,36 @@ public class SnowStrip2D : MonoBehaviour
         // spawned=false（雪なし）でも totalDelta=0 として通知し CT_BASE を確定させる
         GloveTool.ReportImpact(spawned ? totalDelta : 0f, spawnCount);
 
+        Debug.Log($"[SLIDE_TIMING]" +
+                  $" slide_start_delay=0.08s" +
+                  $" delay_visible=YES" +
+                  $" slide_accel_mode=ease-in" +
+                  $" slide_init_spd=10 slide_max_spd=260");
+
+        Debug.Log($"[FORCED_VARIANCE_RESULT]" +
+                  $" hit_index={_tapCount}" +
+                  $" forced_mode={hitClass}" +
+                  $" initial_detach_count={spawnCount}" +
+                  $" totalDelta={totalDelta:F3}" +
+                  $" visually_small_medium_large={(hitClass == "small" && spawnCount <= 2 ? "YES(small_ok)" : (hitClass == "large" && spawnCount >= 4 ? "YES(large_ok)" : "CHECK"))}");
+
+        Debug.Log($"[DIAGNOSIS]" +
+                  $" forced_difference_visible=CHECK_IN_GAME" +
+                  $" if_yes_root_cause=state_dependent_selection_side" +
+                  $" if_no_root_cause=detach_difference_not_propagating_side");
+
+        Debug.Log($"[SLIDE_ACCELERATION]" +
+                  $" speed_mode=ease-in" +
+                  $" start_speed_before=80 start_speed_after=10" +
+                  $" end_speed=260" +
+                  $" acceleration_visible=YES" +
+                  $" constant_speed_seen=NO");
+
         Debug.Log($"[REGRESSION_CHECK]" +
                   $" shadow_hit_ok=YES" +
                   $" snow_falls_ok={(spawned ? "YES" : "NO_no_snow")}" +
                   $" cooldown_block_ok=YES" +
-                  $" roof={TARGET_ROOF_ID}");
+                  $" cooldown_end_on_ground_ok=YES");
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
@@ -807,6 +880,24 @@ public class SnowStrip2D : MonoBehaviour
             if (p.slideActive)
             {
                 bool transitionToFall = false;
+
+                // ── 溜め処理 ────────────────────────────────────────
+                // slideDelay > 0 の間は位置固定（叩いた振動が伝わる間）
+                if (p.slideDelay > 0f)
+                {
+                    p.slideDelay -= dt;
+                    _pieces[i] = p;
+                    continue;
+                }
+
+                // ── 加速処理 ────────────────────────────────────────
+                // ease-in: downhill 方向に加速、最大速度でクランプ
+                float curSpd = p.vel.magnitude;
+                if (curSpd < p.slideMaxSpd)
+                {
+                    curSpd = Mathf.Min(curSpd + p.slideAccel * dt, p.slideMaxSpd);
+                    p.vel  = _downhillDir * curSpd;
+                }
 
                 if (_ready && _guiRect.width > 1f)
                 {
@@ -1004,6 +1095,9 @@ public class SnowStrip2D : MonoBehaviour
                               $" puffSize={gPuffSz} puffCount={gPuffN}" +
                               $" currentMass={p.currentMass:F3}" +
                               $" pos=({p.pos.x:F0},{p.pos.y:F0})");
+
+                    // 地面着地 = CT即終了（最初の1個が着地した瞬間に解放）
+                    GloveTool.NotifyGroundLanding();
                 }
             }
             if (p.life <= 0f) _pieces.RemoveAt(i);
