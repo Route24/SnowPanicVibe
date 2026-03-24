@@ -1,10 +1,10 @@
 === SUMMARY ===
-generated_at=2026-03-22 21:16:24
+generated_at=2026-03-24 16:09:45
 scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
 error_count=0
-warning_count=0
+warning_count=1
 
 snow_state=ALL6_THICK
 under_eave_stop=UNKNOWN
