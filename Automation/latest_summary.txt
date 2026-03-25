@@ -1,10 +1,10 @@
 === SUMMARY ===
-generated_at=2026-03-25 16:44:26
-scene_name=Avalanche_Billboard__WORK_SNOW
+generated_at=2026-03-25 17:50:41
+scene_name=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A
 
 compile_result=PASS
 error_count=0
-warning_count=12
+warning_count=0
 
 === CALIBRATION ===
 roof_points_captured=YES
@@ -27,7 +27,7 @@ white_panel=NO
 score_ui=PASS
 
 gif_status=OK
-mp4_status=OK
+mp4_status=NG
 
 result=PASS
 

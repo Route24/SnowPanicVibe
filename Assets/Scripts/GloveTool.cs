@@ -53,6 +53,14 @@ public class GloveTool : MonoBehaviour, IToolUI
     float _shadowCX = -1f;  // -1 = 有効な屋根が見つからない
     float _shadowCY = -1f;
 
+    // 影基準の手袋描画Y（影から固定オフセット上）
+    // 屋根上では常にこれを使う。屋根外（影なし）はマウス追従。
+    float _drawGloveY = 0f;
+
+    // 影→手袋上端のオフセット倍率（手袋高さ × この値 だけ上に置く）
+    // 約2倍距離: 0.85 → 1.7
+    const float SHADOW_GLOVE_OFFSET_RATIO = 1.7f;
+
     // ── 丸影テクスチャ ────────────────────────────────────────
     Texture2D _shadowTex;
 
@@ -114,9 +122,12 @@ public class GloveTool : MonoBehaviour, IToolUI
 
         ToolUIRenderer.Register(this);
 
-        Debug.Log($"[GLOVE_TOOL] started" +
-                  $" tex={(gloveTex != null ? gloveTex.name : "NULL")}" +
-                  $" registered_in=ToolUIRenderer");
+        Debug.Log($"[GLOVE_TOOL] started tex={(gloveTex != null ? gloveTex.name : "NULL")}");
+        Debug.Log($"[GLOVE_SHADOW_RULE]" +
+                  $" shadow_is_primary=YES" +
+                  $" glove_uses_fixed_offset=YES" +
+                  $" offset_ratio={SHADOW_GLOVE_OFFSET_RATIO:F2}" +
+                  $" separate_corrections_removed=YES");
     }
 
     void OnDestroy()
@@ -147,7 +158,7 @@ public class GloveTool : MonoBehaviour, IToolUI
     public static void BeginCooldownTracking(int totalPieces)
     {
         _pendingPieceCount = Mathf.Max(1, totalPieces);
-        Debug.Log($"[COOLDOWN_SYNC] tracking_started total_pieces={totalPieces}");
+        AssiLogger.Verbose($"[COOLDOWN_SYNC] tracking_started total_pieces={totalPieces}");
     }
 
     public static void ResetCooldownTracking()
@@ -160,7 +171,7 @@ public class GloveTool : MonoBehaviour, IToolUI
         if (_instance == null) return;
         if (_pendingPieceCount <= 0) return;  // 追跡中でなければ無視
         _pendingPieceCount--;
-        Debug.Log($"[COOLDOWN_SYNC] ground_landing pending_remaining={_pendingPieceCount}");
+        AssiLogger.Verbose($"[COOLDOWN_SYNC] ground_landing pending_remaining={_pendingPieceCount}");
         if (_pendingPieceCount <= 0)
             _instance.EndCooldownNow();
     }
@@ -171,9 +182,7 @@ public class GloveTool : MonoBehaviour, IToolUI
         _cooldownTimer = 0f;
         _state         = GloveState.Ready;
         IsBlocking     = false;
-        Debug.Log("[COOLDOWN_SYNC] cooldown_ends_on_last_visible_ground=YES" +
-                  " extra_wait_after_ground=NO" +
-                  " premature_cooldown_end_seen=NO");
+        Debug.Log("[COOLDOWN_SYNC] cooldown_ended=YES");
     }
 
     static GloveTool _instance;
@@ -191,29 +200,7 @@ public class GloveTool : MonoBehaviour, IToolUI
 
         string hitSize = totalDelta > 8f ? "big" : (totalDelta > 2f ? "medium" : "small");
 
-        Debug.Log($"[SNOW_IMPACT_METRICS]" +
-                  $" detached_count={spawnCount}" +
-                  $" total_mass={totalDelta:F3}" +
-                  $" cascade_triggered={(totalDelta > 4f ? "YES" : "NO")}");
-        Debug.Log($"[SNOW_VARIANCE]" +
-                  $" detached_count={spawnCount}" +
-                  $" cooldown={newCT:F2}" +
-                  $" cooldown_scaled=YES" +
-                  $" small_hit_short={(hitSize == "small" ? "YES" : "NO")}" +
-                  $" big_hit_long={(hitSize == "big" ? "YES" : "NO")}");
-        Debug.Log($"[COOLDOWN_DYNAMIC]" +
-                  $" cooldown_before={prevCT:F2}" +
-                  $" cooldown_after={newCT:F2}" +
-                  $" cooldown_scaled=YES" +
-                  $" min_hit_ct={CT_MIN:F2}" +
-                  $" max_hit_ct={CT_MAX:F2}" +
-                  $" hit_size={hitSize}");
-        Debug.Log($"[FEEL_CHECK]" +
-                  $" small_hit_short_ct={(hitSize == "small" ? "YES" : "N/A")}" +
-                  $" big_hit_long_ct={(hitSize == "big" ? "YES" : "N/A")}" +
-                  $" avalanche_feels_rewarding={(totalDelta > 8f ? "YES" : "NO")}" +
-                  $" variation_feels=YES" +
-                  $" slide_feels_good=YES");
+        AssiLogger.Verbose($"[COOLDOWN_DYNAMIC] ct={newCT:F2} hitSize={hitSize}");
     }
 
     // ─── Update: 入力・ステート管理 ──────────────────────────
@@ -239,6 +226,24 @@ public class GloveTool : MonoBehaviour, IToolUI
         // ── 影位置を毎フレーム更新 ──
         UpdateShadowPos(mx, my);
 
+        // ── 手袋描画Y: 影基準で固定オフセット（屋根上のみ）──
+        // 影がある（屋根上）    → 影から上に _curH × RATIO だけ置く
+        // 影がない + キャッシュあり → キャッシュ位置で固定（ワープ防止）
+        // 影がない + キャッシュなし → マウス追従（_curGY）
+        if (_shadowCX >= 0f)
+        {
+            _drawGloveY = _shadowCY - _curH * SHADOW_GLOVE_OFFSET_RATIO;
+        }
+        else if (_lastValidShadowCX >= 0f)
+        {
+            // 無効領域：最後の有効影位置で固定（ワープしない）
+            _drawGloveY = _lastValidShadowCY - _curH * SHADOW_GLOVE_OFFSET_RATIO;
+        }
+        else
+        {
+            _drawGloveY = _curGY;
+        }
+
         // ── PHASE2: ステートマシン ──
         switch (_state)
         {
@@ -250,17 +255,12 @@ public class GloveTool : MonoBehaviour, IToolUI
                     if (_shadowCX < 0f)
                     {
                         // 影なし = 屋根外クリック → 何もしない
-                        Debug.Log("[SHADOW_RULE_CHECK]" +
-                                  " shadow_on_roof_only=YES" +
-                                  " shadow_on_river_seen=NO" +
-                                  " shadow_on_ground_seen=NO" +
-                                  " click_outside_roof_ignored=YES");
                         break;
                     }
 
                     _state       = GloveState.Striking;
                     _strikeTimer = 0f;
-                    _strikeStartY = _curGY;
+                    _strikeStartY = _drawGloveY;
 
                     // 落下先 = 影のY - 手袋高さ（影上端に手袋下端が揃う）
                     // 影が見つからない場合のみフォールバック（下方向固定）
@@ -273,23 +273,14 @@ public class GloveTool : MonoBehaviour, IToolUI
 
                     IsBlocking = true;
 
-                    Debug.Log($"[PHASE2_HIT] motion_type=ease_in" +
-                              $" hit_detected=YES snap_jump=NO" +
-                              $" startY={_strikeStartY:F0}" +
-                              $" targetY={_strikeTargetY:F0}" +
-                              $" shadowCX={_shadowCX:F0} shadowCY={_shadowCY:F0}");
+                    Debug.Log($"[PHASE2_HIT] startY={_strikeStartY:F0} targetY={_strikeTargetY:F0} shadowPos=({_shadowCX:F0},{_shadowCY:F0})");
                 }
                 break;
 
             case GloveState.Striking:
                 if (Input.GetMouseButtonDown(0))
                 {
-                    Debug.Log("[GLOVE_COOLDOWN_GATE_ONLY]" +
-                              " cooldown_active=NO(striking)" +
-                              " mouse_click_received_during_cd=YES" +
-                              " hit_triggered_during_cd=NO" +
-                              " input_block_success=YES" +
-                              " click_restored_after_cd=NO_NOT_YET");
+                    // striking 中クリックは無視（何もしない）
                 }
                 _strikeTimer += Time.deltaTime;
                 float t = Mathf.Clamp01(_strikeTimer / STRIKE_DURATION);
@@ -315,65 +306,21 @@ public class GloveTool : MonoBehaviour, IToolUI
                     _cooldownTimer    = CT_BASE;
                     _lastCooldownUsed = CT_BASE;
 
-                    Debug.Log($"[GLOVE_HIT_MATCH_FIX]" +
-                              $" glove_visual_pos=({_curGX + _curW * 0.5f:F0},{_strikeTargetY + _curH * 0.5f:F0})" +
-                              $" shadow_pos=({_shadowCX:F0},{_shadowCY:F0})" +
-                              $" hit_pos=({hitX:F0},{hitY:F0})" +
-                              $" puff_pos=({hitX:F0},{vfxY:F0})" +
-                              $" landing_pos=({_curGX + _curW * 0.5f:F0},{_strikeTargetY + _curH:F0})" +
-                              $" hit_matches_shadow=YES" +
-                              $" puff_matches_shadow=YES" +
-                              $" landing_matches_shadow={(Mathf.Abs(_strikeTargetY + _curH - _shadowCY) < 8f ? "YES" : "NO")}");
-                    Debug.Log($"[GLOVE_BAND_LOCK]" +
-                              $" glove_band={(_gloveIsUpper ? "upper" : "lower")}" +
-                              $" selected_shadow_band={(_selectedBandIsUpper ? "upper" : "lower")}" +
-                              $" band_crossed={(_gloveIsUpper != _selectedBandIsUpper ? "YES" : "NO")}" +
-                              $" upper_glove_to_lower_shadow_seen={(_gloveIsUpper && !_selectedBandIsUpper ? "YES" : "NO")}" +
-                              $" lower_glove_to_upper_shadow_seen={(!_gloveIsUpper && _selectedBandIsUpper ? "YES" : "NO")}");
-                    Debug.Log($"[GLOVE_FALL_DIRECTION_FIX]" +
-                              $" start_pos=({_curGX + _curW * 0.5f:F0},{_strikeStartY:F0})" +
-                              $" target_pos=({_shadowCX:F0},{_strikeTargetY:F0})" +
-                              $" movement_y_delta={_strikeTargetY - _strikeStartY:F0}" +
-                              $" upward_motion_seen={(_strikeTargetY < _strikeStartY ? "YES" : "NO")}" +
-                              $" fall_direction_valid={(_strikeTargetY >= _strikeStartY ? "YES" : "NO")}");
-                    Debug.Log($"[GLOVE_SNOW_FALL_RESTORE]" +
-                              $" click_received=YES" +
-                              $" hit_logic_fired=YES" +
-                              $" snow_fell_at_shadow=PENDING_SNOWSTRIP" +
-                              $" upper_roof_ok=PENDING" +
-                              $" lower_roof_ok=PENDING");
-                    Debug.Log($"[PHASE3_VFX] spawn_on_hit=YES multiple_spawn=NO" +
-                              $" puff_count={_puffCount}" +
-                              $" puff_pos=({hitX:F0},{vfxY:F0})" +
-                              $" shadow_pos=({_shadowCX:F0},{_shadowCY:F0})");
-                    Debug.Log($"[PHASE4_COOLDOWN] cooldown_active=YES" +
-                              $" alpha=0.4 clickable_during_cd=NO" +
-                              $" duration=dynamic(pending_impact_report)");
+                    Debug.Log($"[GLOVE_HIT] hitPos=({hitX:F0},{hitY:F0}) shadowPos=({_shadowCX:F0},{_shadowCY:F0}) ct={CT_BASE:F2}");
                 }
                 break;
 
             case GloveState.Cooldown:
                 if (Input.GetMouseButtonDown(0))
                 {
-                    Debug.Log("[GLOVE_COOLDOWN_LOCK]" +
-                              " glove_is_gray=YES glove_is_translucent=YES" +
-                              " click_received_while_gray=YES" +
-                              " hit_triggered_while_gray=NO" +
-                              " cooldown_lock_working=YES" +
-                              " click_restored_when_color_back=NO_NOT_YET");
+                    // CD中クリックは無視
                 }
                 _cooldownTimer -= Time.deltaTime;
                 if (_cooldownTimer <= 0f)
                 {
                     _state     = GloveState.Ready;
                     IsBlocking = false;
-                    Debug.Log("[PHASE4_COOLDOWN] cooldown_active=NO  ready=YES");
-                    Debug.Log("[GLOVE_COOLDOWN_BLOCK_ONLY]" +
-                              " cooldown_visual_active=NO" +
-                              " mouse_click_received_while_cd=N/A" +
-                              " hit_logic_fired_while_cd=NO" +
-                              " cooldown_block_success=YES" +
-                              " click_restored_after_cd=YES");
+                    Debug.Log("[PHASE4_COOLDOWN] cooldown_active=NO ready=YES");
                 }
                 break;
         }
@@ -455,18 +402,18 @@ public class GloveTool : MonoBehaviour, IToolUI
             _gloveIsUpper        = gloveIsUpper;
             _selectedBandIsUpper = info.isUpper;
 
-            // 影Y が 30px 以上変化したときのみログ出力（毎フレーム連打を防ぐ）
+            // 有効位置をキャッシュ（無効領域でのワープ防止用）
+            _lastValidShadowCX = _shadowCX;
+            _lastValidShadowCY = _shadowCY;
+
+            // 影Y が 30px 以上変化したときのみ verbose ログ
             if (Mathf.Abs(_shadowCY - _lastLoggedShadowCY) >= 30f)
             {
                 _lastLoggedShadowCY = _shadowCY;
-                Debug.Log($"[SHADOW_MAPPING]" +
+                AssiLogger.Verbose($"[SHADOW_MAPPING]" +
                           $" glove_y={my:F0}" +
-                          $" normalized_t={t:F3}" +
                           $" shadow_y={_shadowCY:F0}" +
-                          $" roof_min_y={roofTop:F0}" +
-                          $" roof_max_y={roofShadowMax:F0}" +
-                          $" full_range_tracking=YES" +
-                          $" dead_band_exists=NO");
+                          $" roof_range=({roofTop:F0},{roofShadowMax:F0})");
             }
             break;
         }
@@ -477,6 +424,9 @@ public class GloveTool : MonoBehaviour, IToolUI
     bool  _selectedBandIsUpper = false;
     // SHADOW_MAPPING ログを間引くための前回値
     float _lastLoggedShadowCY  = -9999f;
+    // 最後の有効影位置キャッシュ（無効領域でワープしないために使用）
+    float _lastValidShadowCX   = -1f;
+    float _lastValidShadowCY   = -1f;
 
     // ─── IToolUI 実装: OnGUI から呼ばれる ────────────────────
     public void DrawToolUI()
@@ -484,22 +434,41 @@ public class GloveTool : MonoBehaviour, IToolUI
         if (gloveTex == null) return;
         if (Event.current.type != EventType.Repaint) return;
 
-        // ── 影の描画（Ready / Striking 中のみ）──
+        // ── 影の描画 ──
+        // 有効位置(shadowCX>=0): Ready/Striking 中のみ影を描く
+        // 無効位置(キャッシュあり): グレー影（叩けない状態を視覚的に示す）
         if (_shadowCX >= 0f && _state != GloveState.Cooldown)
             DrawShadow(_shadowCX, _shadowCY);
+        else if (_shadowCX < 0f && _lastValidShadowCX >= 0f && _state != GloveState.Cooldown)
+            DrawShadow(_lastValidShadowCX, _lastValidShadowCY, grayOut: true);
 
-        // ── PHASE4: クールタイム中はグレー半透明 ──
-        Color gloveColor = (_state == GloveState.Cooldown)
-            ? new Color(0.5f, 0.5f, 0.5f, 0.4f)
-            : Color.white;
+        // ── 手袋色ルール統一 ──
+        // 叩ける   (Ready + 影あり) → 緑
+        // 叩けない (Cooldown / 屋根外 / 影なし) → グレー半透明
+        bool canHit = (_state == GloveState.Ready && _shadowCX >= 0f);
+        Color gloveColor;
+        if (_state == GloveState.Striking)
+            gloveColor = new Color(0.4f, 0.9f, 0.4f, 1f);   // Striking中も緑（連続感）
+        else if (canHit)
+            gloveColor = new Color(0.4f, 0.9f, 0.4f, 1f);   // 叩ける → 緑
+        else
+            gloveColor = new Color(0.5f, 0.5f, 0.5f, 0.45f); // 叩けない → グレー
 
-        // ── PHASE2: Striking 中は ease-in で下方向へ ──
-        float drawY = _curGY;
+        // ── 手袋描画Y の決定 ──
+        // Ready   : _drawGloveY（影基準固定オフセット）
+        // Striking: ease-in で _strikeStartY → _strikeTargetY - h * RATIO
+        // Cooldown: _drawGloveY（マウス追従、グレー表示）
+        float drawY;
         if (_state == GloveState.Striking)
         {
             float t     = Mathf.Clamp01(_strikeTimer / STRIKE_DURATION);
             float eased = t * t;
-            drawY = Mathf.Lerp(_strikeStartY, _strikeTargetY, eased);
+            float targetDrawY = _strikeTargetY - _curH * SHADOW_GLOVE_OFFSET_RATIO;
+            drawY = Mathf.Lerp(_strikeStartY, targetDrawY, eased);
+        }
+        else
+        {
+            drawY = _drawGloveY;
         }
 
         GUI.color = gloveColor;
@@ -510,43 +479,11 @@ public class GloveTool : MonoBehaviour, IToolUI
         // ── PHASE3: 雪煙描画 ──
         DrawPuffs();
 
-        // 定期ログ
-        if (Time.frameCount % 180 == 1)
-        {
-            bool isCooldown = _state == GloveState.Cooldown;
-            float scaleH = SCALE_H_BASE * SCALE_OVERALL;
-
-            bool shadowOnRoof = _shadowCX >= 0f;
-            Debug.Log($"[SHADOW_TARGET_FILTER]" +
-                      $" hit_object_name=roof_snow_layer" +
-                      $" hit_layer=SnowStrip2D_guiRect" +
-                      $" is_roof_snow={(shadowOnRoof ? "YES" : "NO")}" +
-                      $" shadow_created={(shadowOnRoof ? "YES" : "NO")}");
-            Debug.Log($"[SHADOW_RULE_CHECK]" +
-                      $" shadow_on_roof_only=YES" +
-                      $" shadow_on_river_seen=NO" +
-                      $" shadow_on_ground_seen=NO");
-            Debug.Log($"[HIT_CONSISTENCY]" +
-                      $" shadow_exists={(shadowOnRoof ? "YES" : "NO")}" +
-                      $" click_received=N/A(periodic)" +
-                      $" snow_fell=N/A(periodic)" +
-                      $" no_response_click_seen=NO");
-            Debug.Log($"[COOLDOWN_REGRESSION]" +
-                      $" cooldown_visual_ok={(isCooldown ? "YES" : "N/A_not_in_cd")}" +
-                      $" cooldown_click_block_ok=YES" +
-                      $" mouse_follow_ok=YES");
-            Debug.Log($"[REGRESSION_CHECK]" +
-                      $" shadow_hit_ok=YES" +
-                      $" snow_falls_ok=YES" +
-                      $" cooldown_block_ok=YES");
-            Debug.Log($"[PHASE1_VISUAL]" +
-                      $" garbage_removed=YES" +
-                      $" scale_y={scaleH:F4} scale_x={SCALE_W_RATIO:F3} rotation=50deg_left" +
-                      $" glove_over_snow_all=YES" +
-                      $" state={_state}" +
-                      $" shadow=({_shadowCX:F0},{_shadowCY:F0})" +
-                      $" hitY={_shadowHitY:F0}");
-        }
+        // 色・距離の確認ログ（verbose）
+        AssiLogger.Verbose($"[GLOVE_STATE]" +
+                  $" glove_distance_px={(_shadowCY - (drawY + _curH)):F1}" +
+                  $" glove_can_hit={(canHit ? "YES" : "NO")}" +
+                  $" glove_color_state={(canHit || _state == GloveState.Striking ? "GREEN" : "GRAY")}");
     }
 
     // ── 影描画: 屋根上端に丸影（グラデーション楕円）────────────

@@ -102,6 +102,7 @@
     <Compile Include="Assets/Scripts/SnowVisual.cs" />
     <Compile Include="Assets/Scripts/ScoreUiCheckEmitter.cs" />
     <Compile Include="Assets/Scripts/SnowVisibilityChecker.cs" />
+    <Compile Include="Assets/Scripts/AssiLogger.cs" />
     <Compile Include="Assets/Scripts/GroundPipeFix.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Readme.cs" />
     <Compile Include="Assets/Scripts/BillboardRoofMapOverlay.cs" />

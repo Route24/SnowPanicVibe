@@ -80,20 +80,7 @@ public static class ToolUIRenderer
 
         if (frame % 180 == 1)
         {
-            Debug.Log($"[TOOL_UI_FRONT_RULE]" +
-                      $" active_tool={(ActiveToolName())}" +
-                      $" render_mode=OnGUI_委譲" +
-                      $" render_entry_point=ToolUIRenderer.DrawAll" +
-                      $" draw_order_value=SnowStrip2D全軒OnGUI完了後" +
-                      $" snow_render_entry_point=SnowStrip2D.OnGUI" +
-                      $" tool_over_snow_all_roofs=YES" +
-                      $" TL=YES TM=YES TR=YES BL=YES BM=YES BR=YES" +
-                      $" special_case_count=0" +
-                      $" root_cause=Roof_BRのOnGUIが最後に呼ばれていたためBRのみ前面になっていた" +
-                      $" recurrence_prevention=全軒OnGUI末尾でDrawAll呼び出し_最後の1回のみ描画" +
-                      $" registered_tools={_tools.Count}" +
-                      $" call_count={_callCountFrame}/{_totalRegistered}" +
-                      $" caller={callerRoofId}");
+            AssiLogger.Verbose($"[TOOL_UI_FRONT_RULE] active_tool={(ActiveToolName())} registered_tools={_tools.Count}");
         }
     }
 

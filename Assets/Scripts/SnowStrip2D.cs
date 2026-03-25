@@ -25,6 +25,8 @@ public class SnowStrip2D : MonoBehaviour
     // WorkSnowForcer から AddComponent 後に設定する
     public string roofId  = "Roof_Main";
     public string guideId = "RoofGuide_Main";
+    [Tooltip("true にすると詳細ログを Console に出す（通常はOFF）")]
+    public bool   verboseLog = false;
 
     // ── 定数 ──────────────────────────────────────────────────
     const string CALIB_PATH        = "Assets/Art/RoofCalibrationData.json";
@@ -100,6 +102,15 @@ public class SnowStrip2D : MonoBehaviour
         public int     subCount;       // 実際の副塊数（0〜3）
     }
     readonly List<Piece> _pieces = new List<Piece>();
+
+    // 遅延雪崩れキュー（中心先・周辺遅延の時間差崩れ）
+    struct PendingRemoval
+    {
+        public int   gx, gy;
+        public float amount;
+        public float delay;   // 残り遅延秒
+    }
+    readonly List<PendingRemoval> _pendingRemovals = new List<PendingRemoval>();
 
     // 雪煙パーティクル（hit / eave / ground）
     struct Puff
@@ -182,11 +193,15 @@ public class SnowStrip2D : MonoBehaviour
         Debug.Log($"[2D_ALIVE] SnowStrip2D started. roof={TARGET_ROOF_ID}" +
                   $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}" +
                   $" screen=({Screen.width}x{Screen.height})" +
-                  $" total_roofs={allStrips.Length}");
+                  $" total_roofs={allStrips.Length}" +
+                  $" verboseLog={verboseLog}");
+        AssiLogger.VerboseEnabled = verboseLog;
         Debug.Log($"[LOG_POLICY]" +
+                  $" console_event_only=YES" +
                   $" per_frame_logs_removed=YES" +
-                  $" event_only_logs=YES" +
-                  $" important_logs_remaining=2D_ALIVE,2D_ROOF_READY,GROUND_USE_CHECK,2D_FP#N,SNOW_PUFF_HIT,2D_SLIDE_EAVE,SNOW_PUFF_EAVE,SNOW_PUFF_GROUND,COOLDOWN_SYNC");
+                  $" legacy_console_logs_removed=YES" +
+                  $" verbose_default_off={(!verboseLog ? "YES" : "NO")}" +
+                  $" report_file_still_written=YES");
 
         // 雪煙用円形グラデーションテクスチャを初回のみ生成
         if (s_puffTex == null)
@@ -228,6 +243,7 @@ public class SnowStrip2D : MonoBehaviour
         }
 
         HandleTap();
+        UpdatePendingRemovals();
         UpdatePieces();
         UpdatePuffs();
 
@@ -240,6 +256,32 @@ public class SnowStrip2D : MonoBehaviour
         for (int x = 0; x < GRID_W; x++)
         for (int y = 0; y < GRID_H; y++)
             _snow[x, y] = 1f;
+    }
+
+    // ── 遅延崩れ処理（中心先・周辺遅延の時間差） ─────────────────
+    void UpdatePendingRemovals()
+    {
+        if (_pendingRemovals.Count == 0) return;
+        float dt = Time.deltaTime;
+        for (int i = _pendingRemovals.Count - 1; i >= 0; i--)
+        {
+            var pr = _pendingRemovals[i];
+            pr.delay -= dt;
+            if (pr.delay <= 0f)
+            {
+                float remove = Mathf.Min(pr.amount, _snow[pr.gx, pr.gy]);
+                if (remove > 0f)
+                {
+                    _snow[pr.gx, pr.gy] -= remove;
+                    _texDirty = true;
+                }
+                _pendingRemovals.RemoveAt(i);
+            }
+            else
+            {
+                _pendingRemovals[i] = pr;
+            }
+        }
     }
 
     // ── 屋根データ構築 ────────────────────────────────────────
@@ -290,18 +332,18 @@ public class SnowStrip2D : MonoBehaviour
         float eaveCalibY = maxY + UNDER_EAVE_OFFSET;
         _eaveGuiY = Mathf.Min(originY + eaveCalibY * scaleH, Screen.height - 2f);
 
-        // 座標系確認ログ
-        Debug.Log($"[BG_COORD_CHECK]" +
+        // 座標系確認ログ（verbose のみ）
+        AssiLogger.Verbose($"[BG_COORD_CHECK]" +
                   $" bg_texture_size=1920x1080" +
                   $" bg_display_rect=({bgDisplayRect.x:F1},{bgDisplayRect.y:F1},{bgDisplayRect.width:F1},{bgDisplayRect.height:F1})" +
                   $" bg_rect_valid={bgRectValid}" +
                   $" bg_scale_mode={(bgRectValid ? "WorldToScreen" : "FullScreen_fallback")}");
-        Debug.Log($"[CALIB_COORD_SYSTEM]" +
+        AssiLogger.Verbose($"[CALIB_COORD_SYSTEM]" +
                   $" calib_space=normalized_bgRect" +
                   $" roof_min_y={minY:F4}" +
                   $" roof_max_y={maxY:F4}" +
                   $" ground_y={_groundYFromJson:F4}");
-        Debug.Log($"[SNOW_RENDER_COORD_SYSTEM]" +
+        AssiLogger.Verbose($"[SNOW_RENDER_COORD_SYSTEM]" +
                   $" snow_render_space=bgRect_normalized" +
                   $" snow_render_rect=({_guiRect.x:F1},{_guiRect.y:F1},{_guiRect.width:F1},{_guiRect.height:F1})" +
                   $" snow_anchor_rect=bg_display_rect" +
@@ -316,7 +358,7 @@ public class SnowStrip2D : MonoBehaviour
                   $" uses_ground_y_for_stop=YES" +
                   $" uses_ground_y_for_visual_stop=YES" +
                   $" stops_before_ground=NO");
-        Debug.Log($"[COORD_MAPPING]" +
+        AssiLogger.Verbose($"[COORD_MAPPING]" +
                   $" roof_min_input={minY:F4}" +
                   $" roof_max_input={maxY:F4}" +
                   $" roof_min_output_px={_guiRect.y:F1}" +
@@ -358,19 +400,19 @@ public class SnowStrip2D : MonoBehaviour
             isUpper = TARGET_ROOF_ID.Contains("_T")
         });
 
-        Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} guiRect={_guiRect}" +
-                  $" eaveGuiY={_eaveGuiY:F1} downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
-        Debug.Log($"[ROOF_POINTS]" +
+        Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} rect=({_guiRect.x:F0},{_guiRect.y:F0},{_guiRect.width:F0},{_guiRect.height:F0})" +
+                  $" ground_px={_groundGuiY:F0} eave_px={_eaveGuiY:F0}");
+        AssiLogger.Verbose($"[ROOF_POINTS]" +
                   $" roof_tl=({_trapTL.x:F1},{_trapTL.y:F1})" +
                   $" roof_tr=({_trapTR.x:F1},{_trapTR.y:F1})" +
                   $" roof_bl=({_trapBL.x:F1},{_trapBL.y:F1})" +
                   $" roof_br=({_trapBR.x:F1},{_trapBR.y:F1})" +
                   $" roof_points_saved=YES");
-        Debug.Log($"[SNOW_SHAPE_MODE]" +
+        AssiLogger.Verbose($"[SNOW_SHAPE_MODE]" +
                   $" snow_shape_mode=TRAPEZOID" +
                   $" uses_roof_points_directly=YES" +
                   $" uses_only_minmax_y=NO");
-        Debug.Log($"[SNOW_TRAPEZOID_DEBUG]" +
+        AssiLogger.Verbose($"[SNOW_TRAPEZOID_DEBUG]" +
                   $" top_left_x={_trapTL.x:F1}" +
                   $" top_right_x={_trapTR.x:F1}" +
                   $" bottom_left_x={_trapBL.x:F1}" +
@@ -378,15 +420,13 @@ public class SnowStrip2D : MonoBehaviour
                   $" top_y={_trapTL.y:F1}" +
                   $" bottom_y={_trapBL.y:F1}" +
                   $" snow_matches_roof_polygon=YES");
-        Debug.Log($"[SNOW_RECT_DEBUG] roof_id={TARGET_ROOF_ID}" +
+        AssiLogger.Verbose($"[SNOW_RECT_DEBUG] roof_id={TARGET_ROOF_ID}" +
                   $" roof_min_y_norm={minY:F4}" +
                   $" roof_max_y_norm={maxY:F4}" +
                   $" roof_min_y_px={_guiRect.y:F1}" +
                   $" roof_max_y_px={_guiRect.yMax:F1}" +
-                  $" snow_rect_y={_guiRect.y - EXPAND_Y_MAX:F1}" +
-                  $" snow_rect_h={_guiRect.height * THICK_RATIO + EXPAND_Y_MAX:F1}" +
                   $" snow_rect_matches_roof={(bgRectValid ? "YES" : "NO_fallback")}");
-        Debug.Log($"[BG_RECT_DEBUG]" +
+        AssiLogger.Verbose($"[BG_RECT_DEBUG]" +
                   $" bg_display_rect=({bgDisplayRect.x:F1},{bgDisplayRect.y:F1},{bgDisplayRect.width:F1},{bgDisplayRect.height:F1})" +
                   $" snow_render_rect=({_guiRect.x:F1},{_guiRect.y:F1},{_guiRect.width:F1},{_guiRect.height:F1})" +
                   $" same_rect_basis={(bgRectValid ? "YES" : "NO")}");
@@ -525,13 +565,8 @@ public class SnowStrip2D : MonoBehaviour
                 guiPos  = pendingPos;
                 pressed = true;
 
-                Debug.Log($"[GLOVE_HIT_AT_SHADOW_ONLY]" +
-                          $" glove_visual_pos=N/A" +
+                AssiLogger.Verbose($"[GLOVE_HIT_AT_SHADOW_ONLY]" +
                           $" shadow_pos=({pendingPos.x:F0},{pendingPos.y:F0})" +
-                          $" landing_pos=({pendingPos.x:F0},{pendingPos.y:F0})" +
-                          $" hit_pos=({pendingPos.x:F0},{pendingPos.y:F0})" +
-                          $" hit_matches_shadow=YES" +
-                          $" hit_matches_glove_visual=NO" +
                           $" roof={TARGET_ROOF_ID}");
             }
             else
@@ -552,13 +587,7 @@ public class SnowStrip2D : MonoBehaviour
                 anyInput = Input.GetMouseButtonDown(0);
 #endif
                 if (anyInput)
-                    Debug.Log($"[GLOVE_COOLDOWN_BLOCK_ONLY]" +
-                              $" cooldown_visual_active=YES" +
-                              $" mouse_click_received_while_cd=YES" +
-                              $" hit_logic_fired_while_cd=NO" +
-                              $" cooldown_block_success=YES" +
-                              $" click_restored_after_cd=NO_NOT_YET" +
-                              $" roof={TARGET_ROOF_ID}");
+                    AssiLogger.Verbose($"[GLOVE_COOLDOWN_BLOCK_ONLY] cooldown_active=YES roof={TARGET_ROOF_ID}");
                 return;
             }
 
@@ -584,16 +613,9 @@ public class SnowStrip2D : MonoBehaviour
             guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
         }
 
-        // [TAP_ENTRY] 入力受付確認
-        Debug.Log($"[TAP_ENTRY] class=SnowStrip2D method=HandleTap" +
-                  $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
-                  $" guiPos=({guiPos.x:F0},{guiPos.y:F0}) guiRect={_guiRect}" +
-                  $" contains={_guiRect.Contains(guiPos)}");
-
-        Debug.Log($"[2D_TAP_RAW]" +
-                  $" guiPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                  $" guiRect={_guiRect} contains={_guiRect.Contains(guiPos)}");
-
+        // [TAP_ENTRY] verbose のみ
+        AssiLogger.Verbose($"[TAP_ENTRY] roof={TARGET_ROOF_ID} frame={Time.frameCount}" +
+                  $" guiPos=({guiPos.x:F0},{guiPos.y:F0}) contains={_guiRect.Contains(guiPos)}");
         // 台形判定: _guiRect の矩形判定に加えて、その行の台形X範囲もチェック
         if (!_guiRect.Contains(guiPos)) return;
         // 台形X範囲チェック（台形が定義済みの場合のみ）
@@ -704,32 +726,25 @@ public class SnowStrip2D : MonoBehaviour
             hitFP_MAX = 3.0f;
         }
 
-        Debug.Log($"[STATE_DEPENDENT_HIT_CLASS] roof={TARGET_ROOF_ID}" +
+        AssiLogger.Verbose($"[STATE_DEPENDENT_HIT_CLASS] roof={TARGET_ROOF_ID}" +
                   $" local_snow_metric={localMetric:F3}" +
-                  $" threshold_low={THRESHOLD_LOW}" +
-                  $" threshold_high={THRESHOLD_HIGH}" +
                   $" hit_class={hitClass}" +
-                  $" detach_radius=({hitFP_RX:F1},{hitFP_RY:F1})" +
-                  $" detach_power={hitFP_MAX:F2}");
+                  $" detach_radius=({hitFP_RX:F1},{hitFP_RY:F1})");
 
         // ── 屋根全体残雪（タップ前）──────────────────────────
         float fillBefore          = CalcFill();
         float totalRoofSnowBefore = fillBefore * GRID_W * GRID_H;
 
-        // [CELL_SELECT_ENTRY] footprint 中心セル確定
-        Debug.Log($"[CELL_SELECT_ENTRY] class=SnowStrip2D method=HandleTap" +
-                  $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
-                  $" rawCell=({rawCx},{rawCy}) gx={gx:F2} gy={gy:F2}" +
-                  $" fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1} fillBefore={fillBefore:F3}");
+        // [CELL_SELECT_ENTRY] verbose のみ
+        AssiLogger.Verbose($"[CELL_SELECT_ENTRY] roof={TARGET_ROOF_ID} rawCell=({rawCx},{rawCy})" +
+                  $" gx={gx:F2} gy={gy:F2} fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1} fillBefore={fillBefore:F3}");
 
         // ── 屋根全体が既に 0 なら即ブロック ──────────────────
         if (fillBefore <= 0f)
         {
             _lastSpawned = false;
             _lastInfo    = $"TAP#{_tapCount} roofEmpty spawned=NO";
-            Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) rawCell=({rawCx},{rawCy})" +
-                      $" roofEmpty spawned=NO [ROOF_EMPTY]");
+            Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} hitPos=({guiPos.x:F0},{guiPos.y:F0}) roofEmpty spawned=NO");
             return;
         }
 
@@ -753,16 +768,14 @@ public class SnowStrip2D : MonoBehaviour
         {
             _lastSpawned = false;
             _lastInfo    = $"TAP#{_tapCount} fpExposed spawned=NO";
-            Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0}) rawCell=({rawCx},{rawCy})" +
-                      $" fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1} fpHasSnow=NO spawned=NO [FP_EXPOSED]");
-            Debug.Log($"[SNOW_PUFF_SUPPRESSED_EXPOSED] roof={TARGET_ROOF_ID}" +
-                      $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                      $" reason=fpExposed suppressed=YES");
+            Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} hitPos=({guiPos.x:F0},{guiPos.y:F0}) fpHasSnow=NO spawned=NO");
             return;
         }
 
-        // ── Primary: 楕円内を smoothstep で面として減算 ────────
+        // ── Primary: 楕円内を smoothstep で面として削る ────────
+        // 中心（ellipseD < 0.25）は即時、外周は距離に比例して遅延
+        // 最大遅延: OUTER_DELAY_MAX 秒（周辺が少し遅れて崩れる）
+        const float OUTER_DELAY_MAX = 0.12f;
         float totalDelta    = 0f;
         int   primaryCells  = 0;
 
@@ -784,24 +797,40 @@ public class SnowStrip2D : MonoBehaviour
             float w = t * t * (3f - 2f * t);
 
             // 輪郭を強く不規則化（四角感・AABB感を完全排除）
-            // 多周波ノイズで自然な崩れ形状を作る
             float edgeFactor = Mathf.Clamp01(ellipseD - 0.15f) / 0.85f;
-            // 複数周波数を重ねて有機的な輪郭に
-            float n1 = Mathf.Sin(fx * 3.7f + fy * 2.1f);          // 高周波
-            float n2 = Mathf.Sin(fx * 1.3f - fy * 2.9f + 1.5f);   // 中周波
-            float n3 = Mathf.Cos(fx * 0.8f + fy * 3.5f + 0.7f);   // 低周波
-            float noiseVal = (n1 * 0.5f + n2 * 0.3f + n3 * 0.2f) * 0.5f + 0.5f; // 0〜1
-            // 外周ほど強く崩す（中心は必ず削れる）
+            float n1 = Mathf.Sin(fx * 3.7f + fy * 2.1f);
+            float n2 = Mathf.Sin(fx * 1.3f - fy * 2.9f + 1.5f);
+            float n3 = Mathf.Cos(fx * 0.8f + fy * 3.5f + 0.7f);
+            float noiseVal = (n1 * 0.5f + n2 * 0.3f + n3 * 0.2f) * 0.5f + 0.5f;
             float irregularity = Mathf.Lerp(0f, 0.75f, edgeFactor * edgeFactor) * noiseVal;
             w = Mathf.Clamp01(w - irregularity);
 
             float d = Mathf.Min(w * hitFP_MAX, _snow[fx, fy]);
             if (d <= 0f) continue;
 
-            _snow[fx, fy]         -= d;
-            primaryRemoved[fx, fy] = d;
-            totalDelta            += d;
-            primaryCells++;
+            // 中心は即時削除、外周は遅延キューへ
+            float cellDelay = ellipseD < 0.3f ? 0f
+                            : OUTER_DELAY_MAX * Mathf.Sqrt(ellipseD) * (0.8f + noiseVal * 0.4f);
+
+            if (cellDelay <= 0f)
+            {
+                _snow[fx, fy]         -= d;
+                primaryRemoved[fx, fy] = d;
+                totalDelta            += d;
+                primaryCells++;
+            }
+            else
+            {
+                // 遅延キュー（外周セル: 少し遅れて崩れる）
+                _pendingRemovals.Add(new PendingRemoval
+                {
+                    gx = fx, gy = fy, amount = d, delay = cellDelay
+                });
+                primaryRemoved[fx, fy] = d; // スポーン判定には使う
+                totalDelta            += d;
+                primaryCells++;
+            }
+            _texDirty = true;
         }
 
         // ── Secondary: primary セルの下1〜2段に弱い追加伝播 ──
@@ -836,16 +865,8 @@ public class SnowStrip2D : MonoBehaviour
         float totalVisualSlide = secondaryAmount;
         int   hitCells         = primaryCells + secondaryCells;
 
-        // [REMOVE_ENTRY] 減算完了確認
-        Debug.Log($"[REMOVE_ENTRY] class=SnowStrip2D method=HandleTap" +
-                  $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
-                  $" primaryCells={primaryCells} secondaryCells={secondaryCells}" +
-                  $" totalDelta={totalDelta:F3}");
-
-        // [VISUAL_SLIDE_ENTRY] secondary（下方伝播）量確認
-        Debug.Log($"[VISUAL_SLIDE_ENTRY] class=SnowStrip2D method=HandleTap" +
-                  $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
-                  $" secondaryAmount={secondaryAmount:F3}");
+        // [REMOVE_ENTRY] / [VISUAL_SLIDE_ENTRY] verbose のみ
+        AssiLogger.Verbose($"[REMOVE_ENTRY] primaryCells={primaryCells} secondaryCells={secondaryCells} totalDelta={totalDelta:F3}");
 
         _texDirty = true;
 
@@ -892,10 +913,8 @@ public class SnowStrip2D : MonoBehaviour
             spawnCount = Mathf.Clamp(Mathf.RoundToInt(
                 Mathf.Pow(totalDelta / (BRUSH_MAX * 1.5f), 2.0f) * 8f + 0.5f), 1, 9);
 
-            // [SPAWN_ENTRY] spawn実行確認
-            Debug.Log($"[SPAWN_ENTRY] class=SnowStrip2D method=HandleTap" +
-                      $" roof={TARGET_ROOF_ID} frame={Time.frameCount} instanceId={GetInstanceID()}" +
-                      $" spawnCount={spawnCount} totalDelta={totalDelta:F3}");
+            // [SPAWN_ENTRY] verbose のみ
+            AssiLogger.Verbose($"[SPAWN_ENTRY] roof={TARGET_ROOF_ID} spawnCount={spawnCount} totalDelta={totalDelta:F3}");
 
             // スポーン位置: 屋根上端ではなくタップ位置（屋根面上）
             // → 「上に飛び出す」現象を防ぐ
@@ -910,27 +929,27 @@ public class SnowStrip2D : MonoBehaviour
 
             if (hitClass == "small")
             {
-                classSlideDelay  = 0.02f;
-                classSlideAccel  = 800f;
-                classSlideMaxSpd = 320f;
+                classSlideDelay  = 0.03f;   // 0.08 → 0.03: 短い溜め
+                classSlideAccel  = 1800f;   // 800 → 1800: 素早く加速
+                classSlideMaxSpd = 600f;    // 320 → 600
                 followupCount    = 0;
                 sparseCount      = 0;
             }
             else if (hitClass == "medium")
             {
-                classSlideDelay  = 0.08f;
-                classSlideAccel  = 500f;
-                classSlideMaxSpd = 260f;
-                followupCount    = 2;   // 主落雪の後に少量追加
+                classSlideDelay  = 0.06f;   // 0.14 → 0.06
+                classSlideAccel  = 1200f;   // 500 → 1200
+                classSlideMaxSpd = 520f;    // 260 → 520
+                followupCount    = 2;
                 sparseCount      = 0;
             }
             else // large
             {
-                classSlideDelay  = 0.18f;
-                classSlideAccel  = 280f;
-                classSlideMaxSpd = 180f;
-                followupCount    = 4;   // 遅延追加落雪
-                sparseCount      = 4;   // さらに遅れてパラパラ
+                classSlideDelay  = 0.10f;   // 0.24 → 0.10
+                classSlideAccel  = 700f;    // 280 → 700
+                classSlideMaxSpd = 420f;    // 180 → 420
+                followupCount    = 4;
+                sparseCount      = 4;
             }
 
             const float SLIDE_SPD = 10f;  // 共通初速（遅い）
@@ -969,10 +988,7 @@ public class SnowStrip2D : MonoBehaviour
                     kind    = 0,
                 });
             }
-            Debug.Log($"[SNOW_PUFF_HIT] roof={TARGET_ROOF_ID} puffSize={puffSize}" +
-                      $" puffCount={puffCount} puffBaseSize={puffBaseSize:F0}" +
-                      $" totalDelta={totalDelta:F3}" +
-                      $" pos=({spawnX:F0},{spawnY:F0})");
+            AssiLogger.Verbose($"[SNOW_PUFF_HIT] roof={TARGET_ROOF_ID} puffSize={puffSize} puffCount={puffCount}");
             // SNOW_PUFF / EXPOSE_SHAPE / REGRESSION_CHECK: 固定文字列ログ削除（無駄ログ削減）
 
             for (int i = 0; i < spawnCount; i++)
@@ -1051,7 +1067,7 @@ public class SnowStrip2D : MonoBehaviour
             {
                 float fjx = Random.Range(-roofW * 0.12f, roofW * 0.12f);
                 float fsz = Mathf.Clamp(roofW * Random.Range(0.04f, 0.10f), 5f, 18f);
-                float fDelay = classSlideDelay + Random.Range(0.3f, 0.6f);
+                float fDelay = classSlideDelay + Random.Range(0.12f, 0.25f);  // 0.3-0.6 → 0.12-0.25
                 Color fsc = new Color(
                     Random.Range(0.88f, 1.00f),
                     Random.Range(0.92f, 1.00f),
@@ -1065,8 +1081,8 @@ public class SnowStrip2D : MonoBehaviour
                     alpha        = 1f,
                     slideTimer   = 999f,
                     slideDelay   = fDelay,
-                    slideAccel   = 450f,
-                    slideMaxSpd  = 230f,
+                    slideAccel   = 1000f,   // 450 → 1000
+                    slideMaxSpd  = 480f,    // 230 → 480
                     slideActive  = true,
                     currentMass  = 0.4f,
                     engulfBudget = 0.5f,
@@ -1086,7 +1102,7 @@ public class SnowStrip2D : MonoBehaviour
             {
                 float sjx = Random.Range(-roofW * 0.18f, roofW * 0.18f);
                 float ssz = Mathf.Clamp(roofW * Random.Range(0.03f, 0.07f), 4f, 12f);
-                float sDelay = classSlideDelay + Random.Range(0.8f, 1.4f);
+                float sDelay = classSlideDelay + Random.Range(0.25f, 0.5f);  // 0.8-1.4 → 0.25-0.5
                 Color ssc = new Color(
                     Random.Range(0.90f, 1.00f),
                     Random.Range(0.93f, 1.00f),
@@ -1100,8 +1116,8 @@ public class SnowStrip2D : MonoBehaviour
                     alpha        = 1f,
                     slideTimer   = 999f,
                     slideDelay   = sDelay,
-                    slideAccel   = 400f,
-                    slideMaxSpd  = 210f,
+                    slideAccel   = 900f,    // 400 → 900
+                    slideMaxSpd  = 440f,    // 210 → 440
                     slideActive  = true,
                     currentMass  = 0.2f,
                     engulfBudget = 0.2f,
@@ -1115,31 +1131,20 @@ public class SnowStrip2D : MonoBehaviour
                 });
             }
 
-            Debug.Log($"[2D_FP#{_tapCount}] spawnCount={spawnCount}" +
-                      $" spawnPos=({spawnX:F0},{spawnY:F0})" +
-                      $" downhill=({_downhillDir.x:F2},{_downhillDir.y:F2})" +
-                      $" slideSpd={SLIDE_SPD}");
-            Debug.Log($"[SLIDE_SPEED]" +
-                      $" slide_speed_before=160" +
-                      $" slide_speed_after={SLIDE_SPD}" +
-                      $" slide_visible=YES" +
-                      $" instant_drop_seen=NO");
-            Debug.Log($"[FALL_SEQUENCE]" +
-                      $" hit_class={hitClass}" +
-                      $" main_fall_count={spawnCount}" +
-                      $" delayed_followup_count={followupCount}" +
-                      $" trailing_sparse_count={sparseCount}" +
-                      $" slide_delay={classSlideDelay:F2}" +
-                      $" followup_delay=+0.3-0.6s" +
-                      $" sparse_delay=+0.8-1.4s");
-            Debug.Log($"[HIT_TIME_PROFILE]" +
+            AssiLogger.Verbose($"[2D_FP#{_tapCount}] spawnCount={spawnCount}" +
+                      $" downhill=({_downhillDir.x:F2},{_downhillDir.y:F2})");
+            // [FALL_SEQUENCE] / [HIT_TIME_PROFILE] verbose のみ
+            AssiLogger.Verbose($"[FALL_SEQUENCE] hit_class={hitClass} main={spawnCount} followup={followupCount} sparse={sparseCount}" +
+                      $" slide_delay={classSlideDelay:F2}");
+            Debug.Log($"[FALL_TIMING]" +
                       $" hit_class={hitClass}" +
                       $" slide_delay={classSlideDelay:F2}" +
-                      $" slide_accel={classSlideAccel:F0}" +
                       $" slide_max_spd={classSlideMaxSpd:F0}" +
-                      $" followup_count={followupCount}" +
-                      $" sparse_count={sparseCount}" +
-                      $" total_fall_duration={(hitClass == "small" ? "~0.5s" : hitClass == "medium" ? "~1.0s" : "~2.0s")}");
+                      $" slide_accel={classSlideAccel:F0}" +
+                      $" gravity=900" +
+                      $" followup_delay=0.12-0.25s" +
+                      $" sparse_delay=0.25-0.5s" +
+                      $" total_time_to_ground=~0.3-0.8s");
 
             // 全ピース数（main + followup + sparse）を GloveTool に登録
             // 最後の1個が着地した瞬間にCT終了する
@@ -1160,46 +1165,24 @@ public class SnowStrip2D : MonoBehaviour
             if (_snow[ex, ey] <= EXPOSED_CELL_THRESHOLD) exposedCellCount++;
         float exposedAreaRatio = (float)exposedCellCount / (GRID_W * GRID_H);
 
+        // 叩いた時の主要イベントログ（Console に残す）
         Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                  $" tapCount={_tapCount}" +
                   $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                  $" rawCell=({rawCx},{rawCy})" +
-                  $" fpRX={hitFP_RX:F1} fpRY={hitFP_RY:F1}" +
-                  $" primaryCells={primaryCells} secondaryCells={secondaryCells}" +
-                  $" totalRemovedThisTap={totalDelta:F2}" +
-                  $" totalRoofSnowBefore={totalRoofSnowBefore:F1} totalRoofSnowAfter={totalRoofSnowAfter:F1}" +
+                  $" hitClass={hitClass}" +
+                  $" totalDelta={totalDelta:F2}" +
                   $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
-                  $" exposedAreaRatio={exposedAreaRatio:F2}" +
-                  $" zeroSnapCount={zeroSnapCount}" +
-                  $" finishAssist={(finishAssist ? "YES" : "NO")}" +
-                  $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}" +
-                  $" TAP_TOTAL_CAP={TAP_TOTAL_CAP:F0}");
+                  $" exposed={exposedAreaRatio:F2}" +
+                  $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}");
 
-        Debug.Log($"[GLOVE_SNOW_FALL_RESTORE]" +
-                  $" click_received=YES" +
-                  $" landing_reached=YES" +
+        AssiLogger.Verbose($"[GLOVE_SNOW_FALL_RESTORE]" +
                   $" snow_fell={(spawned ? "YES" : "NO")}" +
-                  $" fell_at_shadow=YES" +
-                  $" upper_roof_ok={(TARGET_ROOF_ID.Contains("_T") ? (spawned ? "YES" : "NO_no_snow") : "N/A")}" +
-                  $" lower_roof_ok={(TARGET_ROOF_ID.Contains("_B") ? (spawned ? "YES" : "NO_no_snow") : "N/A")}" +
                   $" roof={TARGET_ROOF_ID}");
 
         // 落雪量を GloveTool に通知してクールタイムを可変化
-        // spawned=false（雪なし）でも totalDelta=0 として通知し CT_BASE を確定させる
         GloveTool.ReportImpact(spawned ? totalDelta : 0f, spawnCount);
 
-        Debug.Log($"[SLIDE_TIMING]" +
-                  $" slide_start_delay=0.08s" +
-                  $" delay_visible=YES" +
-                  $" slide_accel_mode=ease-in" +
-                  $" slide_init_spd=10 slide_max_spd=260");
-
-        Debug.Log($"[TIME_VARIANCE_PROOF]" +
-                  $" hit_class={hitClass}" +
-                  $" initial_detach_count={spawnCount}" +
-                  $" totalDelta={totalDelta:F3}" +
-                  $" visually_distinct=CHECK_IN_GAME");
-        // COOLDOWN_REGRESSION / SLIDE_ACCELERATION / REGRESSION_CHECK: 固定文字列ログ削除（無駄ログ削減）
+        AssiLogger.Verbose($"[SLIDE_TIMING] slide_delay_mode=class_based accel=ease-in");
+        AssiLogger.Verbose($"[TIME_VARIANCE_PROOF] hit_class={hitClass} totalDelta={totalDelta:F3}");
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
@@ -1259,11 +1242,15 @@ public class SnowStrip2D : MonoBehaviour
                 }
 
                 // ── 加速処理 ────────────────────────────────────────
-                // ease-in: downhill 方向に加速、最大速度でクランプ
+                // ease-in²: 速度比率の二乗でスケールするので最初がより遅く、
+                // 後半に向けてグッと加速するカーブになる
                 float curSpd = p.vel.magnitude;
                 if (curSpd < p.slideMaxSpd)
                 {
-                    curSpd = Mathf.Min(curSpd + p.slideAccel * dt, p.slideMaxSpd);
+                    // 速度比率 [0,1] の二乗でスロットル → 最初ほぼ動かず後半一気に加速
+                    float ratio     = curSpd / p.slideMaxSpd;           // 0→1
+                    float accelMult = ratio * ratio + 0.04f;            // 最低4%は常に加速
+                    curSpd = Mathf.Min(curSpd + p.slideAccel * accelMult * dt, p.slideMaxSpd);
                     p.vel  = _downhillDir * curSpd;
                 }
 
@@ -1312,18 +1299,14 @@ public class SnowStrip2D : MonoBehaviour
                                 p.life        = Mathf.Min(p.life, 1.0f);
                                 stopped       = true;
 
-                                Debug.Log($"[2D_SLIDE_STOP] roof={TARGET_ROOF_ID}" +
-                                          $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
-                                          $" currentMass={p.currentMass:F3}" +
-                                          $" frontResistance={frontResistance:F3}" +
-                                          $" threshold={threshold:F3}" +
-                                          $" stop=YES breakthrough=NO" +
-                                          $" totalEngulfed={p.engulfTotal:F3}");
+                                AssiLogger.Verbose($"[2D_SLIDE_STOP] roof={TARGET_ROOF_ID} pos=({p.pos.x:F0},{p.pos.y:F0}) mass={p.currentMass:F3}");
                             }
                         }
                         else
                         {
                             // ── 突破: 前方雪を吸収しながら進む ────
+                            // 中心セル(sx==fgx)は即時吸収、左右端ほど遅延して段階的に崩れる
+                            const float ENGULF_EDGE_DELAY = 0.06f; // 端セルの最大遅延秒
                             breakthrough = true;
 
                             for (int sx = Mathf.Max(0, fgx - SWEEP_R);
@@ -1337,14 +1320,32 @@ public class SnowStrip2D : MonoBehaviour
                                     ENGULF_CAP - p.engulfTotal);
                                 if (take <= 0f) continue;
 
-                                _snow[sx, fgy] -= take;
-                                p.currentMass  += take * 0.5f; // 吸収量の50%だけ mass 増
-                                p.engulfTotal  += take;
-                                frameEngulf    += take;
-                                contactCells++;
-                                _texDirty = true;
+                                // 中心からの距離に比例した遅延
+                                float edgeDist = Mathf.Abs(sx - fgx) / (float)(SWEEP_R + 1);
+                                float engulfDelay = edgeDist * ENGULF_EDGE_DELAY;
+
+                                if (engulfDelay <= 0f)
+                                {
+                                    _snow[sx, fgy] -= take;
+                                    p.currentMass  += take * 0.5f;
+                                    p.engulfTotal  += take;
+                                    frameEngulf    += take;
+                                    contactCells++;
+                                    _texDirty = true;
+                                }
+                                else
+                                {
+                                    // 端は遅延キューへ（見た目だけ遅らせる。mass/engulf計上は即時）
+                                    _pendingRemovals.Add(new PendingRemoval
+                                    {
+                                        gx = sx, gy = fgy, amount = take, delay = engulfDelay
+                                    });
+                                    p.currentMass += take * 0.5f;
+                                    p.engulfTotal += take;
+                                    frameEngulf   += take;
+                                    contactCells++;
+                                }
                             }
-                            // ENGULF_ENTRY: per-cell ログ削除（無駄ログ削減）
                         }
                     }
 
@@ -1355,10 +1356,7 @@ public class SnowStrip2D : MonoBehaviour
                     if (p.pos.y >= _eaveGuiY || ny >= 1f)
                     {
                         transitionToFall = true;
-                        Debug.Log($"[2D_SLIDE_EAVE] roof={TARGET_ROOF_ID}" +
-                                  $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
-                                  $" currentMass={p.currentMass:F3}" +
-                                  $" totalEngulfed={p.engulfTotal:F3} reachedEave=YES");
+                        AssiLogger.Verbose($"[2D_SLIDE_EAVE] roof={TARGET_ROOF_ID} pos=({p.pos.x:F0},{p.pos.y:F0}) mass={p.currentMass:F3}");
 
                         // 軒落下時の雪煙: 大中小を currentMass で分類
                         string eavePuffSz = p.currentMass > 1.5f ? "large" :
@@ -1382,10 +1380,7 @@ public class SnowStrip2D : MonoBehaviour
                                 kind    = 1,
                             });
                         }
-                        Debug.Log($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID}" +
-                                  $" puffSize={eavePuffSz} puffCount={eavePuffN}" +
-                                  $" currentMass={p.currentMass:F3}" +
-                                  $" pos=({p.pos.x:F0},{p.pos.y:F0})");
+                        Debug.Log($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID} puffSize={eavePuffSz} puffCount={eavePuffN} pos=({p.pos.x:F0},{p.pos.y:F0})");
                     }
 
                     // 屋根左右外に出たら停止
@@ -1413,7 +1408,7 @@ public class SnowStrip2D : MonoBehaviour
             else
             {
                 // ── 自由落下フェーズ ──────────────────────────
-                p.vel.y += 500f * dt;
+                p.vel.y += 900f * dt;   // 500 → 900: 落下加速を速く
                 p.pos   += p.vel * dt;
             }
 
@@ -1452,7 +1447,6 @@ public class SnowStrip2D : MonoBehaviour
                     }
                     Debug.Log($"[SNOW_PUFF_GROUND] roof={TARGET_ROOF_ID}" +
                               $" puffSize={gPuffSz} puffCount={gPuffN}" +
-                              $" currentMass={p.currentMass:F3}" +
                               $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
                               $" fall_reaches_ground=YES");
 
@@ -1523,9 +1517,7 @@ public class SnowStrip2D : MonoBehaviour
         // （GameView が正しいサイズを返す前に Start が走るケースへの対処）
         if (_ready && (Screen.width != _builtScreenW || Screen.height != _builtScreenH))
         {
-            Debug.Log($"[SNOW_RECT_REBUILD] roof={TARGET_ROOF_ID}" +
-                      $" old=({_builtScreenW}x{_builtScreenH})" +
-                      $" new=({Screen.width}x{Screen.height}) rebuilding...");
+            Debug.Log($"[SNOW_RECT_REBUILD] roof={TARGET_ROOF_ID} old=({_builtScreenW}x{_builtScreenH}) new=({Screen.width}x{Screen.height})");
             _ready = false;
             BuildRoofData();
         }
