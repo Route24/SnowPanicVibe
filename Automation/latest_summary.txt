@@ -1,16 +1,16 @@
 === SUMMARY ===
-generated_at=2026-03-25 15:53:29
+generated_at=2026-03-25 16:44:26
 scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
 error_count=0
-warning_count=4
+warning_count=12
 
 === CALIBRATION ===
 roof_points_captured=YES
 ground_point_captured=YES
 calibration_saved=YES
-roof_min_y=0.3778
+roof_min_y=0.2417
 roof_max_y=0.4470
 ground_y=0.6736
 snow_on_roof=YES
