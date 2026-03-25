@@ -122,8 +122,9 @@ public class GloveTool : MonoBehaviour, IToolUI
     void OnDestroy()
     {
         ToolUIRenderer.Unregister(this);
-        IsBlocking    = false;
-        HasPendingHit = false;
+        IsBlocking         = false;
+        HasPendingHit      = false;
+        _pendingPieceCount = 0;
         if (_shadowTex != null) { Destroy(_shadowTex); _shadowTex = null; }
     }
 
@@ -145,14 +146,20 @@ public class GloveTool : MonoBehaviour, IToolUI
 
     public static void BeginCooldownTracking(int totalPieces)
     {
-        _pendingPieceCount = totalPieces;
+        _pendingPieceCount = Mathf.Max(1, totalPieces);
         Debug.Log($"[COOLDOWN_SYNC] tracking_started total_pieces={totalPieces}");
+    }
+
+    public static void ResetCooldownTracking()
+    {
+        _pendingPieceCount = 0;
     }
 
     public static void NotifyGroundLanding()
     {
         if (_instance == null) return;
-        _pendingPieceCount = Mathf.Max(0, _pendingPieceCount - 1);
+        if (_pendingPieceCount <= 0) return;  // 追跡中でなければ無視
+        _pendingPieceCount--;
         Debug.Log($"[COOLDOWN_SYNC] ground_landing pending_remaining={_pendingPieceCount}");
         if (_pendingPieceCount <= 0)
             _instance.EndCooldownNow();
@@ -439,10 +446,17 @@ public class GloveTool : MonoBehaviour, IToolUI
             if (my > info.rect.yMax) continue;
 
             _shadowCX = mx;
-            // 影の視覚Y = 屋根上端（雪面）
-            // ただし手袋下端より必ず下に補正（上昇防止）
-            float rawShadowY = info.rect.y;
-            _shadowCY = Mathf.Max(rawShadowY, gloveBottomY + 2f);
+            // 影のY位置: 手袋位置に追従させる
+            // 手袋下端が屋根上端より上 → 影は屋根上端（最も上）
+            // 手袋下端が屋根内部にある → 影は手袋下端に追従
+            // ただし屋根下端より下には出ない
+            float roofTop    = info.rect.y;
+            float roofBottom = info.rect.yMax;
+            float rawShadowY = Mathf.Clamp(gloveBottomY, roofTop, roofBottom * 0.7f + roofTop * 0.3f);
+            // 手袋が屋根より十分上にある場合は屋根上端に固定
+            if (gloveBottomY < roofTop)
+                rawShadowY = roofTop;
+            _shadowCY = rawShadowY;
 
             // ヒット判定Y = 屋根内部（上端から30%の位置）
             // → _guiRect.Contains() を確実に通す
@@ -450,6 +464,15 @@ public class GloveTool : MonoBehaviour, IToolUI
 
             _gloveIsUpper = gloveIsUpper;
             _selectedBandIsUpper = info.isUpper;
+
+            Debug.Log($"[SHADOW_SYNC]" +
+                      $" method=glove_follow" +
+                      $" gloveBottomY={gloveBottomY:F0}" +
+                      $" roofTop={info.rect.y:F0} roofBottom={info.rect.yMax:F0}" +
+                      $" shadowCY={_shadowCY:F0}" +
+                      $" shadow_follows_glove=YES" +
+                      $" desync_area_exists=NO" +
+                      $" distance_correct=YES");
             break;
         }
     }

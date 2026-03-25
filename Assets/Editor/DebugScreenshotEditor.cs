@@ -1,3 +1,4 @@
+// recompile trigger 2026-03-25b
 #if UNITY_EDITOR
 using System;
 using System.IO;
@@ -35,8 +36,9 @@ public static class DebugScreenshotEditor
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
-        if (state != PlayModeStateChange.ExitingPlayMode) return;
-        // 同期実行: ExitingPlayMode 時点ではランタイムがまだ生きており AppendToAssiReport が使える
+        // ExitingPlayMode はフレームバッファ破棄中のため cgImage=NULL クラッシュが起きる
+        // EnteredEditMode（Stop完了後）に変更して安全にキャプチャする
+        if (state != PlayModeStateChange.EnteredEditMode) return;
         CaptureEditorWindows();
     }
 

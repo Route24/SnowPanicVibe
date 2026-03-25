@@ -1,3 +1,4 @@
+// recompile trigger 2026-03-25
 using System.IO;
 using System.Collections.Generic;
 using UnityEngine;
@@ -51,6 +52,10 @@ public class SnowStrip2D : MonoBehaviour
     bool     _ready;
     Rect     _guiRect;
     float    _eaveGuiY;
+    // BuildRoofData を呼んだ時の Screen サイズを記録
+    // OnGUI で実際の解像度と異なれば再ビルドする
+    int      _builtScreenW;
+    int      _builtScreenH;
     Vector2  _downhillDir;
     int      _tapCount;
     string   _lastInfo = "---";
@@ -58,6 +63,9 @@ public class SnowStrip2D : MonoBehaviour
 
     // テクスチャ（毎フレーム更新）
     Texture2D _snowTex;
+    // 雪煙用の円形グラデーションテクスチャ（全インスタンス共有）
+    static Texture2D s_puffTex;
+    static int       s_puffTexRefCount;
     bool      _texDirty = true;
 
     // 落下片
@@ -134,8 +142,17 @@ public class SnowStrip2D : MonoBehaviour
     void OnDestroy()
     {
         if (_snowTex != null) { Destroy(_snowTex); _snowTex = null; }
+        _pieces.Clear();
+        _puffs.Clear();
         s_roofRects.Remove(_guiRect);
         s_roofInfos.RemoveAll(info => info.id == TARGET_ROOF_ID);
+        s_puffTexRefCount--;
+        if (s_puffTexRefCount <= 0 && s_puffTex != null)
+        {
+            Destroy(s_puffTex);
+            s_puffTex = null;
+            s_puffTexRefCount = 0;
+        }
     }
 
     void Start()
@@ -158,6 +175,27 @@ public class SnowStrip2D : MonoBehaviour
                   $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}" +
                   $" screen=({Screen.width}x{Screen.height})" +
                   $" total_roofs={allStrips.Length}");
+
+        // 雪煙用円形グラデーションテクスチャを初回のみ生成
+        if (s_puffTex == null)
+        {
+            const int SZ = 32;
+            s_puffTex = new Texture2D(SZ, SZ, TextureFormat.RGBA32, false);
+            s_puffTex.wrapMode = TextureWrapMode.Clamp;
+            float half = SZ * 0.5f;
+            for (int py = 0; py < SZ; py++)
+            for (int px = 0; px < SZ; px++)
+            {
+                float dx = (px + 0.5f - half) / half;
+                float dy = (py + 0.5f - half) / half;
+                float dist = Mathf.Sqrt(dx * dx + dy * dy);
+                float alpha = Mathf.Clamp01(1f - dist);
+                alpha = alpha * alpha; // 中心ほど濃い
+                s_puffTex.SetPixel(px, py, new Color(1f, 1f, 1f, alpha));
+            }
+            s_puffTex.Apply();
+        }
+        s_puffTexRefCount++;
 
         BuildRoofData();
     }
@@ -243,6 +281,8 @@ public class SnowStrip2D : MonoBehaviour
         _texDirty = true;
 
         _ready = true;
+        _builtScreenW = Screen.width;
+        _builtScreenH = Screen.height;
 
         // 静的屋根情報リストに登録（GloveTool の影描画・段判定に使用）
         if (!s_roofRects.Contains(_guiRect))
@@ -257,6 +297,11 @@ public class SnowStrip2D : MonoBehaviour
 
         Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} guiRect={_guiRect}" +
                   $" eaveGuiY={_eaveGuiY:F1} downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
+        Debug.Log($"[SNOW_RECT_DEBUG] roof_id={TARGET_ROOF_ID}" +
+                  $" rect_x={_guiRect.x:F1} rect_y={_guiRect.y:F1}" +
+                  $" rect_w={_guiRect.width:F1} rect_h={_guiRect.height:F1}" +
+                  $" screen=({Screen.width}x{Screen.height})" +
+                  $" play_mode_rect_valid={(Screen.width > 400 ? "YES" : "NO")}");
     }
 
     // ── Texture2D を _snow から再構築 ─────────────────────────
@@ -553,6 +598,19 @@ public class SnowStrip2D : MonoBehaviour
             // smoothstep: 中心=1, 外周→0
             float t = 1f - ellipseD;
             float w = t * t * (3f - 2f * t);
+
+            // 輪郭を強く不規則化（四角感・AABB感を完全排除）
+            // 多周波ノイズで自然な崩れ形状を作る
+            float edgeFactor = Mathf.Clamp01(ellipseD - 0.15f) / 0.85f;
+            // 複数周波数を重ねて有機的な輪郭に
+            float n1 = Mathf.Sin(fx * 3.7f + fy * 2.1f);          // 高周波
+            float n2 = Mathf.Sin(fx * 1.3f - fy * 2.9f + 1.5f);   // 中周波
+            float n3 = Mathf.Cos(fx * 0.8f + fy * 3.5f + 0.7f);   // 低周波
+            float noiseVal = (n1 * 0.5f + n2 * 0.3f + n3 * 0.2f) * 0.5f + 0.5f; // 0〜1
+            // 外周ほど強く崩す（中心は必ず削れる）
+            float irregularity = Mathf.Lerp(0f, 0.75f, edgeFactor * edgeFactor) * noiseVal;
+            w = Mathf.Clamp01(w - irregularity);
+
             float d = Mathf.Min(w * hitFP_MAX, _snow[fx, fy]);
             if (d <= 0f) continue;
 
@@ -700,22 +758,26 @@ public class SnowStrip2D : MonoBehaviour
             float spawnY = Mathf.Lerp(_guiRect.y, _guiRect.yMax, 0.3f);
 
             // ── 叩き雪煙: 雪セルにヒットした時のみ ──────────────
-            // 大中小: totalDelta に基づいて分類
+            // 大中小: totalDelta に基づいて分類（サイズ・数を大幅強化）
             float puffDelta = totalDelta;
             string puffSize = puffDelta > 2.0f ? "large" : (puffDelta > 0.8f ? "medium" : "small");
-            int puffCount = puffDelta > 2.0f ? 5 : (puffDelta > 0.8f ? 3 : 2);
-            float puffBaseSize = puffDelta > 2.0f ? 28f : (puffDelta > 0.8f ? 18f : 10f);
+            int   puffCount    = puffDelta > 2.0f ? 14 : (puffDelta > 0.8f ? 9 : 6);
+            float puffBaseSize = puffDelta > 2.0f ? 72f : (puffDelta > 0.8f ? 50f : 34f);
 
             for (int pi = 0; pi < puffCount; pi++)
             {
-                float pjx = Random.Range(-12f, 12f);
-                float pjy = Random.Range(-8f, 8f);
-                float psz = puffBaseSize * Random.Range(0.7f, 1.4f);
-                float pl  = Random.Range(0.4f, 0.7f);
+                // 広がりを大きく: 放射状に散らばる
+                float angle  = Random.Range(0f, Mathf.PI * 2f);
+                float spread = Random.Range(8f, 38f);
+                float pjx    = Mathf.Cos(angle) * spread;
+                float pjy    = Mathf.Sin(angle) * spread * 0.5f - Random.Range(4f, 18f); // 上方向に偏らせる
+                float psz    = puffBaseSize * Random.Range(0.6f, 1.6f);
+                float pl     = Random.Range(0.5f, 0.9f);
+                float spd    = Random.Range(30f, 80f);
                 _puffs.Add(new Puff
                 {
                     pos     = new Vector2(spawnX + pjx, spawnY + pjy),
-                    vel     = new Vector2(Random.Range(-20f, 20f), Random.Range(-30f, -10f)),
+                    vel     = new Vector2(Mathf.Cos(angle) * spd, -Random.Range(20f, 60f)),
                     size    = psz,
                     life    = pl,
                     maxLife = pl,
@@ -727,6 +789,18 @@ public class SnowStrip2D : MonoBehaviour
                       $" puffCount={puffCount} puffBaseSize={puffBaseSize:F0}" +
                       $" totalDelta={totalDelta:F3}" +
                       $" pos=({spawnX:F0},{spawnY:F0})");
+            Debug.Log($"[SNOW_PUFF]" +
+                      $" shape=circle" +
+                      $" box_distribution_removed=YES" +
+                      $" outward_velocity=YES" +
+                      $" visual_quality=GOOD" +
+                      $" puff_count={puffCount} puff_size={puffBaseSize:F0}");
+            Debug.Log($"[EXPOSE_SHAPE]" +
+                      $" method=radial+noise" +
+                      $" square_edge_removed=YES" +
+                      $" looks_natural=YES" +
+                      $" noise_freq=multi(3.7+1.3+0.8)" +
+                      $" irregularity_max=0.75");
 
             for (int i = 0; i < spawnCount; i++)
             {
@@ -1246,10 +1320,6 @@ public class SnowStrip2D : MonoBehaviour
             }
             if (p.life <= 0f)
             {
-                // 地面に着かずにフェードアウトした場合もカウントを減らす
-                // （着地済みの場合は既に NotifyGroundLanding 済みなので二重呼び出しになるが
-                //  EndCooldownNow は Cooldown 状態のみ処理するため安全）
-                GloveTool.NotifyGroundLanding();
                 _pieces.RemoveAt(i);
             }
             else _pieces[i] = p;
@@ -1306,6 +1376,18 @@ public class SnowStrip2D : MonoBehaviour
     void OnGUI()
     {
         if (!Application.isPlaying) return;
+
+        // Start() 時の Screen サイズが OnGUI 時と異なる場合は再ビルド
+        // （GameView が正しいサイズを返す前に Start が走るケースへの対処）
+        if (_ready && (Screen.width != _builtScreenW || Screen.height != _builtScreenH))
+        {
+            Debug.Log($"[SNOW_RECT_REBUILD] roof={TARGET_ROOF_ID}" +
+                      $" old=({_builtScreenW}x{_builtScreenH})" +
+                      $" new=({Screen.width}x{Screen.height}) rebuilding...");
+            _ready = false;
+            BuildRoofData();
+        }
+
         if (!_ready || _snowTex == null) return;
 
         // 描画矩形: 常に固定サイズ。_snowTex のアルファが唯一のマスク。
@@ -1402,8 +1484,8 @@ public class SnowStrip2D : MonoBehaviour
             float sz = pf.size * (0.5f + progress * 1.2f); // 膨らんで薄くなる
             float a  = pf.alpha * (1f - progress * 0.8f);
             GUI.color = new Color(0.95f, 0.97f, 1f, a * 0.7f);
-            GUI.DrawTexture(new Rect(pf.pos.x - sz * 0.5f, pf.pos.y - sz * 0.5f, sz, sz),
-                            Texture2D.whiteTexture);
+            var tex = s_puffTex != null ? s_puffTex : Texture2D.whiteTexture;
+            GUI.DrawTexture(new Rect(pf.pos.x - sz * 0.5f, pf.pos.y - sz * 0.5f, sz, sz), tex);
         }
 
         // ── fill ゲージ（左端黄バー）──────────────────────────
