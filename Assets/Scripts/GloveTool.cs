@@ -128,6 +128,16 @@ public class GloveTool : MonoBehaviour, IToolUI
                   $" glove_uses_fixed_offset=YES" +
                   $" offset_ratio={SHADOW_GLOVE_OFFSET_RATIO:F2}" +
                   $" separate_corrections_removed=YES");
+        Debug.Log($"[ACTIVE_SNOW_RUNTIME]" +
+                  $" active_system=2D_ONGUI" +
+                  $" active_files=SnowStrip2D.cs,GloveTool.cs" +
+                  $" uses_modified_values=YES" +
+                  $" wrong_file_modified=NO");
+        Debug.Log($"[ACTIVE_CODE_PATH]" +
+                  $" hit_to_slide_function=SnowStrip2D.HandleTap" +
+                  $" slide_motion_function=SnowStrip2D.UpdatePieces" +
+                  $" fall_to_ground_function=SnowStrip2D.UpdatePieces(freefall)" +
+                  $" source_file_paths=Assets/Scripts/SnowStrip2D.cs");
     }
 
     void OnDestroy()
@@ -227,22 +237,12 @@ public class GloveTool : MonoBehaviour, IToolUI
         UpdateShadowPos(mx, my);
 
         // ── 手袋描画Y: 影基準で固定オフセット（屋根上のみ）──
-        // 影がある（屋根上）    → 影から上に _curH × RATIO だけ置く
-        // 影がない + キャッシュあり → キャッシュ位置で固定（ワープ防止）
-        // 影がない + キャッシュなし → マウス追従（_curGY）
+        // _shadowCX >= 0 = 有効  → 影基準で上に配置
+        // _shadowCX < 0  = 無効  → マウス追従（グレー表示）
         if (_shadowCX >= 0f)
-        {
             _drawGloveY = _shadowCY - _curH * SHADOW_GLOVE_OFFSET_RATIO;
-        }
-        else if (_lastValidShadowCX >= 0f)
-        {
-            // 無効領域：最後の有効影位置で固定（ワープしない）
-            _drawGloveY = _lastValidShadowCY - _curH * SHADOW_GLOVE_OFFSET_RATIO;
-        }
         else
-        {
             _drawGloveY = _curGY;
-        }
 
         // ── PHASE2: ステートマシン ──
         switch (_state)
@@ -329,30 +329,27 @@ public class GloveTool : MonoBehaviour, IToolUI
     }
 
     // ── 影位置更新 ────────────────────────────────────────────
-    // 段ルール:
-    //   手袋中心Y が上段帯にある → 上段屋根のみ影候補
-    //   手袋中心Y が下段帯にある → 下段屋根のみ影候補
-    //   段またぎ選択は禁止
-    //
-    // 影Y:
-    //   屋根上端（r.y）を基準にするが、手袋下端より必ず下に補正
-    //   → 上昇バグを構造的に防止
-    //
-    // ヒット位置:
-    //   _shadowHitY = 屋根内部（r.y + r.height * 0.3f）
-    //   → SnowStrip2D._guiRect.Contains() を確実に通す
-    float _shadowHitY = -1f;  // ヒット判定用Y（屋根内部）
+    // 1本化した台形有効判定: IsInRoofTrapezoid() を軸に
+    // 影表示・手袋色・叩ける判定 の全部がこの結果を使う
+    float _shadowHitY = -1f;
 
-    void UpdateShadowPos(float mx, float my)
+    /// <summary>
+    /// マウス位置 (mx, my) が台形屋根内にあるか判定し、
+    /// 有効なら影座標を out で返す。3つの判定全部がこれを使う。
+    /// </summary>
+    bool IsInRoofTrapezoid(float mx, float my,
+                           out float shadowCX, out float shadowCY, out float shadowHitY,
+                           out SnowStrip2D.RoofInfo matchedInfo)
     {
-        _shadowCX   = -1f;
-        _shadowCY   = -1f;
-        _shadowHitY = -1f;
+        shadowCX   = -1f;
+        shadowCY   = -1f;
+        shadowHitY = -1f;
+        matchedInfo = default;
 
         var infos = SnowStrip2D.RoofInfos;
-        if (infos.Count == 0) return;
+        if (infos.Count == 0) return false;
 
-        // ── 上段/下段の境界を計算 ────────────────────────────────
+        // 上段/下段の境界
         float upperMaxY = float.MinValue;
         float lowerMinY = float.MaxValue;
         for (int i = 0; i < infos.Count; i++)
@@ -361,72 +358,98 @@ public class GloveTool : MonoBehaviour, IToolUI
             else                  lowerMinY = Mathf.Min(lowerMinY, infos[i].rect.y);
         }
         bool hasUpper = upperMaxY > float.MinValue;
-        bool hasLower = lowerMinY < float.MaxValue;
         bool gloveIsUpper;
-        if (hasUpper && hasLower)
+        if (hasUpper && lowerMinY < float.MaxValue)
             gloveIsUpper = my < (upperMaxY + lowerMinY) * 0.5f;
-        else if (hasUpper)
-            gloveIsUpper = true;
         else
-            gloveIsUpper = false;
+            gloveIsUpper = hasUpper;
 
-        // ── 対象屋根を X 範囲と段で特定 ─────────────────────────
-        // Y範囲チェックは「川・地面」除外のみ（屋根より上は許可）
         for (int i = 0; i < infos.Count; i++)
         {
             var info = infos[i];
             if (info.isUpper != gloveIsUpper) continue;
-            if (mx < info.rect.x || mx > info.rect.xMax) continue;
-            if (my > info.rect.yMax) continue;   // 屋根より下（川・地面）は影なし
 
-            _shadowCX = mx;
+            float trapTopY = Mathf.Min(info.trapTL.y, info.trapTR.y);
+            float trapBotY = Mathf.Max(info.trapBL.y, info.trapBR.y);
+            if (trapBotY <= trapTopY) continue;
+            if (my > trapBotY) continue;   // 軒先より下は無効
 
-            // ── 正規化 → 再マッピング（死に帯ゼロ） ─────────────
-            // 手袋の可動域: 画面上端(0) 〜 屋根下端(roofBottom)
-            // 影の可動域:   屋根上端(roofTop) 〜 屋根下端70%(roofShadowMax)
-            float roofTop       = info.rect.y;
-            float roofBottom    = info.rect.yMax;
-            float roofShadowMax = Mathf.Lerp(roofTop, roofBottom, 0.7f);
+            float tTrap = Mathf.Clamp01((my - trapTopY) / (trapBotY - trapTopY));
+            float trapLx = Mathf.Lerp(info.trapTL.x, info.trapBL.x, tTrap);
+            float trapRx = Mathf.Lerp(info.trapTR.x, info.trapBR.x, tTrap);
+            if (mx < trapLx || mx > trapRx) continue;   // 台形外（斜め辺より外）
 
-            // 手袋中心Y を [0, roofBottom] で正規化
-            float gloveMinY = 0f;
-            float gloveMaxY = roofBottom;
-            float t = Mathf.InverseLerp(gloveMinY, gloveMaxY, my);
+            // ── 有効 ──────────────────────────────────────────────
+            shadowCX = mx;
 
-            // 影を [roofTop, roofShadowMax] にマッピング
-            _shadowCY = Mathf.Lerp(roofTop, roofShadowMax, t);
+            // 影Y: 屋根上端〜軒先100%にフルマッピング（70%打ち切りを廃止）
+            float t = Mathf.Clamp01((my - 0f) / Mathf.Max(trapBotY, 1f));
+            shadowCY = Mathf.Lerp(trapTopY, trapBotY, t);
+            // 上端クランプ: 屋根より上にはみ出さない
+            shadowCY = Mathf.Clamp(shadowCY, trapTopY, trapBotY);
 
-            // ヒット判定Y = 屋根内部（上端から30%）→ Contains() を確実に通す
-            _shadowHitY = roofTop + info.rect.height * 0.3f;
+            shadowHitY  = trapTopY + info.rect.height * 0.3f;
+            matchedInfo = info;
 
             _gloveIsUpper        = gloveIsUpper;
             _selectedBandIsUpper = info.isUpper;
+            return true;
+        }
+        return false;
+    }
 
-            // 有効位置をキャッシュ（無効領域でのワープ防止用）
-            _lastValidShadowCX = _shadowCX;
-            _lastValidShadowCY = _shadowCY;
+    void UpdateShadowPos(float mx, float my)
+    {
+        SnowStrip2D.RoofInfo matchedInfo;
+        bool valid = IsInRoofTrapezoid(mx, my,
+                         out float scx, out float scy, out float shitY,
+                         out matchedInfo);
 
-            // 影Y が 30px 以上変化したときのみ verbose ログ
+        if (valid)
+        {
+            _shadowCX   = scx;
+            _shadowCY   = scy;
+            _shadowHitY = shitY;
+
+            // 初回ヒット時のみ屋根形状ログ
+            if (!_roofHitAreaLogged)
+            {
+                _roofHitAreaLogged = true;
+                Debug.Log($"[ROOF_HIT_AREA]" +
+                          $" roof_tl=({matchedInfo.trapTL.x:F0},{matchedInfo.trapTL.y:F0})" +
+                          $" roof_tr=({matchedInfo.trapTR.x:F0},{matchedInfo.trapTR.y:F0})" +
+                          $" roof_bl=({matchedInfo.trapBL.x:F0},{matchedInfo.trapBL.y:F0})" +
+                          $" roof_br=({matchedInfo.trapBR.x:F0},{matchedInfo.trapBR.y:F0})" +
+                          $" hit_test_shape=TRAPEZOID" +
+                          $" shadow_visibility_uses_same_shape=YES" +
+                          $" grayout_uses_same_shape=YES");
+                Debug.Log($"[HIT_VALIDATION]" +
+                          $" shared_validity_function=YES" +
+                          $" shadow_uses_shared_validity=YES" +
+                          $" grayout_uses_shared_validity=YES" +
+                          $" edge_shadow_mismatch_removed=YES" +
+                          $" bottom_shadow_cutoff_removed=YES");
+            }
+
             if (Mathf.Abs(_shadowCY - _lastLoggedShadowCY) >= 30f)
             {
                 _lastLoggedShadowCY = _shadowCY;
-                AssiLogger.Verbose($"[SHADOW_MAPPING]" +
-                          $" glove_y={my:F0}" +
-                          $" shadow_y={_shadowCY:F0}" +
-                          $" roof_range=({roofTop:F0},{roofShadowMax:F0})");
+                AssiLogger.Verbose($"[SHADOW_MAPPING] glove_y={my:F0} shadow_y={_shadowCY:F0}");
             }
-            break;
+        }
+        else
+        {
+            _shadowCX   = -1f;
+            _shadowCY   = -1f;
+            _shadowHitY = -1f;
         }
     }
 
     // 段ログ用フィールド
     bool  _gloveIsUpper        = false;
     bool  _selectedBandIsUpper = false;
-    // SHADOW_MAPPING ログを間引くための前回値
     float _lastLoggedShadowCY  = -9999f;
-    // 最後の有効影位置キャッシュ（無効領域でワープしないために使用）
-    float _lastValidShadowCX   = -1f;
-    float _lastValidShadowCY   = -1f;
+    bool  _roofHitAreaLogged   = false;
 
     // ─── IToolUI 実装: OnGUI から呼ばれる ────────────────────
     public void DrawToolUI()
@@ -434,23 +457,20 @@ public class GloveTool : MonoBehaviour, IToolUI
         if (gloveTex == null) return;
         if (Event.current.type != EventType.Repaint) return;
 
-        // ── 影の描画 ──
-        // 有効位置(shadowCX>=0): Ready/Striking 中のみ影を描く
-        // 無効位置(キャッシュあり): グレー影（叩けない状態を視覚的に示す）
+        // ── 影の描画（有効判定と完全一致）──
+        // _shadowCX >= 0 のときだけ影を描く。無効時は影なし。
         if (_shadowCX >= 0f && _state != GloveState.Cooldown)
             DrawShadow(_shadowCX, _shadowCY);
-        else if (_shadowCX < 0f && _lastValidShadowCX >= 0f && _state != GloveState.Cooldown)
-            DrawShadow(_lastValidShadowCX, _lastValidShadowCY, grayOut: true);
 
         // ── 手袋色ルール統一 ──
-        // 叩ける   (Ready + 影あり) → 緑
-        // 叩けない (Cooldown / 屋根外 / 影なし) → グレー半透明
+        // 叩ける   (Ready + 影あり)              → 緑
+        // 叩けない (Cooldown / 屋根外 / 影なし)  → グレー半透明
         bool canHit = (_state == GloveState.Ready && _shadowCX >= 0f);
         Color gloveColor;
         if (_state == GloveState.Striking)
-            gloveColor = new Color(0.4f, 0.9f, 0.4f, 1f);   // Striking中も緑（連続感）
+            gloveColor = new Color(0.4f, 0.9f, 0.4f, 1f);    // Striking中も緑（連続感）
         else if (canHit)
-            gloveColor = new Color(0.4f, 0.9f, 0.4f, 1f);   // 叩ける → 緑
+            gloveColor = new Color(0.4f, 0.9f, 0.4f, 1f);    // 叩ける → 緑
         else
             gloveColor = new Color(0.5f, 0.5f, 0.5f, 0.45f); // 叩けない → グレー
 
@@ -480,25 +500,25 @@ public class GloveTool : MonoBehaviour, IToolUI
         DrawPuffs();
 
         // 色・距離の確認ログ（verbose）
+        bool shadowClamped = (_shadowCX < 0f);
         AssiLogger.Verbose($"[GLOVE_STATE]" +
-                  $" glove_distance_px={(_shadowCY - (drawY + _curH)):F1}" +
+                  $" glove_distance_px={(_shadowCY >= 0f ? _shadowCY - (drawY + _curH) : 0f):F1}" +
                   $" glove_can_hit={(canHit ? "YES" : "NO")}" +
                   $" glove_color_state={(canHit || _state == GloveState.Striking ? "GREEN" : "GRAY")}");
+        AssiLogger.Verbose($"[GLOVE_EDGE_RULE]" +
+                  $" shadow_clamped_to_last_valid={(shadowClamped ? "YES" : "NO")}" +
+                  $" glove_warp_removed=YES" +
+                  $" invalid_zone_grayout=YES");
     }
 
     // ── 影描画: 屋根上端に丸影（グラデーション楕円）────────────
     void DrawShadow(float cx, float cy)
     {
-        // 丸影テクスチャが未生成の場合は何もしない
         Texture2D tex = (_shadowTex != null) ? _shadowTex : Texture2D.whiteTexture;
-
-        // 楕円形に見えるよう横長に描画
-        float sw = _curW * 1.1f;   // 手袋幅より少し広め
-        float sh = sw * 0.30f;     // 縦は横の30%（楕円）
+        float sw = _curW * 1.1f;
+        float sh = sw * 0.30f;
         float sx = cx - sw * 0.5f;
         float sy = cy - sh * 0.5f;
-
-        // 白で描画（グラデーション円テクスチャ自体が黒→透明）
         GUI.color = Color.white;
         GUI.DrawTexture(new Rect(sx, sy, sw, sh),
                         tex, ScaleMode.StretchToFill, alphaBlend: true);

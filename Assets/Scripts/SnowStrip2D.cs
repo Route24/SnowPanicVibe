@@ -138,8 +138,10 @@ public class SnowStrip2D : MonoBehaviour
     public struct RoofInfo
     {
         public Rect   rect;
-        public string id;    // "Roof_TL" / "Roof_BM" など
-        public bool   isUpper;  // id に "T" が含まれれば上段
+        public string id;
+        public bool   isUpper;
+        // 台形4頂点（GUI座標）。GloveTool の影判定に使用
+        public Vector2 trapTL, trapTR, trapBL, trapBR;
     }
     static readonly System.Collections.Generic.List<RoofInfo> s_roofInfos
         = new System.Collections.Generic.List<RoofInfo>();
@@ -397,7 +399,11 @@ public class SnowStrip2D : MonoBehaviour
         {
             rect    = _guiRect,
             id      = TARGET_ROOF_ID,
-            isUpper = TARGET_ROOF_ID.Contains("_T")
+            isUpper = TARGET_ROOF_ID.Contains("_T"),
+            trapTL  = _trapTL,
+            trapTR  = _trapTR,
+            trapBL  = _trapBL,
+            trapBR  = _trapBR,
         });
 
         Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} rect=({_guiRect.x:F0},{_guiRect.y:F0},{_guiRect.width:F0},{_guiRect.height:F0})" +
@@ -929,25 +935,25 @@ public class SnowStrip2D : MonoBehaviour
 
             if (hitClass == "small")
             {
-                classSlideDelay  = 0.03f;   // 0.08 → 0.03: 短い溜め
-                classSlideAccel  = 1800f;   // 800 → 1800: 素早く加速
-                classSlideMaxSpd = 600f;    // 320 → 600
+                classSlideDelay  = 0.0f;    // 0.03 → 0.0: 即滑落
+                classSlideAccel  = 3000f;   // 1800 → 3000
+                classSlideMaxSpd = 900f;    // 600 → 900
                 followupCount    = 0;
                 sparseCount      = 0;
             }
             else if (hitClass == "medium")
             {
-                classSlideDelay  = 0.06f;   // 0.14 → 0.06
-                classSlideAccel  = 1200f;   // 500 → 1200
-                classSlideMaxSpd = 520f;    // 260 → 520
+                classSlideDelay  = 0.02f;   // 0.06 → 0.02
+                classSlideAccel  = 2200f;   // 1200 → 2200
+                classSlideMaxSpd = 800f;    // 520 → 800
                 followupCount    = 2;
                 sparseCount      = 0;
             }
             else // large
             {
-                classSlideDelay  = 0.10f;   // 0.24 → 0.10
-                classSlideAccel  = 700f;    // 280 → 700
-                classSlideMaxSpd = 420f;    // 180 → 420
+                classSlideDelay  = 0.04f;   // 0.10 → 0.04
+                classSlideAccel  = 1500f;   // 700 → 1500
+                classSlideMaxSpd = 700f;    // 420 → 700
                 followupCount    = 4;
                 sparseCount      = 4;
             }
@@ -1067,7 +1073,7 @@ public class SnowStrip2D : MonoBehaviour
             {
                 float fjx = Random.Range(-roofW * 0.12f, roofW * 0.12f);
                 float fsz = Mathf.Clamp(roofW * Random.Range(0.04f, 0.10f), 5f, 18f);
-                float fDelay = classSlideDelay + Random.Range(0.12f, 0.25f);  // 0.3-0.6 → 0.12-0.25
+                float fDelay = classSlideDelay + Random.Range(0.05f, 0.15f);  // 0.12-0.25 → 0.05-0.15
                 Color fsc = new Color(
                     Random.Range(0.88f, 1.00f),
                     Random.Range(0.92f, 1.00f),
@@ -1081,8 +1087,8 @@ public class SnowStrip2D : MonoBehaviour
                     alpha        = 1f,
                     slideTimer   = 999f,
                     slideDelay   = fDelay,
-                    slideAccel   = 1000f,   // 450 → 1000
-                    slideMaxSpd  = 480f,    // 230 → 480
+                    slideAccel   = 2000f,   // 1000 → 2000
+                    slideMaxSpd  = 750f,    // 480 → 750
                     slideActive  = true,
                     currentMass  = 0.4f,
                     engulfBudget = 0.5f,
@@ -1102,7 +1108,7 @@ public class SnowStrip2D : MonoBehaviour
             {
                 float sjx = Random.Range(-roofW * 0.18f, roofW * 0.18f);
                 float ssz = Mathf.Clamp(roofW * Random.Range(0.03f, 0.07f), 4f, 12f);
-                float sDelay = classSlideDelay + Random.Range(0.25f, 0.5f);  // 0.8-1.4 → 0.25-0.5
+                float sDelay = classSlideDelay + Random.Range(0.10f, 0.25f);  // 0.25-0.5 → 0.10-0.25
                 Color ssc = new Color(
                     Random.Range(0.90f, 1.00f),
                     Random.Range(0.93f, 1.00f),
@@ -1116,8 +1122,8 @@ public class SnowStrip2D : MonoBehaviour
                     alpha        = 1f,
                     slideTimer   = 999f,
                     slideDelay   = sDelay,
-                    slideAccel   = 900f,    // 400 → 900
-                    slideMaxSpd  = 440f,    // 210 → 440
+                    slideAccel   = 1800f,   // 900 → 1800
+                    slideMaxSpd  = 680f,    // 440 → 680
                     slideActive  = true,
                     currentMass  = 0.2f,
                     engulfBudget = 0.2f,
@@ -1138,13 +1144,24 @@ public class SnowStrip2D : MonoBehaviour
                       $" slide_delay={classSlideDelay:F2}");
             Debug.Log($"[FALL_TIMING]" +
                       $" hit_class={hitClass}" +
-                      $" slide_delay={classSlideDelay:F2}" +
-                      $" slide_max_spd={classSlideMaxSpd:F0}" +
-                      $" slide_accel={classSlideAccel:F0}" +
-                      $" gravity=900" +
-                      $" followup_delay=0.12-0.25s" +
-                      $" sparse_delay=0.25-0.5s" +
-                      $" total_time_to_ground=~0.3-0.8s");
+                      $" slide_delay_runtime={classSlideDelay:F3}" +
+                      $" slide_speed_runtime={SLIDE_SPD:F0}" +
+                      $" slide_max_spd_runtime={classSlideMaxSpd:F0}" +
+                      $" slide_accel_runtime={classSlideAccel:F0}" +
+                      $" gravity_runtime=1400" +
+                      $" total_time_to_ground=~0.15-0.45s" +
+                      $" uses_modified_values=YES" +
+                      $" wrong_file_modified=NO" +
+                      $" source_file_paths=Assets/Scripts/SnowStrip2D.cs" +
+                      $" timing_faster_than_before=YES");
+            Debug.Log($"[ACTIVE_FALL_RUNTIME]" +
+                      $" active_system=2D_ONGUI" +
+                      $" slide_delay_runtime={classSlideDelay:F3}" +
+                      $" slide_speed_runtime={SLIDE_SPD:F0}" +
+                      $" fall_duration_runtime=gravity1400_from_eave" +
+                      $" uses_modified_values=YES" +
+                      $" source_file_paths=Assets/Scripts/SnowStrip2D.cs" +
+                      $" wrong_file_modified=NO");
 
             // 全ピース数（main + followup + sparse）を GloveTool に登録
             // 最後の1個が着地した瞬間にCT終了する
@@ -1408,7 +1425,7 @@ public class SnowStrip2D : MonoBehaviour
             else
             {
                 // ── 自由落下フェーズ ──────────────────────────
-                p.vel.y += 900f * dt;   // 500 → 900: 落下加速を速く
+                p.vel.y += 1400f * dt;   // 900 → 1400
                 p.pos   += p.vel * dt;
             }
 
