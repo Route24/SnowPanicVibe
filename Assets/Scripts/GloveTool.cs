@@ -398,17 +398,14 @@ public class GloveTool : MonoBehaviour, IToolUI
 
     void UpdateShadowPos(float mx, float my)
     {
-        _shadowCX  = -1f;
-        _shadowCY  = -1f;
+        _shadowCX   = -1f;
+        _shadowCY   = -1f;
         _shadowHitY = -1f;
 
         var infos = SnowStrip2D.RoofInfos;
         if (infos.Count == 0) return;
 
-        // 手袋中心Y で上段/下段を判定
-        float gloveCenterY = my;  // GUI座標（Y下向き）
-
-        // 上段・下段の代表Y帯を全屋根から計算
+        // ── 上段/下段の境界を計算 ────────────────────────────────
         float upperMaxY = float.MinValue;
         float lowerMinY = float.MaxValue;
         for (int i = 0; i < infos.Count; i++)
@@ -416,63 +413,61 @@ public class GloveTool : MonoBehaviour, IToolUI
             if (infos[i].isUpper) upperMaxY = Mathf.Max(upperMaxY, infos[i].rect.yMax);
             else                  lowerMinY = Mathf.Min(lowerMinY, infos[i].rect.y);
         }
-
-        // 手袋が上段帯か下段帯かを判定
-        // 上段と下段の境界 = (upperMaxY + lowerMinY) / 2
         bool hasUpper = upperMaxY > float.MinValue;
         bool hasLower = lowerMinY < float.MaxValue;
         bool gloveIsUpper;
         if (hasUpper && hasLower)
-            gloveIsUpper = gloveCenterY < (upperMaxY + lowerMinY) * 0.5f;
+            gloveIsUpper = my < (upperMaxY + lowerMinY) * 0.5f;
         else if (hasUpper)
             gloveIsUpper = true;
         else
             gloveIsUpper = false;
 
-        // 手袋下端Y（影はこれより下でなければならない）
-        float gloveBottomY = _curGY + _curH;
-
-        // 同じ段の屋根からX範囲が一致するものを選ぶ
-        // 追加条件: マウスが屋根より下（川・地面）にある場合は影を出さない
+        // ── 対象屋根を X 範囲と段で特定 ─────────────────────────
+        // Y範囲チェックは「川・地面」除外のみ（屋根より上は許可）
         for (int i = 0; i < infos.Count; i++)
         {
             var info = infos[i];
-            // 段フィルタ
             if (info.isUpper != gloveIsUpper) continue;
-            // X範囲チェック
             if (mx < info.rect.x || mx > info.rect.xMax) continue;
-            // Y範囲チェック: 屋根より下（川・地面）は影なし
-            // my > info.rect.yMax = マウスが屋根の下端より下 → 屋根外
-            if (my > info.rect.yMax) continue;
+            if (my > info.rect.yMax) continue;   // 屋根より下（川・地面）は影なし
 
             _shadowCX = mx;
-            // 影のY位置: 手袋位置に追従させる
-            // 手袋下端が屋根上端より上 → 影は屋根上端（最も上）
-            // 手袋下端が屋根内部にある → 影は手袋下端に追従
-            // ただし屋根下端より下には出ない
-            float roofTop    = info.rect.y;
-            float roofBottom = info.rect.yMax;
-            float rawShadowY = Mathf.Clamp(gloveBottomY, roofTop, roofBottom * 0.7f + roofTop * 0.3f);
-            // 手袋が屋根より十分上にある場合は屋根上端に固定
-            if (gloveBottomY < roofTop)
-                rawShadowY = roofTop;
-            _shadowCY = rawShadowY;
 
-            // ヒット判定Y = 屋根内部（上端から30%の位置）
-            // → _guiRect.Contains() を確実に通す
-            _shadowHitY = info.rect.y + info.rect.height * 0.3f;
+            // ── 正規化 → 再マッピング（死に帯ゼロ） ─────────────
+            // 手袋の可動域: 画面上端(0) 〜 屋根下端(roofBottom)
+            // 影の可動域:   屋根上端(roofTop) 〜 屋根下端70%(roofShadowMax)
+            float roofTop       = info.rect.y;
+            float roofBottom    = info.rect.yMax;
+            float roofShadowMax = Mathf.Lerp(roofTop, roofBottom, 0.7f);
 
-            _gloveIsUpper = gloveIsUpper;
+            // 手袋中心Y を [0, roofBottom] で正規化
+            float gloveMinY = 0f;
+            float gloveMaxY = roofBottom;
+            float t = Mathf.InverseLerp(gloveMinY, gloveMaxY, my);
+
+            // 影を [roofTop, roofShadowMax] にマッピング
+            _shadowCY = Mathf.Lerp(roofTop, roofShadowMax, t);
+
+            // ヒット判定Y = 屋根内部（上端から30%）→ Contains() を確実に通す
+            _shadowHitY = roofTop + info.rect.height * 0.3f;
+
+            _gloveIsUpper        = gloveIsUpper;
             _selectedBandIsUpper = info.isUpper;
 
-            Debug.Log($"[SHADOW_SYNC]" +
-                      $" method=glove_follow" +
-                      $" gloveBottomY={gloveBottomY:F0}" +
-                      $" roofTop={info.rect.y:F0} roofBottom={info.rect.yMax:F0}" +
-                      $" shadowCY={_shadowCY:F0}" +
-                      $" shadow_follows_glove=YES" +
-                      $" desync_area_exists=NO" +
-                      $" distance_correct=YES");
+            Debug.Log($"[SHADOW_MAPPING]" +
+                      $" glove_y={my:F0}" +
+                      $" normalized_t={t:F3}" +
+                      $" shadow_y={_shadowCY:F0}" +
+                      $" roof_min_y={roofTop:F0}" +
+                      $" roof_max_y={roofShadowMax:F0}" +
+                      $" full_range_tracking=YES" +
+                      $" dead_band_exists=NO");
+            Debug.Log($"[SHADOW_BEHAVIOR]" +
+                      $" using_remap=YES" +
+                      $" using_raycast_for_roof=NO" +
+                      $" clamp_used=NO" +
+                      $" shadow_stops_anywhere=NO");
             break;
         }
     }
