@@ -455,8 +455,8 @@ public class GloveTool : MonoBehaviour, IToolUI
             _gloveIsUpper        = gloveIsUpper;
             _selectedBandIsUpper = info.isUpper;
 
-            // 影Y が 5px 以上変化したときのみログ出力（毎フレーム連打を防ぐ）
-            if (Mathf.Abs(_shadowCY - _lastLoggedShadowCY) >= 5f)
+            // 影Y が 30px 以上変化したときのみログ出力（毎フレーム連打を防ぐ）
+            if (Mathf.Abs(_shadowCY - _lastLoggedShadowCY) >= 30f)
             {
                 _lastLoggedShadowCY = _shadowCY;
                 Debug.Log($"[SHADOW_MAPPING]" +
@@ -467,11 +467,6 @@ public class GloveTool : MonoBehaviour, IToolUI
                           $" roof_max_y={roofShadowMax:F0}" +
                           $" full_range_tracking=YES" +
                           $" dead_band_exists=NO");
-                Debug.Log($"[SHADOW_BEHAVIOR]" +
-                          $" using_remap=YES" +
-                          $" using_raycast_for_roof=NO" +
-                          $" clamp_used=NO" +
-                          $" shadow_stops_anywhere=NO");
             }
             break;
         }

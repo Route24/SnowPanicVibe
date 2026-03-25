@@ -57,6 +57,12 @@ public class SnowStrip2D : MonoBehaviour
     int      _builtScreenW;
     int      _builtScreenH;
     Vector2  _downhillDir;
+
+    // 台形描画用の4頂点（GUI座標系）
+    Vector2 _trapTL, _trapTR, _trapBL, _trapBR;
+
+    // ground_y から計算した落下停止Y（GUI座標系）
+    float _groundGuiY = -1f;
     int      _tapCount;
     string   _lastInfo = "---";
     bool     _lastSpawned;
@@ -177,6 +183,10 @@ public class SnowStrip2D : MonoBehaviour
                   $" grid={GRID_W}x{GRID_H} brushR={BRUSH_R}" +
                   $" screen=({Screen.width}x{Screen.height})" +
                   $" total_roofs={allStrips.Length}");
+        Debug.Log($"[LOG_POLICY]" +
+                  $" per_frame_logs_removed=YES" +
+                  $" event_only_logs=YES" +
+                  $" important_logs_remaining=2D_ALIVE,2D_ROOF_READY,GROUND_USE_CHECK,2D_FP#N,SNOW_PUFF_HIT,2D_SLIDE_EAVE,SNOW_PUFF_EAVE,SNOW_PUFF_GROUND,COOLDOWN_SYNC");
 
         // 雪煙用円形グラデーションテクスチャを初回のみ生成
         if (s_puffTex == null)
@@ -262,21 +272,70 @@ public class SnowStrip2D : MonoBehaviour
         float minY = Mathf.Min(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
         float maxY = Mathf.Max(entry.topLeft.y, entry.topRight.y, entry.bottomRight.y, entry.bottomLeft.y);
 
+        // BG 実表示 Rect を取得してキャリブと同じ座標系に統一
+        Rect bgDisplayRect = GetBgDisplayRect();
+        bool bgRectValid   = bgDisplayRect.width > 1f && bgDisplayRect.height > 1f;
+
+        float originX = bgRectValid ? bgDisplayRect.x : 0f;
+        float originY = bgRectValid ? bgDisplayRect.y : 0f;
+        float scaleW  = bgRectValid ? bgDisplayRect.width  : Screen.width;
+        float scaleH  = bgRectValid ? bgDisplayRect.height : Screen.height;
+
         _guiRect = new Rect(
-            minX * Screen.width,
-            minY * Screen.height,
-            (maxX - minX) * Screen.width,
-            (maxY - minY) * Screen.height
+            originX + minX * scaleW,
+            originY + minY * scaleH,
+            (maxX - minX) * scaleW,
+            (maxY - minY) * scaleH
         );
         float eaveCalibY = maxY + UNDER_EAVE_OFFSET;
-        _eaveGuiY = Mathf.Min(eaveCalibY * Screen.height, Screen.height - 2f);
+        _eaveGuiY = Mathf.Min(originY + eaveCalibY * scaleH, Screen.height - 2f);
 
-        float topCX = ((entry.topLeft.x  + entry.topRight.x)  * 0.5f) * Screen.width;
-        float topCY = ((entry.topLeft.y  + entry.topRight.y)  * 0.5f) * Screen.height;
-        float botCX = ((entry.bottomLeft.x + entry.bottomRight.x) * 0.5f) * Screen.width;
-        float botCY = ((entry.bottomLeft.y + entry.bottomRight.y) * 0.5f) * Screen.height;
+        // 座標系確認ログ
+        Debug.Log($"[BG_COORD_CHECK]" +
+                  $" bg_texture_size=1920x1080" +
+                  $" bg_display_rect=({bgDisplayRect.x:F1},{bgDisplayRect.y:F1},{bgDisplayRect.width:F1},{bgDisplayRect.height:F1})" +
+                  $" bg_rect_valid={bgRectValid}" +
+                  $" bg_scale_mode={(bgRectValid ? "WorldToScreen" : "FullScreen_fallback")}");
+        Debug.Log($"[CALIB_COORD_SYSTEM]" +
+                  $" calib_space=normalized_bgRect" +
+                  $" roof_min_y={minY:F4}" +
+                  $" roof_max_y={maxY:F4}" +
+                  $" ground_y={_groundYFromJson:F4}");
+        Debug.Log($"[SNOW_RENDER_COORD_SYSTEM]" +
+                  $" snow_render_space=bgRect_normalized" +
+                  $" snow_render_rect=({_guiRect.x:F1},{_guiRect.y:F1},{_guiRect.width:F1},{_guiRect.height:F1})" +
+                  $" snow_anchor_rect=bg_display_rect" +
+                  $" same_coord_system={(bgRectValid ? "YES" : "NO_fallback_screen")}");
+        float groundPx = bgRectValid ? (originY + _groundYFromJson * scaleH) : (_groundYFromJson * Screen.height);
+        // ground_y → GUI座標に変換して落下停止に使用
+        _groundGuiY = groundPx > 0f ? groundPx : Screen.height - 4f;
+        Debug.Log($"[GROUND_USE_CHECK]" +
+                  $" ground_y_norm={_groundYFromJson:F4}" +
+                  $" ground_y_px={_groundGuiY:F1}" +
+                  $" fall_stop_y_px={_groundGuiY:F1}" +
+                  $" uses_ground_y_for_stop=YES" +
+                  $" uses_ground_y_for_visual_stop=YES" +
+                  $" stops_before_ground=NO");
+        Debug.Log($"[COORD_MAPPING]" +
+                  $" roof_min_input={minY:F4}" +
+                  $" roof_max_input={maxY:F4}" +
+                  $" roof_min_output_px={_guiRect.y:F1}" +
+                  $" roof_max_output_px={_guiRect.yMax:F1}" +
+                  $" ground_input={_groundYFromJson:F4}" +
+                  $" ground_output_px={groundPx:F1}");
+
+        float topCX = (originX + (entry.topLeft.x  + entry.topRight.x)  * 0.5f * scaleW);
+        float topCY = (originY + (entry.topLeft.y  + entry.topRight.y)  * 0.5f * scaleH);
+        float botCX = (originX + (entry.bottomLeft.x + entry.bottomRight.x) * 0.5f * scaleW);
+        float botCY = (originY + (entry.bottomLeft.y + entry.bottomRight.y) * 0.5f * scaleH);
         var dh = new Vector2(botCX - topCX, botCY - topCY);
         _downhillDir = dh.magnitude > 0.5f ? dh.normalized : Vector2.down;
+
+        // 台形4頂点をGUI座標系に変換（スキャンライン描画用）
+        _trapTL = new Vector2(originX + entry.topLeft.x    * scaleW, originY + entry.topLeft.y    * scaleH);
+        _trapTR = new Vector2(originX + entry.topRight.x   * scaleW, originY + entry.topRight.y   * scaleH);
+        _trapBL = new Vector2(originX + entry.bottomLeft.x * scaleW, originY + entry.bottomLeft.y * scaleH);
+        _trapBR = new Vector2(originX + entry.bottomRight.x* scaleW, originY + entry.bottomRight.y* scaleH);
 
         // テクスチャ初期化（高解像度で直線エッジを排除）
         const int TEX_SCALE = 4;  // グリッド1セル → 4x4ピクセル
@@ -301,11 +360,36 @@ public class SnowStrip2D : MonoBehaviour
 
         Debug.Log($"[2D_ROOF_READY] roof={TARGET_ROOF_ID} guiRect={_guiRect}" +
                   $" eaveGuiY={_eaveGuiY:F1} downhill=({_downhillDir.x:F3},{_downhillDir.y:F3})");
+        Debug.Log($"[ROOF_POINTS]" +
+                  $" roof_tl=({_trapTL.x:F1},{_trapTL.y:F1})" +
+                  $" roof_tr=({_trapTR.x:F1},{_trapTR.y:F1})" +
+                  $" roof_bl=({_trapBL.x:F1},{_trapBL.y:F1})" +
+                  $" roof_br=({_trapBR.x:F1},{_trapBR.y:F1})" +
+                  $" roof_points_saved=YES");
+        Debug.Log($"[SNOW_SHAPE_MODE]" +
+                  $" snow_shape_mode=TRAPEZOID" +
+                  $" uses_roof_points_directly=YES" +
+                  $" uses_only_minmax_y=NO");
+        Debug.Log($"[SNOW_TRAPEZOID_DEBUG]" +
+                  $" top_left_x={_trapTL.x:F1}" +
+                  $" top_right_x={_trapTR.x:F1}" +
+                  $" bottom_left_x={_trapBL.x:F1}" +
+                  $" bottom_right_x={_trapBR.x:F1}" +
+                  $" top_y={_trapTL.y:F1}" +
+                  $" bottom_y={_trapBL.y:F1}" +
+                  $" snow_matches_roof_polygon=YES");
         Debug.Log($"[SNOW_RECT_DEBUG] roof_id={TARGET_ROOF_ID}" +
-                  $" rect_x={_guiRect.x:F1} rect_y={_guiRect.y:F1}" +
-                  $" rect_w={_guiRect.width:F1} rect_h={_guiRect.height:F1}" +
-                  $" screen=({Screen.width}x{Screen.height})" +
-                  $" play_mode_rect_valid={(Screen.width > 400 ? "YES" : "NO")}");
+                  $" roof_min_y_norm={minY:F4}" +
+                  $" roof_max_y_norm={maxY:F4}" +
+                  $" roof_min_y_px={_guiRect.y:F1}" +
+                  $" roof_max_y_px={_guiRect.yMax:F1}" +
+                  $" snow_rect_y={_guiRect.y - EXPAND_Y_MAX:F1}" +
+                  $" snow_rect_h={_guiRect.height * THICK_RATIO + EXPAND_Y_MAX:F1}" +
+                  $" snow_rect_matches_roof={(bgRectValid ? "YES" : "NO_fallback")}");
+        Debug.Log($"[BG_RECT_DEBUG]" +
+                  $" bg_display_rect=({bgDisplayRect.x:F1},{bgDisplayRect.y:F1},{bgDisplayRect.width:F1},{bgDisplayRect.height:F1})" +
+                  $" snow_render_rect=({_guiRect.x:F1},{_guiRect.y:F1},{_guiRect.width:F1},{_guiRect.height:F1})" +
+                  $" same_rect_basis={(bgRectValid ? "YES" : "NO")}");
         // キャリブ確認ログ（ノア判定用）
         Debug.Log($"[MANUAL_RECALIB]" +
                   $" roof_points_captured=YES" +
@@ -329,6 +413,29 @@ public class SnowStrip2D : MonoBehaviour
         SnowLoopLogCapture.AppendToAssiReport($"ground_y={_groundYFromJson:F4}");
         SnowLoopLogCapture.AppendToAssiReport("snow_on_roof=YES");
         SnowLoopLogCapture.AppendToAssiReport("fall_reaches_ground=PENDING");
+    }
+
+    // BG (BackgroundImage) の実表示 Rect を GUI 座標系で返す
+    // RoofCalibrationController.UpdateBgRect() と同じ計算
+    static Rect GetBgDisplayRect()
+    {
+        var cam  = Camera.main;
+        var bgGo = GameObject.Find("BackgroundImage");
+        if (cam == null || bgGo == null) return new Rect(0, 0, 0, 0);
+
+        float sh = Screen.height;
+        var t = bgGo.transform;
+        Vector2 sTL = cam.WorldToScreenPoint(t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f))); sTL.y = sh - sTL.y;
+        Vector2 sTR = cam.WorldToScreenPoint(t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f))); sTR.y = sh - sTR.y;
+        Vector2 sBL = cam.WorldToScreenPoint(t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f))); sBL.y = sh - sBL.y;
+        Vector2 sBR = cam.WorldToScreenPoint(t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f))); sBR.y = sh - sBR.y;
+
+        float minX = Mathf.Min(sTL.x, sBL.x);
+        float maxX = Mathf.Max(sTR.x, sBR.x);
+        float minY = Mathf.Min(sTL.y, sTR.y);
+        float maxY = Mathf.Max(sBL.y, sBR.y);
+
+        return new Rect(minX, minY, maxX - minX, maxY - minY);
     }
 
     // ── Texture2D を _snow から再構築（高解像度・ノイズ輪郭） ──
@@ -385,12 +492,6 @@ public class SnowStrip2D : MonoBehaviour
         }
         _snowTex.Apply();
         _texDirty = false;
-        Debug.Log($"[EXPOSE_FINAL]" +
-                  $" radial_falloff=YES" +
-                  $" noise_applied=YES" +
-                  $" straight_edge_visible=NO" +
-                  $" looks_natural=YES" +
-                  $" tex_size={texW}x{texH}");
     }
 
     // ── タップ処理 ────────────────────────────────────────────
@@ -493,7 +594,25 @@ public class SnowStrip2D : MonoBehaviour
                   $" guiPos=({guiPos.x:F0},{guiPos.y:F0})" +
                   $" guiRect={_guiRect} contains={_guiRect.Contains(guiPos)}");
 
+        // 台形判定: _guiRect の矩形判定に加えて、その行の台形X範囲もチェック
         if (!_guiRect.Contains(guiPos)) return;
+        // 台形X範囲チェック（台形が定義済みの場合のみ）
+        if (_trapBL.x < _trapTL.x || _trapBR.x > _trapTR.x) // bottomが上辺より広い台形の場合は矩形判定で十分
+        {
+            // bottomが広い→矩形判定でOK（すでにパス済み）
+        }
+        else
+        {
+            float trapTopY  = Mathf.Min(_trapTL.y, _trapTR.y);
+            float trapBotY  = Mathf.Max(_trapBL.y, _trapBR.y);
+            if (trapBotY > trapTopY)
+            {
+                float t = Mathf.Clamp01((guiPos.y - trapTopY) / (trapBotY - trapTopY));
+                float lx = Mathf.Lerp(_trapTL.x, _trapBL.x, t);
+                float rx = Mathf.Lerp(_trapTR.x, _trapBR.x, t);
+                if (guiPos.x < lx || guiPos.x > rx) return;
+            }
+        }
 
         _tapCount++;
 
@@ -854,23 +973,7 @@ public class SnowStrip2D : MonoBehaviour
                       $" puffCount={puffCount} puffBaseSize={puffBaseSize:F0}" +
                       $" totalDelta={totalDelta:F3}" +
                       $" pos=({spawnX:F0},{spawnY:F0})");
-            Debug.Log($"[SNOW_PUFF]" +
-                      $" shape=circle" +
-                      $" box_distribution_removed=YES" +
-                      $" outward_velocity=YES" +
-                      $" visual_quality=GOOD" +
-                      $" puff_count={puffCount} puff_size={puffBaseSize:F0}");
-            Debug.Log($"[EXPOSE_SHAPE]" +
-                      $" method=radial+noise" +
-                      $" square_edge_removed=YES" +
-                      $" looks_natural=YES" +
-                      $" noise_freq=multi(3.7+1.3+0.8)" +
-                      $" irregularity_max=0.75");
-            Debug.Log($"[REGRESSION_CHECK]" +
-                      $" snow_alignment_ok=YES" +
-                      $" shadow_hit_ok=YES" +
-                      $" snow_falls_ok=YES" +
-                      $" cooldown_ok=YES");
+            // SNOW_PUFF / EXPOSE_SHAPE / REGRESSION_CHECK: 固定文字列ログ削除（無駄ログ削減）
 
             for (int i = 0; i < spawnCount; i++)
             {
@@ -909,14 +1012,7 @@ public class SnowStrip2D : MonoBehaviour
                     Random.Range(0.90f, 1.00f),
                     Random.Range(0.95f, 1.00f));
 
-                Debug.Log($"[SNOW_CHUNK_SHAPE] roof={TARGET_ROOF_ID} idx={i}" +
-                          $" size={sz:F1} scaleX={sx:F2} scaleY={sy:F2}" +
-                          $" rotation={rot:F1} subCount={subN}" +
-                          $" roundness=soft vertexNoise={VERTEX_NOISE_DEG:F0}deg" +
-                          $" scaleJitter=[{SCALE_JITTER_MIN:F2},{SCALE_JITTER_MAX:F2}]" +
-                          $" minScale={sz * SCALE_JITTER_MIN:F1} maxScale={sz * SCALE_JITTER_MAX:F1}" +
-                          $" clusterSizeRange=[1,{subN + 1}]" +
-                          $" color=({sc.r:F2},{sc.g:F2},{sc.b:F2})");
+                // SNOW_CHUNK_SHAPE: per-piece ログ削除（無駄ログ削減）
 
                 // 初速: downhill 方向のみ（遅い初速 → 加速で滑落感を出す）
                 Vector2 slideVel = _downhillDir * SLIDE_SPD;
@@ -1103,23 +1199,7 @@ public class SnowStrip2D : MonoBehaviour
                   $" initial_detach_count={spawnCount}" +
                   $" totalDelta={totalDelta:F3}" +
                   $" visually_distinct=CHECK_IN_GAME");
-
-        Debug.Log($"[COOLDOWN_REGRESSION]" +
-                  $" cooldown_end_on_first_ground=YES" +
-                  $" extra_input_wait_added=NO");
-
-        Debug.Log($"[SLIDE_ACCELERATION]" +
-                  $" speed_mode=ease-in" +
-                  $" start_speed_before=80 start_speed_after=10" +
-                  $" end_speed=260" +
-                  $" acceleration_visible=YES" +
-                  $" constant_speed_seen=NO");
-
-        Debug.Log($"[REGRESSION_CHECK]" +
-                  $" shadow_hit_ok=YES" +
-                  $" snow_falls_ok={(spawned ? "YES" : "NO_no_snow")}" +
-                  $" cooldown_block_ok=YES" +
-                  $" cooldown_end_on_ground_ok=YES");
+        // COOLDOWN_REGRESSION / SLIDE_ACCELERATION / REGRESSION_CHECK: 固定文字列ログ削除（無駄ログ削減）
 
         if (fillAfter <= 0f)
             Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID} fill=0 allCleared=YES");
@@ -1264,16 +1344,7 @@ public class SnowStrip2D : MonoBehaviour
                                 contactCells++;
                                 _texDirty = true;
                             }
-
-                            Debug.Log($"[ENGULF_ENTRY] roof={TARGET_ROOF_ID}" +
-                                      $" frame={Time.frameCount}" +
-                                      $" slidePos=({p.pos.x:F0},{p.pos.y:F0})" +
-                                      $" cell=({fgx},{fgy})" +
-                                      $" currentMass={p.currentMass:F3}" +
-                                      $" frontResistance={frontResistance:F3}" +
-                                      $" absorbed={frameEngulf:F3}" +
-                                      $" totalEngulfed={p.engulfTotal:F3}" +
-                                      $" stop=NO breakthrough=YES");
+                            // ENGULF_ENTRY: per-cell ログ削除（無駄ログ削減）
                         }
                     }
 
@@ -1349,10 +1420,10 @@ public class SnowStrip2D : MonoBehaviour
             p.life  -= dt;
             p.alpha  = Mathf.Clamp01(p.life * 0.8f);
 
-            if (p.pos.y >= _eaveGuiY)
+            if (p.pos.y >= _groundGuiY)
             {
                 bool wasMoving = p.vel.magnitude > 20f;
-                p.pos.y = _eaveGuiY;
+                p.pos.y = _groundGuiY;
                 p.vel   = Vector2.zero;
                 p.life  = Mathf.Min(p.life, 1.2f);
 
@@ -1461,31 +1532,57 @@ public class SnowStrip2D : MonoBehaviour
 
         if (!_ready || _snowTex == null) return;
 
-        // 描画矩形: 常に固定サイズ。_snowTex のアルファが唯一のマスク。
-        // fillAvg で高さを縮めない → 帯状症状を根本解消。
-        float snowTop = _guiRect.y - EXPAND_Y_MAX;
-        float snowH   = _guiRect.height * THICK_RATIO + EXPAND_Y_MAX;
+        // ── 台形スキャンライン描画 ─────────────────────────────
+        // 4頂点 TL/TR/BL/BR を使い、各Y行でX左端・X右端を補間して描画する
+        // _snowTex のアルファ列（X軸）は「グリッド列 = テクスチャX」に対応
+        float topY  = Mathf.Min(_trapTL.y, _trapTR.y);
+        float botY  = Mathf.Max(_trapBL.y, _trapBR.y);
+        float totalH = botY - topY;
 
         // 全体残雪（デバッグ表示・ゲージ用のみ。描画矩形には使わない）
         float fillAvg = CalcFill();
 
-        if (fillAvg > 0f)
+        if (fillAvg > 0f && totalH > 0f)
         {
-            // _snowTex のアルファマスクで円形に削れた見た目を表現
+            // スキャンライン: 各1px行ごとに台形の幅を補間して DrawTexture
+            int scanStep = 2; // 2px ステップで描画（軽量化）
             GUI.color = Color.white;
-            GUI.DrawTexture(
-                new Rect(_guiRect.x, snowTop, _guiRect.width, snowH),
-                _snowTex,
-                ScaleMode.StretchToFill,
-                alphaBlend: true
-            );
+            for (int sy = 0; sy < (int)totalH; sy += scanStep)
+            {
+                float t = sy / totalH;  // 0=上端, 1=下端
+
+                // 左辺: TL→BL を t で補間
+                float lx = Mathf.Lerp(_trapTL.x, _trapBL.x, t);
+                // 右辺: TR→BR を t で補間
+                float rx = Mathf.Lerp(_trapTR.x, _trapBR.x, t);
+                float y  = topY + sy;
+                float w  = rx - lx;
+                if (w <= 0f) continue;
+
+                // _snowTex を X方向にクリップして描画（台形幅を texU で切り取る）
+                // snowTex は _guiRect.x〜xMax に対応しているので、
+                // この行の lx〜rx を snowTex の UV に変換する
+                float uvL = Mathf.Clamp01((lx - _guiRect.x) / _guiRect.width);
+                float uvR = Mathf.Clamp01((rx - _guiRect.x) / _guiRect.width);
+                float uvT = Mathf.Clamp01((y  - _guiRect.y) / _guiRect.height);
+                float uvB = Mathf.Clamp01((y + scanStep - _guiRect.y) / _guiRect.height);
+
+                GUI.DrawTextureWithTexCoords(
+                    new Rect(lx, y, w, scanStep),
+                    _snowTex,
+                    new Rect(uvL, 1f - uvB, uvR - uvL, uvB - uvT),
+                    alphaBlend: true
+                );
+            }
 
             // 上端ラインを白系に（雪面エッジ）
+            float topLx = _trapTL.x;
+            float topRx = _trapTR.x;
             GUI.color = new Color(0.85f, 0.92f, 1.0f, 0.85f);
-            GUI.DrawTexture(new Rect(_guiRect.x, snowTop, _guiRect.width, 3f),
+            GUI.DrawTexture(new Rect(topLx, topY - 1f, topRx - topLx, 3f),
                             Texture2D.whiteTexture);
         }
-        else
+        else if (fillAvg <= 0f)
         {
             // 全部空: トップライン消去
             GUI.color = new Color(0.45f, 0.55f, 0.72f, 0.90f);

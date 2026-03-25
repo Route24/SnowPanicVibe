@@ -72,6 +72,28 @@ public class RoofCalibrationController : MonoBehaviour
     {
         _roof = new RoofPoints { id = "Roof_Main" };
         _fill = MakeTex(1, 1, Color.white);
+
+        // calibration_saved=YES の場合はゲームモードで起動（UIを出さない）
+        if (calibrationModeActive && File.Exists(SavePath))
+        {
+            var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(SavePath));
+            bool roofSaved   = sd != null && sd.roofs != null && sd.roofs.Count > 0 && sd.roofs[0].confirmed;
+            bool groundSaved = sd != null && sd.groundY > 0f;
+            if (roofSaved && groundSaved)
+            {
+                calibrationModeActive = false;
+                Debug.Log($"[CALIB_AUTO_OFF] calibration_saved=YES  play_starts_in_calibration_mode=NO  calibration_overlay_visible=NO");
+            }
+            else
+            {
+                Debug.Log($"[CALIB_AUTO_ON]  roof_saved={roofSaved} ground_saved={groundSaved}  play_starts_in_calibration_mode=YES");
+            }
+        }
+        else if (!calibrationModeActive)
+        {
+            Debug.Log($"[CALIB_AUTO_OFF] calibrationModeActive=false(inspector)  play_starts_in_calibration_mode=NO");
+        }
+
         Debug.Log("[CALIB] 1-roof mode  key1=roof  key2=ground  LClick=add  R=reset  S=save  L=load");
     }
 

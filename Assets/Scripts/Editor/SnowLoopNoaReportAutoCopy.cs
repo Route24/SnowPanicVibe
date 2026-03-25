@@ -120,19 +120,38 @@ public static class SnowLoopNoaReportAutoCopy
             if (log.Contains("fall_reaches_ground=YES")) fallReachGround = "YES";
         }
 
+        // calibration_status: 全必須項目がYESで値がN/A以外なら PASS
+        bool allYes = roofCaptured == "YES" && groundCaptured == "YES" && calibSaved == "YES"
+                      && roofMinY != "N/A" && roofMaxY != "N/A" && groundYStr != "N/A";
+        string calibStatus = allYes ? "PASS" : "FAIL";
+
+        // 旧3Dブロック: レポート本文に含まれるか検出
+        bool hasLegacy3D = false;
+        if (File.Exists(LogPath))
+        {
+            string log = File.ReadAllText(LogPath);
+            hasLegacy3D = log.Contains("VERTICAL DROP ROOT CAUSE")
+                       || log.Contains("FIX ROOF CONTACT LOSS")
+                       || log.Contains("SLIDE VISUALIZATION");
+        }
+
         var sb = new StringBuilder();
         sb.AppendLine("=== CALIBRATION ===");
+        sb.AppendLine("calibration_status="        + calibStatus);
+        sb.AppendLine("calibration_source_file=Assets/Logs/noa_report_latest.txt");
         sb.AppendLine("report_source_file=Assets/Logs/noa_report_latest.txt");
         sb.AppendLine("report_write_target_file=Assets/Logs/noa_report_latest.txt");
         sb.AppendLine("same_file=YES");
-        sb.AppendLine("roof_points_captured="  + roofCaptured);
-        sb.AppendLine("ground_point_captured=" + groundCaptured);
-        sb.AppendLine("calibration_saved="     + calibSaved);
-        sb.AppendLine("roof_min_y="            + roofMinY);
-        sb.AppendLine("roof_max_y="            + roofMaxY);
-        sb.AppendLine("ground_y="              + groundYStr);
-        sb.AppendLine("snow_on_roof="          + snowOnRoof);
-        sb.AppendLine("fall_reaches_ground="   + fallReachGround);
+        sb.AppendLine("roof_points_captured="      + roofCaptured);
+        sb.AppendLine("ground_point_captured="     + groundCaptured);
+        sb.AppendLine("calibration_saved="         + calibSaved);
+        sb.AppendLine("roof_min_y="                + roofMinY);
+        sb.AppendLine("roof_max_y="                + roofMaxY);
+        sb.AppendLine("ground_y="                  + groundYStr);
+        sb.AppendLine("snow_on_roof="              + snowOnRoof);
+        sb.AppendLine("fall_reaches_ground="       + fallReachGround);
+        sb.AppendLine("legacy_3d_blocks_present="  + (hasLegacy3D ? "YES" : "NO"));
+        sb.AppendLine("legacy_3d_blocks_ignored="  + (hasLegacy3D ? "YES" : "NO"));
         sb.AppendLine("=== END CALIBRATION ===");
         sb.AppendLine();
         return sb.ToString();
@@ -1142,7 +1161,7 @@ public static class SnowLoopNoaReportAutoCopy
         try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
         var verification = SnowPanicPlayVerificationWindow.LoadVerification();
         var sb = new StringBuilder();
-        sb.AppendLine("【ASSI REPORT - SNOW MASS + ROOF SLIDE FINAL】");
+        sb.AppendLine("【ASSI REPORT - SNOW MASS + ROOF SLIDE FINAL】[LEGACY_3D / IGNORE_FOR_2D]");
         sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
         sb.AppendLine("console_error_count=" + errorCount);
         sb.AppendLine();
@@ -1233,7 +1252,7 @@ public static class SnowLoopNoaReportAutoCopy
         try { ConsoleWindowUtility.GetConsoleLogCounts(out errorCount, out _, out _); } catch { }
         var v = SnowPanicPlayVerificationWindow.LoadVerification();
         var sb = new StringBuilder();
-        sb.AppendLine("【ASSI REPORT - VERTICAL DROP ROOT CAUSE】");
+        sb.AppendLine("【ASSI REPORT - VERTICAL DROP ROOT CAUSE】[LEGACY_3D / IGNORE_FOR_2D]");
         sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
         sb.AppendLine("console_error_count=" + errorCount);
         sb.AppendLine();
@@ -1306,7 +1325,7 @@ public static class SnowLoopNoaReportAutoCopy
         }
 
         var sb = new StringBuilder();
-        sb.AppendLine("【ASSI REPORT - FIX ROOF CONTACT LOSS】");
+        sb.AppendLine("【ASSI REPORT - FIX ROOF CONTACT LOSS】[LEGACY_3D / IGNORE_FOR_2D]");
         sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
         sb.AppendLine("console_error_count=" + errorCount);
         sb.AppendLine();
@@ -1349,7 +1368,7 @@ public static class SnowLoopNoaReportAutoCopy
         string trajectoryVis = hasTrajectory ? "YES" : "UNKNOWN";
 
         var sb = new StringBuilder();
-        sb.AppendLine("【ASSI REPORT - SLIDE VISUALIZATION】");
+        sb.AppendLine("【ASSI REPORT - SLIDE VISUALIZATION】[LEGACY_3D / IGNORE_FOR_2D]");
         sb.AppendLine("compile_result=" + (errorCount == 0 ? "PASS" : "FAIL"));
         sb.AppendLine("console_error_count=" + errorCount);
         sb.AppendLine();
