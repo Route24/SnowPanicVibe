@@ -2,7 +2,6 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.UI;
-// recompile trigger 2026-03-19
 
 /// <summary>
 /// WORK_SNOW シーン専用。
@@ -33,14 +32,10 @@ public class WorkSnowForcer : MonoBehaviour
     // RoofData.thickRatio に設定する。0 = NORMAL、この値 = THICK
     const float THICK_SNOW_RATIO = 0.65f;
 
+    // 1軒モード: Roof_Main のみ（旧6軒は Background_OneHouse 差し替えで廃止）
     static readonly (string calibId, string guideId)[] RoofPairs =
     {
-        ("Roof_TL", "RoofGuide_TL"),
-        ("Roof_TM", "RoofGuide_TM"),
-        ("Roof_TR", "RoofGuide_TR"),
-        ("Roof_BL", "RoofGuide_BL"),
-        ("Roof_BM", "RoofGuide_BM"),
-        ("Roof_BR", "RoofGuide_BR"),
+        ("Roof_Main", "RoofGuide_Main"),
     };
 
     static readonly Color SnowWhite = new Color(0.92f, 0.95f, 1f);
@@ -75,7 +70,7 @@ public class WorkSnowForcer : MonoBehaviour
         public float   collapseCharge;
         public float   instability;
     }
-    RoofData[] _roofs = new RoofData[6];
+    RoofData[] _roofs = new RoofData[1];
 
     // ── 落下中の雪塊（大きめ不定形）──────────────────────────
     enum PiecePhase { Sliding, Falling }
@@ -201,15 +196,10 @@ public class WorkSnowForcer : MonoBehaviour
             Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for ALL6 roofs");
         }
 
-        // SnowStrip 2D を全6軒に追加（各屋根ごとに専用 GameObject）
+        // SnowStrip 2D を Roof_Main に追加（1軒モード）
         var roofDefs = new (string roofId, string guideId)[]
         {
-            ("Roof_TL", "RoofGuide_TL"),
-            ("Roof_TM", "RoofGuide_TM"),
-            ("Roof_TR", "RoofGuide_TR"),
-            ("Roof_BL", "RoofGuide_BL"),
-            ("Roof_BM", "RoofGuide_BM"),
-            ("Roof_BR", "RoofGuide_BR"),
+            ("Roof_Main", "RoofGuide_Main"),
         };
 
         int applied = 0;
@@ -232,7 +222,7 @@ public class WorkSnowForcer : MonoBehaviour
             Debug.Log($"[2D_BOOTSTRAP] SnowStrip2D added roof={rid} guide={gid}");
         }
 
-        Debug.Log($"[ROOF_BIND_CHECK] applied={applied}/6" +
+        Debug.Log($"[ROOF_BIND_CHECK] applied={applied}/1" +
                   $" slide=YES engulf=YES puff=YES" +
                   $" chunkMinScale=7 chunkMaxScale=22" +
                   $" chunkAvgScale=14 houseCountApplied={applied}");
@@ -689,21 +679,25 @@ public class WorkSnowForcer : MonoBehaviour
             var anchorMax = new Vector2(maxX, 1f - minY);
 
             var guideGo = GameObject.Find(guideId);
-            if (guideGo == null) continue;
-            var rt = guideGo.GetComponent<RectTransform>();
-            if (rt == null) continue;
+            // RoofGuide GameObject が存在しない場合でもキャリブデータは適用済みとする
+            // （1軒モードではシーンにガイドオブジェクトがない場合がある）
+            if (guideGo != null)
+            {
+                var rt = guideGo.GetComponent<RectTransform>();
+                if (rt != null)
+                {
+                    rt.anchorMin        = anchorMin;
+                    rt.anchorMax        = anchorMax;
+                    rt.anchoredPosition = Vector2.zero;
+                    rt.sizeDelta        = Vector2.zero;
+                }
 
-            rt.anchorMin        = anchorMin;
-            rt.anchorMax        = anchorMax;
-            rt.anchoredPosition = Vector2.zero;
-            rt.sizeDelta        = Vector2.zero;
-
-            var img = guideGo.GetComponent<Image>();
-            if (img == null) img = guideGo.AddComponent<Image>();
-            // 全6軒に白板表示（ALL_6_THICK_SNOW モード）-> 2系統をまとめるため非表示に
-            img.color         = SnowWhite;
-            img.raycastTarget = false;
-            img.enabled       = false;
+                var img = guideGo.GetComponent<Image>();
+                if (img == null) img = guideGo.AddComponent<Image>();
+                img.color         = SnowWhite;
+                img.raycastTarget = false;
+                img.enabled       = false;
+            }
 
             // 初期 anchor を保存
             if (_roofs[ri].anchorMinY0 < 0f)
@@ -716,9 +710,9 @@ public class WorkSnowForcer : MonoBehaviour
             ok++;
         }
 
-        // 1軒モード等でok<6でも、1件以上適用できたら_appliedをtrueにして再試行ループを防ぐ
+        // 1軒モード: 1件以上適用できたら_appliedをtrueにして再試行ループを防ぐ
         _applied = ok > 0;
-        Debug.Log($"[ALL6_SNOW_FIT] count={ok}/6 all_6={(_applied ? "YES" : "NO")}");
+        Debug.Log($"[ALL6_SNOW_FIT] count={ok}/1 all_roofs={(_applied ? "YES" : "NO")}");
     }
 
     // ── 6軒分の guiRect / eaveGuiY を計算（Play 開始後1回のみ）──
@@ -812,11 +806,11 @@ public class WorkSnowForcer : MonoBehaviour
         }
 
         _roofsReady = readyCount == 6;
-        // readyCount が 6 未満でもキャリブデータ読み込み済みなら再試行しない
-        // （1軒モード等でデータが少ない場合、毎フレーム再試行してログ連打するのを防ぐ）
+        // readyCount が 0 なら未読み込み → 再試行
+        // 1件以上読めたら準備完了とみなす（1軒モード対応）
         if (readyCount == 0) _roofsReady = false;
-        else _roofsReady = true;  // 1軒以上読めたら「準備完了」とみなす
-        Debug.Log($"[UNDER_EAVE_TARGET] all_6_targets_created={(_roofsReady ? "YES" : "NO")} count={readyCount}");
+        else _roofsReady = true;
+        Debug.Log($"[UNDER_EAVE_TARGET] all_roofs_created={(_roofsReady ? "YES" : "NO")} count={readyCount}");
 
         // ── 誤着地防止: eaveGuiY が「自分より上にある屋根」の guiRect に入らないようクランプ ──
         // OnGUI は Y 軸下向き（小さい = 上）。自分の guiRect.y より小さい（= 上にある）屋根のみ対象。

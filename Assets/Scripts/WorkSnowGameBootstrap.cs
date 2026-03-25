@@ -18,10 +18,11 @@ public class WorkSnowGameBootstrap : MonoBehaviour
     const float BG_SCALE_X = 15f;
     const float BG_SCALE_Y = 8.5f;
 
-    // 上段地面: 上段屋根の下端（normalized y ≈ 0.316）の少し下
-    const float UPPER_GROUND_LOCAL_Y = 1.264f;
-    // 下段地面: 下段屋根の下端（normalized y ≈ 0.627）の少し下
-    const float LOWER_GROUND_LOCAL_Y = -1.379f;
+    // 1軒モード: 雪地面 normalized_y=0.6458 → local_y = (0.5 - 0.6458) * 8.5 = -1.2393
+    // ground_y=0.6528 → local_y = (0.5 - 0.6528) * 8.5 = -1.2986
+    const float UPPER_GROUND_LOCAL_Y = -1.2986f;
+    // 下段は1軒モードでは未使用（UPPER と同じ値を設定して安全に）
+    const float LOWER_GROUND_LOCAL_Y = -1.2986f;
 
     const float GROUND_THICKNESS = 0.1f;
     const float GROUND_DEPTH     = 1f;
@@ -37,7 +38,7 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         public V2 topLeft, topRight, bottomRight, bottomLeft;
         public bool confirmed;
     }
-    [System.Serializable] class SaveData { public RoofEntry[] roofs; }
+    [System.Serializable] class SaveData { public RoofEntry[] roofs; public float groundY; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
@@ -83,8 +84,25 @@ public class WorkSnowGameBootstrap : MonoBehaviour
             return;
         }
 
-        CreateGroundCollider(bgGo, "WorkSnow_Ground_Upper", UPPER_GROUND_LOCAL_Y, "upper");
-        CreateGroundCollider(bgGo, "WorkSnow_Ground_Lower", LOWER_GROUND_LOCAL_Y, "lower");
+        // JSON の groundY があれば優先使用、なければ定数フォールバック
+        float upperY = UPPER_GROUND_LOCAL_Y;
+        float lowerY = LOWER_GROUND_LOCAL_Y;
+
+        const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
+        if (File.Exists(CALIB_PATH))
+        {
+            var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
+            if (sd != null && sd.groundY > 0f)
+            {
+                float localY = (0.5f - sd.groundY) * BG_SCALE_Y;
+                upperY = localY;
+                lowerY = localY;
+                Debug.Log($"[WORK_SNOW_GAME] ground_y_from_json={sd.groundY:F4} local_y={localY:F4}");
+            }
+        }
+
+        CreateGroundCollider(bgGo, "WorkSnow_Ground_Upper", upperY, "upper");
+        CreateGroundCollider(bgGo, "WorkSnow_Ground_Lower", lowerY, "lower");
     }
 
     void CreateGroundCollider(GameObject parent, string name, float localY, string tier)

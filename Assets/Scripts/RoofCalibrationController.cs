@@ -1,17 +1,24 @@
 using UnityEngine;
-using UnityEngine.UI;
-using System.Collections.Generic;
 using System.IO;
+using System.Collections.Generic;
 
 /// <summary>
-/// Roof Calibration Mode
-/// キー1〜6で屋根を選択し、左クリックで4点（TL→TR→BR→BL）を入力して確定する。
-/// S: JSON保存  L: JSON読み込み  R: 現在屋根リセット
+/// Manual Calibration Controller（1軒モード対応版）
+///
+/// 操作:
+///   モード選択:
+///     キー1 = 屋根キャリブレーションモード（4点: TL→TR→BR→BL）
+///     キー2 = 地面キャリブレーションモード（1点: 地面ライン）
+///   左クリック = 点を追加
+///   R = 現在モードのリセット
+///   S = JSON保存
+///   L = JSON読み込み
+///
 /// 保存先: Assets/Art/RoofCalibrationData.json
 /// </summary>
 public class RoofCalibrationController : MonoBehaviour
 {
-    // ── データ構造 ──────────────────────────────────────────
+    // ── データ ─────────────────────────────────────────────────
     [System.Serializable]
     public class RoofPoints
     {
@@ -21,553 +28,338 @@ public class RoofCalibrationController : MonoBehaviour
     }
 
     [System.Serializable]
-    class SaveData { public List<RoofPoints> roofs; }
+    class SaveData { public List<RoofPoints> roofs; public float groundY; }
 
-    static readonly string[] RoofIds = { "Roof_TL","Roof_TM","Roof_TR","Roof_BL","Roof_BM","Roof_BR" };
     static readonly string SavePath = "Assets/Art/RoofCalibrationData.json";
 
-    // ── キャリブレーションモード切替 ─────────────────────────
+    // ── Inspector ──────────────────────────────────────────────
     [Header("Calibration Mode")]
-    [Tooltip("false = ゲームモード（UI非表示・クリック無効）。true = キャリブレーション作業時のみONにする。")]
+    [Tooltip("false = ゲームモード。true = キャリブレーション作業時のみ ON にする。")]
     public bool calibrationModeActive = false;
 
-    // ── 状態 ────────────────────────────────────────────────
-    RoofPoints[] _roofs;
-    int _activeRoof = 0;   // 0〜5
-    int _clickCount = 0;   // 0〜4: 入力済み点数
-    string _saveStatus = "";          // 画面表示用保存ステータス
-    float  _saveStatusTimer = 0f;     // 表示タイマー
-    bool   _renderLogDone = false;    // 描画ログを1回だけ出すフラグ
-    // Roof_TL 検証用: save/load/render の値を文字列で保持して比較
-    string _tlSavePoints  = "";
-    string _tlLoadPoints  = "";
+    // ── 状態 ──────────────────────────────────────────────────
+    enum CalibMode { Roof, Ground }
+    CalibMode _mode = CalibMode.Roof;
 
-    // ── 可視化 ──────────────────────────────────────────────
-    Texture2D _dot;
+    // 屋根 (Roof_Main 1件)
+    RoofPoints _roof;
+    int _clickCount = 0;
+
+    // 地面Y (normalized 0..1)
+    float _groundY = -1f;   // -1 = 未設定
+
+    string _status = "";
+    float  _statusTimer = 0f;
+
+    // 可視化
     Texture2D _fill;
-    // BackgroundImage の画面投影矩形（毎フレーム更新）
-    Rect _bgRect;
-    bool _bgRectValid = false;
-    static readonly string[] PointLabels = { "TL","TR","BR","BL" };
-    static readonly Color[] RoofColors =
+    Rect      _bgRect;
+    bool      _bgRectValid = false;
+
+    static readonly string[] PointLabels = { "TL", "TR", "BR", "BL" };
+
+    // 点色
+    static readonly Color[] PtColors =
     {
-        new Color(1f,0.3f,0.6f,0.45f),
-        new Color(0.3f,0.8f,1f,0.45f),
-        new Color(0.3f,1f,0.5f,0.45f),
-        new Color(1f,0.8f,0.2f,0.45f),
-        new Color(0.8f,0.3f,1f,0.45f),
-        new Color(1f,0.5f,0.2f,0.45f),
+        new Color(1f, 0.2f, 0.2f, 1f),   // TL 赤
+        new Color(0.2f, 1f, 0.2f, 1f),   // TR 緑
+        new Color(0.3f, 0.6f, 1f, 1f),   // BR 青
+        new Color(1f, 1f, 0.1f, 1f),     // BL 黄
     };
 
+    // ── Unity ─────────────────────────────────────────────────
     void Awake()
     {
-        _roofs = new RoofPoints[6];
-        for (int i = 0; i < 6; i++)
-            _roofs[i] = new RoofPoints { id = RoofIds[i] };
-
-        _dot  = MakeTex(1, 1, Color.white);
+        _roof = new RoofPoints { id = "Roof_Main" };
         _fill = MakeTex(1, 1, Color.white);
-
-        // RoofGuideCanvas は Play 時も非表示にしない（roof-local overlay として使用）
-
-        // 起動時は全屋根を未確定・非表示にする（Load するまで polygon は出さない）
-        Debug.Log("[CALIB] calibration_mode_started=true active_roof=Roof_TL");
-        Debug.Log("[CALIB] keys: 1-6=select  LClick=add point(TL>TR>BR>BL)  R=reset  S=save  L=load");
+        Debug.Log("[CALIB] 1-roof mode  key1=roof  key2=ground  LClick=add  R=reset  S=save  L=load");
     }
 
     void Update()
     {
-        // ゲームモード時はキャリブレーション入力を完全スキップ
         if (!calibrationModeActive) return;
 
-        // BackgroundImage の投影矩形を毎フレーム更新（OnGUI より前に確定させる）
-        Update_BgRect();
+        UpdateBgRect();
 
-        // キー1〜6で屋根選択
-        for (int i = 0; i < 6; i++)
-        {
-            if (Input.GetKeyDown(KeyCode.Alpha1 + i))
-            {
-                _activeRoof = i;
-                _clickCount = CountInputtedPoints(_roofs[i]);
-                Debug.Log($"[CALIB] selected={RoofIds[i]} confirmed_points={_clickCount}");
-            }
-        }
+        // モード切替
+        if (Input.GetKeyDown(KeyCode.Alpha1)) { _mode = CalibMode.Roof;   Debug.Log("[CALIB] mode=ROOF"); }
+        if (Input.GetKeyDown(KeyCode.Alpha2)) { _mode = CalibMode.Ground; Debug.Log("[CALIB] mode=GROUND"); }
 
         // R: リセット
         if (Input.GetKeyDown(KeyCode.R))
         {
-            _roofs[_activeRoof] = new RoofPoints { id = RoofIds[_activeRoof] };
-            _clickCount = 0;
-            Debug.Log($"[CALIB] reset={RoofIds[_activeRoof]}");
-        }
-
-        // S: 保存
-        if (Input.GetKeyDown(KeyCode.S)) Save();
-
-        // L: 読み込み
-        if (Input.GetKeyDown(KeyCode.L)) Load();
-
-        // 保存ステータス表示タイマー
-        if (_saveStatusTimer > 0f) _saveStatusTimer -= Time.deltaTime;
-        else _saveStatus = "";
-
-        // 左クリックで点追加（確定済み屋根はスキップ）
-        if (Input.GetMouseButtonDown(0) && _clickCount < 4)
-        {
-            var pos = Input.mousePosition;
-            // BackgroundImage 投影矩形が有効なら bgRect 基準で normalized 化
-            Vector2 norm;
-            if (_bgRectValid && _bgRect.width > 1f && _bgRect.height > 1f)
+            if (_mode == CalibMode.Roof)
             {
-                // OnGUI 座標に変換してから bgRect で正規化
-                float guiX = pos.x;
-                float guiY = Screen.height - pos.y; // OnGUI は左上原点
-                norm = new Vector2(
-                    (guiX - _bgRect.x) / _bgRect.width,
-                    (guiY - _bgRect.y) / _bgRect.height);
+                _roof = new RoofPoints { id = "Roof_Main" };
+                _clickCount = 0;
+                Debug.Log("[CALIB] reset=Roof_Main");
             }
             else
             {
-                norm = new Vector2(pos.x / Screen.width, 1f - pos.y / Screen.height);
+                _groundY = -1f;
+                Debug.Log("[CALIB] reset=ground");
             }
-            SetPoint(_roofs[_activeRoof], _clickCount, norm);
-            _clickCount++;
-            Debug.Log($"[CALIB] roof={RoofIds[_activeRoof]} point={PointLabels[_clickCount-1]}({_clickCount}/4) norm=({norm.x:F3},{norm.y:F3})");
-            if (_clickCount == 4)
+        }
+
+        // S / L
+        if (Input.GetKeyDown(KeyCode.S)) Save();
+        if (Input.GetKeyDown(KeyCode.L)) Load();
+
+        // タイマー
+        if (_statusTimer > 0f) _statusTimer -= Time.deltaTime;
+        else _status = "";
+
+        // 左クリック
+        if (Input.GetMouseButtonDown(0))
+        {
+            Vector2 norm = MouseToNorm();
+
+            if (_mode == CalibMode.Roof && !_roof.confirmed && _clickCount < 4)
             {
-                _roofs[_activeRoof].confirmed = true;
-                NormalizePoints(_roofs[_activeRoof]);
-                var r = _roofs[_activeRoof];
-                Debug.Log($"[ROOF_CAPTURE_DONE] roof={r.id} points=4 TL=({r.topLeft.x:F3},{r.topLeft.y:F3}) TR=({r.topRight.x:F3},{r.topRight.y:F3}) BR=({r.bottomRight.x:F3},{r.bottomRight.y:F3}) BL=({r.bottomLeft.x:F3},{r.bottomLeft.y:F3})");
+                SetPoint(_roof, _clickCount, norm);
+                _clickCount++;
+                Debug.Log($"[CALIB] roof=Roof_Main point={PointLabels[_clickCount-1]}({_clickCount}/4) norm=({norm.x:F4},{norm.y:F4})");
+
+                if (_clickCount == 4)
+                {
+                    _roof.confirmed = true;
+                    NormalizePoints(_roof);
+                    Debug.Log($"[ROOF_CAPTURE_DONE] roof=Roof_Main TL=({_roof.topLeft.x:F4},{_roof.topLeft.y:F4}) TR=({_roof.topRight.x:F4},{_roof.topRight.y:F4}) BR=({_roof.bottomRight.x:F4},{_roof.bottomRight.y:F4}) BL=({_roof.bottomLeft.x:F4},{_roof.bottomLeft.y:F4})");
+                    _status = "ROOF 4-point DONE  → S to save";
+                    _statusTimer = 8f;
+                }
+            }
+            else if (_mode == CalibMode.Ground)
+            {
+                _groundY = norm.y;
+                Debug.Log($"[CALIB] ground_y={_groundY:F4} screen_y={Input.mousePosition.y:F0}");
+                _status = $"GROUND  ground_y={_groundY:F4}  → S to save";
+                _statusTimer = 8f;
             }
         }
     }
 
-    // BackgroundImage の画面投影矩形を取得（Update で毎フレーム呼ぶ）
-    void Update_BgRect()
+    // ── OnGUI ─────────────────────────────────────────────────
+    void OnGUI()
     {
-        var cam = Camera.main;
+        if (!calibrationModeActive) return;
+
+        float sw = Screen.width, sh = Screen.height;
+
+        // ── 屋根オーバーレイ ──
+        if (_roof.confirmed)
+        {
+            DrawPointMarker(_roof.topLeft,     PtColors[0], "TL");
+            DrawPointMarker(_roof.topRight,    PtColors[1], "TR");
+            DrawPointMarker(_roof.bottomRight, PtColors[2], "BR");
+            DrawPointMarker(_roof.bottomLeft,  PtColors[3], "BL");
+            DrawQuadOutline(_roof);
+        }
+        else
+        {
+            // 入力途中の点
+            var pts = new[] { _roof.topLeft, _roof.topRight, _roof.bottomRight, _roof.bottomLeft };
+            for (int p = 0; p < _clickCount; p++)
+                DrawPointMarker(pts[p], PtColors[p], PointLabels[p]);
+        }
+
+        // ── 地面ライン ──
+        if (_groundY >= 0f)
+        {
+            float gy = _groundY * sh;
+            GUI.color = new Color(0.2f, 1f, 1f, 0.9f);
+            GUI.DrawTexture(new Rect(0, gy - 2, sw, 4), _fill);
+            GUI.color = Color.white;
+            GUIStyle lbst = new GUIStyle(GUI.skin.label);
+            lbst.fontSize = 18; lbst.fontStyle = FontStyle.Bold;
+            lbst.normal.textColor = new Color(0.2f, 1f, 1f, 1f);
+            GUI.Label(new Rect(8, gy + 4, 200, 24), $"GROUND  y={_groundY:F4}", lbst);
+        }
+
+        // ── マウスカーソルラベル ──
+        if (_mode == CalibMode.Roof && _clickCount < 4 && !_roof.confirmed)
+        {
+            var mp = Input.mousePosition;
+            GUI.color = Color.yellow;
+            GUI.Label(new Rect(mp.x + 14, sh - mp.y - 16, 100, 22),
+                      $"→ {PointLabels[_clickCount]}");
+            GUI.color = Color.white;
+        }
+        else if (_mode == CalibMode.Ground)
+        {
+            var mp = Input.mousePosition;
+            GUI.color = new Color(0.2f, 1f, 1f);
+            GUI.Label(new Rect(mp.x + 14, sh - mp.y - 16, 180, 22), "→ GROUND click here");
+            GUI.color = Color.white;
+        }
+
+        // ── HUD パネル ──
+        float hudW = 380, hudH = 180;
+        GUI.color = new Color(0, 0, 0, 0.75f);
+        GUI.DrawTexture(new Rect(8, 8, hudW, hudH), _fill);
+        GUI.color = Color.white;
+
+        GUIStyle big = new GUIStyle(GUI.skin.label);
+        big.fontSize = 15; big.normal.textColor = Color.white;
+        GUIStyle hi = new GUIStyle(big);
+        hi.normal.textColor = Color.yellow;
+        GUIStyle ok = new GUIStyle(big);
+        ok.normal.textColor = Color.green;
+        GUIStyle cyan = new GUIStyle(big);
+        cyan.normal.textColor = new Color(0.2f, 1f, 1f);
+
+        string modeStr = _mode == CalibMode.Roof ? "ROOF (key1)" : "GROUND (key2)";
+        GUI.Label(new Rect(14, 12, hudW - 10, 24), $"MODE:  {modeStr}", hi);
+
+        // 屋根状態
+        string roofSt = _roof.confirmed ? "CONFIRMED ✓" : $"{_clickCount}/4  next:{PointLabels[Mathf.Min(_clickCount,3)]}";
+        GUI.Label(new Rect(14, 38, hudW - 10, 22), $"ROOF:  {roofSt}", _roof.confirmed ? ok : big);
+
+        // 地面状態
+        string gndSt = _groundY >= 0f ? $"SET  y={_groundY:F4}  ✓" : "NOT SET";
+        GUI.Label(new Rect(14, 62, hudW - 10, 22), $"GROUND: {gndSt}", _groundY >= 0f ? cyan : big);
+
+        // ステータス
+        if (_status != "")
+        {
+            GUIStyle svSt = new GUIStyle(big);
+            svSt.normal.textColor = _status.StartsWith("SAVED") || _status.StartsWith("LOADED") ? Color.green : Color.yellow;
+            GUI.Label(new Rect(14, 88, hudW - 10, 22), _status, svSt);
+        }
+
+        GUI.color = new Color(1, 1, 1, 0.55f);
+        GUI.Label(new Rect(14, 116, hudW - 10, 20), "key1=roof  key2=ground  LClick=point  R=reset");
+        GUI.Label(new Rect(14, 138, hudW - 10, 20), "S=save  L=load");
+        GUI.color = Color.white;
+    }
+
+    // ── Save / Load ────────────────────────────────────────────
+    void Save()
+    {
+        var roofList = new List<RoofPoints>();
+        if (_roof.confirmed &&
+            _roof.topLeft != Vector2.zero && _roof.topRight != Vector2.zero &&
+            _roof.bottomRight != Vector2.zero && _roof.bottomLeft != Vector2.zero)
+        {
+            roofList.Add(_roof);
+            Debug.Log($"[CALIB_SAVE] roof=Roof_Main TL=({_roof.topLeft.x:F4},{_roof.topLeft.y:F4}) TR=({_roof.topRight.x:F4},{_roof.topRight.y:F4}) BR=({_roof.bottomRight.x:F4},{_roof.bottomRight.y:F4}) BL=({_roof.bottomLeft.x:F4},{_roof.bottomLeft.y:F4})");
+        }
+        else
+        {
+            Debug.LogWarning("[CALIB_SAVE] roof not complete – skipped");
+        }
+
+        var sd = new SaveData { roofs = roofList, groundY = _groundY };
+        File.WriteAllText(SavePath, JsonUtility.ToJson(sd, true));
+
+        string path = Path.GetFullPath(SavePath);
+        Debug.Log($"[CALIB_SAVE_OK] path={path} roof_saved={roofList.Count > 0} ground_y={_groundY:F4}");
+        _status = $"SAVED  roof={roofList.Count > 0}  ground={(_groundY >= 0f ? _groundY.ToString("F4") : "none")}";
+        _statusTimer = 8f;
+
+        // WorkSnowGameBootstrap の地面コライダーを即時更新
+        ApplyGroundToBootstrap();
+    }
+
+    void Load()
+    {
+        if (!File.Exists(SavePath)) { Debug.LogWarning("[CALIB_LOAD] file not found"); return; }
+
+        var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(SavePath));
+        if (sd == null) { Debug.LogWarning("[CALIB_LOAD] parse failed"); return; }
+
+        if (sd.roofs != null)
+        {
+            var r = sd.roofs.Find(x => x.id == "Roof_Main");
+            if (r != null && r.topLeft != Vector2.zero && r.topRight != Vector2.zero &&
+                r.bottomRight != Vector2.zero && r.bottomLeft != Vector2.zero)
+            {
+                _roof = r;
+                _roof.confirmed = true;
+                NormalizePoints(_roof);
+                _clickCount = 4;
+                Debug.Log($"[CALIB_LOAD] roof=Roof_Main TL=({_roof.topLeft.x:F4},{_roof.topLeft.y:F4}) TR=({_roof.topRight.x:F4},{_roof.topRight.y:F4}) BR=({_roof.bottomRight.x:F4},{_roof.bottomRight.y:F4}) BL=({_roof.bottomLeft.x:F4},{_roof.bottomLeft.y:F4})");
+            }
+        }
+
+        // groundY の読み込み（フィールドがない古いJSONは0になるので-1扱い）
+        _groundY = sd.groundY > 0f ? sd.groundY : -1f;
+        Debug.Log($"[CALIB_LOAD] ground_y={_groundY:F4}");
+
+        _status = $"LOADED  roof={_roof.confirmed}  ground={(_groundY >= 0f ? _groundY.ToString("F4") : "none")}";
+        _statusTimer = 8f;
+    }
+
+    // ── 地面コライダー即時適用 ─────────────────────────────────
+    void ApplyGroundToBootstrap()
+    {
+        if (_groundY < 0f) return;
+
+        // ground_local_y = (0.5 - groundY) * BG_SCALE_Y
+        const float BG_SCALE_Y = 8.5f;
+        float localY = (0.5f - _groundY) * BG_SCALE_Y;
+
+        // WorkSnow_Ground_Upper / Lower を探して更新
+        foreach (var name in new[] { "WorkSnow_Ground_Upper", "WorkSnow_Ground_Lower" })
+        {
+            var go = GameObject.Find(name);
+            if (go == null) continue;
+            var pos = go.transform.localPosition;
+            pos.y = localY;
+            go.transform.localPosition = pos;
+            Debug.Log($"[CALIB_GROUND_APPLY] name={name} local_y={localY:F4}");
+        }
+
+        Debug.Log($"[MANUAL_RECALIB] ground_y={_groundY:F4} ground_local_y={localY:F4}");
+    }
+
+    // ── ユーティリティ ─────────────────────────────────────────
+    Vector2 MouseToNorm()
+    {
+        var pos = Input.mousePosition;
+        if (_bgRectValid && _bgRect.width > 1f)
+        {
+            float guiX = pos.x;
+            float guiY = Screen.height - pos.y;
+            return new Vector2(
+                (guiX - _bgRect.x) / _bgRect.width,
+                (guiY - _bgRect.y) / _bgRect.height);
+        }
+        return new Vector2(pos.x / Screen.width, 1f - pos.y / Screen.height);
+    }
+
+    void UpdateBgRect()
+    {
+        var cam  = Camera.main;
         var bgGo = GameObject.Find("BackgroundImage");
         if (cam == null || bgGo == null) { _bgRectValid = false; return; }
 
         var t = bgGo.transform;
-        Vector3 wTL = t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
-        Vector3 wTR = t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
-        Vector3 wBL = t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
-        Vector3 wBR = t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
-
         float sh = Screen.height;
-        // WorldToScreenPoint は左下原点 → OnGUI 左上原点に変換
-        Vector2 sTL = cam.WorldToScreenPoint(wTL); sTL.y = sh - sTL.y;
-        Vector2 sTR = cam.WorldToScreenPoint(wTR); sTR.y = sh - sTR.y;
-        Vector2 sBL = cam.WorldToScreenPoint(wBL); sBL.y = sh - sBL.y;
-        Vector2 sBR = cam.WorldToScreenPoint(wBR); sBR.y = sh - sBR.y;
+        Vector2 sTL = cam.WorldToScreenPoint(t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f))); sTL.y = sh - sTL.y;
+        Vector2 sTR = cam.WorldToScreenPoint(t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f))); sTR.y = sh - sTR.y;
+        Vector2 sBL = cam.WorldToScreenPoint(t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f))); sBL.y = sh - sBL.y;
+        Vector2 sBR = cam.WorldToScreenPoint(t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f))); sBR.y = sh - sBR.y;
 
         float minX = Mathf.Min(sTL.x, sBL.x);
         float maxX = Mathf.Max(sTR.x, sBR.x);
         float minY = Mathf.Min(sTL.y, sTR.y);
         float maxY = Mathf.Max(sBL.y, sBR.y);
 
-        bool wasValid = _bgRectValid;
         _bgRect = new Rect(minX, minY, maxX - minX, maxY - minY);
         _bgRectValid = _bgRect.width > 1f && _bgRect.height > 1f;
-
-        // bgRect が初めて有効になったら描画ログを再出力する
-        if (!wasValid && _bgRectValid)
-        {
-            _renderLogDone = false;
-            Debug.Log($"[CALIB_SPACE] bgRect_became_valid=true bgRect=({_bgRect.x:F1},{_bgRect.y:F1},{_bgRect.width:F1},{_bgRect.height:F1}) screen=({Screen.width},{Screen.height})");
-        }
     }
 
-    // ── OnGUI ────────────────────────────────────────────────
-    void OnGUI()
-    {
-        // ゲームモード時はキャリブレーションUIを一切表示しない
-        if (!calibrationModeActive) return;
-
-        // Update_BgRect は Update() で呼び済み。OnGUI では呼ばない。
-        float sw = Screen.width, sh = Screen.height;
-
-        for (int i = 0; i < 6; i++)
-        {
-            var r = _roofs[i];
-            var col = RoofColors[i];
-
-            // 確定済み: 検証 → ライン + ポリゴン fill + 4点マーカー
-            if (r.confirmed)
-            {
-                bool polyValid = ValidateQuad(r, out string skipReason);
-
-                // 1回だけ座標ログを出す
-                if (!_renderLogDone)
-                {
-                    Debug.Log($"[CALIB_SPACE] screen=({sw:F0},{sh:F0}) bgRect=({_bgRect.x:F1},{_bgRect.y:F1},{_bgRect.width:F1},{_bgRect.height:F1}) bgRect_valid={_bgRectValid}");
-                    Debug.Log($"[CALIB_POLYGON_INPUT] roof={r.id} tl=({r.topLeft.x:F3},{r.topLeft.y:F3}) tr=({r.topRight.x:F3},{r.topRight.y:F3}) br=({r.bottomRight.x:F3},{r.bottomRight.y:F3}) bl=({r.bottomLeft.x:F3},{r.bottomLeft.y:F3})");
-
-                    if (!polyValid)
-                    {
-                        Debug.LogWarning($"[CALIB_POLYGON_SKIP_INVALID] roof={r.id} reason={skipReason}");
-                    }
-                    else
-                    {
-                        var pts4 = new (string lbl, Vector2 n)[]
-                        {
-                            ("TL", r.topLeft), ("TR", r.topRight),
-                            ("BR", r.bottomRight), ("BL", r.bottomLeft)
-                        };
-                        foreach (var (lbl, n) in pts4)
-                        {
-                            var s = NormToScreen(n);
-                            Debug.Log($"[CALIB_POINT_DRAW] roof={r.id} point={lbl} norm=({n.x:F3},{n.y:F3}) screen=({s.x:F1},{s.y:F1})");
-                        }
-                        // Roof_TL 専用: save/load との一致チェック
-                        if (r.id == "Roof_TL")
-                        {
-                            Debug.Log($"[CALIB_RENDER_POINTS] roof=Roof_TL tl=({r.topLeft.x:F4},{r.topLeft.y:F4}) tr=({r.topRight.x:F4},{r.topRight.y:F4}) br=({r.bottomRight.x:F4},{r.bottomRight.y:F4}) bl=({r.bottomLeft.x:F4},{r.bottomLeft.y:F4})");
-                            bool saveLoadMatch   = _tlSavePoints == _tlLoadPoints;
-                            bool loadRenderMatch = _tlLoadPoints == MakeKey(r);
-                            if (!saveLoadMatch)   Debug.LogWarning($"[CALIB_POINT_MISMATCH] roof=Roof_TL save_vs_load differ");
-                            if (!loadRenderMatch) Debug.LogWarning($"[CALIB_POINT_MISMATCH] roof=Roof_TL load_vs_render differ");
-                            Debug.Log($"[CALIB_TL_VERIFY] save_load_match={saveLoadMatch} load_render_match={loadRenderMatch}");
-                        }
-                        Debug.Log($"[CALIB_LINE_RENDER_OK] roof={r.id}");
-                        Debug.Log($"[CALIB_POLYGON_RENDER_OK] roof={r.id}");
-                    }
-                }
-
-                if (polyValid)
-                {
-                    // ① ポリゴン fill 一時非表示（SNOW_VISIBILITY_ISOLATION）
-                    // DrawQuadNorm(r.topLeft, r.topRight, r.bottomRight, r.bottomLeft, col);
-                    // ② 4点マーカー（残す）
-                    DrawPointMarker(r.topLeft,     col, "TL");
-                    DrawPointMarker(r.topRight,    col, "TR");
-                    DrawPointMarker(r.bottomRight, col, "BR");
-                    DrawPointMarker(r.bottomLeft,  col, "BL");
-                    DrawLabelNorm(r.topLeft, r.id);
-                }
-                else
-                {
-                    // 無効: マーカーのみ（有効な点だけ）
-                    if (r.topLeft     != Vector2.zero) DrawPointMarker(r.topLeft,     col, "TL");
-                    if (r.topRight    != Vector2.zero) DrawPointMarker(r.topRight,    col, "TR");
-                    if (r.bottomRight != Vector2.zero) DrawPointMarker(r.bottomRight, col, "BR");
-                    if (r.bottomLeft  != Vector2.zero) DrawPointMarker(r.bottomLeft,  col, "BL");
-                    DrawLabelNorm(r.topLeft != Vector2.zero ? r.topLeft : new Vector2(0.1f, 0.1f), r.id + "?");
-                }
-            }
-
-            // アクティブ屋根: 入力済みの点をドット表示
-            if (i == _activeRoof && !r.confirmed)
-            {
-                var pts = GetPoints(r);
-                for (int p = 0; p < _clickCount; p++)
-                    DrawDotNorm(pts[p], col);
-            }
-        }
-
-        // 描画ログを1回出したらフラグを立てる
-        if (!_renderLogDone)
-        {
-            int confirmedNow = 0;
-            foreach (var r in _roofs) if (r.confirmed) confirmedNow++;
-            if (confirmedNow > 0) _renderLogDone = true;
-        }
-
-        // マウスカーソル付近に「次の点」ラベル
-        if (_clickCount < 4)
-        {
-            var mp = Input.mousePosition;
-            GUI.color = Color.yellow;
-            GUI.Label(new Rect(mp.x + 12, sh - mp.y - 14, 80, 22), $"→ {PointLabels[_clickCount]}");
-            GUI.color = Color.white;
-        }
-
-        // ── HUD パネル ──────────────────────────────────────
-        int done = 0; foreach (var r in _roofs) if (r.confirmed) done++;
-        string pointStatus = _clickCount < 4 ? $"{_clickCount+1}/4  next: {PointLabels[_clickCount]}" : "DONE (4/4)";
-
-        float hudW = 340, hudH = 150;
-        GUI.color = new Color(0f, 0f, 0f, 0.75f);
-        GUI.DrawTexture(new Rect(8, 8, hudW, hudH), _fill);
-        GUI.color = Color.white;
-
-        GUIStyle big = new GUIStyle(GUI.skin.label);
-        big.fontSize = 15;
-        big.normal.textColor = Color.white;
-
-        GUIStyle hi = new GUIStyle(big);
-        hi.normal.textColor = Color.yellow;
-
-        // 選択中屋根（黄色・大きく）
-        GUI.Label(new Rect(14, 12, hudW-10, 24), $"SELECTED:  {RoofIds[_activeRoof]}", hi);
-        GUI.Label(new Rect(14, 38, hudW-10, 22), $"POINT:     {pointStatus}", big);
-        // confirmed カウント（Load後は6/6になるはず）
-        GUIStyle confStyle = new GUIStyle(big);
-        confStyle.normal.textColor = done == 6 ? Color.green : Color.yellow;
-        GUI.Label(new Rect(14, 62, hudW-10, 22), $"CONFIRMED: {done} / 6  (press L to load)", confStyle);
-
-        // 保存ステータス（緑 or 赤）
-        if (_saveStatus != "")
-        {
-            GUIStyle sv = new GUIStyle(big);
-            sv.normal.textColor = _saveStatus.StartsWith("SAVED") ? Color.green : Color.red;
-            GUI.Label(new Rect(14, 86, hudW-10, 22), _saveStatus, sv);
-        }
-
-        GUI.color = new Color(1f,1f,1f,0.6f);
-        GUI.Label(new Rect(14, 112, hudW-10, 20), "1-6:select  LClick:point  R:reset  S:save  L:load");
-        GUI.color = Color.white;
-    }
-
-    // ── 保存 / 読み込み ─────────────────────────────────────
-    // 新ルール: 4点 complete (confirmed=true かつ全点非ゼロ) の roof だけ JSON に書く
-    void Save()
-    {
-        var fullPath = Path.GetFullPath(SavePath);
-        var completeRoofs = new List<RoofPoints>();
-
-        foreach (var r in _roofs)
-        {
-            bool complete = r.confirmed &&
-                            r.topLeft != Vector2.zero && r.topRight != Vector2.zero &&
-                            r.bottomRight != Vector2.zero && r.bottomLeft != Vector2.zero;
-            if (complete)
-            {
-                completeRoofs.Add(r);
-                Debug.Log($"[CALIB_SAVE_COMPLETE] roof={r.id} tl=({r.topLeft.x:F4},{r.topLeft.y:F4}) tr=({r.topRight.x:F4},{r.topRight.y:F4}) br=({r.bottomRight.x:F4},{r.bottomRight.y:F4}) bl=({r.bottomLeft.x:F4},{r.bottomLeft.y:F4})");
-                if (r.id == "Roof_TL") _tlSavePoints = MakeKey(r);
-            }
-            else
-            {
-                int pts = CountInputtedPoints(r);
-                Debug.Log($"[CALIB_SAVE_DEFERRED] roof={r.id} points={pts}/4 → not written to JSON");
-            }
-        }
-
-        var sd = new SaveData { roofs = completeRoofs };
-        var json = JsonUtility.ToJson(sd, true);
-        File.WriteAllText(SavePath, json);
-
-        Debug.Log($"[ROOF_SAVE_OK] path={fullPath} complete={completeRoofs.Count}/6");
-        _saveStatus = $"SAVED  {completeRoofs.Count}/6  →  {SavePath}";
-        _saveStatusTimer = 5f;
-    }
-
-    void Load()
-    {
-        if (!File.Exists(SavePath)) { Debug.LogWarning($"[CALIB] load_failed=no_file path={SavePath}"); return; }
-        var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(SavePath));
-        int loaded_count = 0;
-        for (int i = 0; i < 6; i++)
-        {
-            var loaded = sd.roofs.Find(r => r.id == RoofIds[i]);
-            // 新ルール: 4点すべて非ゼロのエントリだけ採用
-            bool valid = loaded != null &&
-                         loaded.topLeft != Vector2.zero && loaded.topRight != Vector2.zero &&
-                         loaded.bottomRight != Vector2.zero && loaded.bottomLeft != Vector2.zero;
-            if (valid)
-            {
-                _roofs[i] = loaded;
-                _roofs[i].confirmed = true;
-                NormalizePoints(_roofs[i]);
-                loaded_count++;
-            }
-            else if (loaded != null)
-            {
-                Debug.LogWarning($"[CALIB_LOAD_SKIP] roof={RoofIds[i]} reason=zero_point_in_json → ignored");
-            }
-        }
-        _clickCount = CountInputtedPoints(_roofs[_activeRoof]);
-        var fullPath = Path.GetFullPath(SavePath);
-        Debug.Log($"[CALIB] loaded=true path={fullPath} count={loaded_count}");
-        // JSON から読み込んだ4点を全軒出力（4段階診断ログ）
-        foreach (var r in _roofs)
-        {
-            bool hasData = r.confirmed &&
-                           r.topLeft != Vector2.zero && r.topRight != Vector2.zero &&
-                           r.bottomRight != Vector2.zero && r.bottomLeft != Vector2.zero;
-
-            // [CALIB_JSON_READ] 全軒
-            Debug.Log($"[CALIB_JSON_READ] roof={r.id} confirmed={r.confirmed} has_data={hasData} tl=({r.topLeft.x:F4},{r.topLeft.y:F4}) tr=({r.topRight.x:F4},{r.topRight.y:F4}) br=({r.bottomRight.x:F4},{r.bottomRight.y:F4}) bl=({r.bottomLeft.x:F4},{r.bottomLeft.y:F4})");
-
-            if (!hasData)
-                Debug.LogWarning($"[CALIB_JSON_READ_ZERO] roof={r.id} reason=not_calibrated_yet  → キー{System.Array.IndexOf(RoofIds, r.id)+1}で4点入力してSキーで保存してください");
-
-            // Roof_TL 専用: ロード直後の検証ログ
-            if (r.id == "Roof_TL")
-            {
-                _tlLoadPoints = MakeKey(r);
-                Debug.Log($"[CALIB_LOAD_POINTS] roof=Roof_TL tl=({r.topLeft.x:F4},{r.topLeft.y:F4}) tr=({r.topRight.x:F4},{r.topRight.y:F4}) br=({r.bottomRight.x:F4},{r.bottomRight.y:F4}) bl=({r.bottomLeft.x:F4},{r.bottomLeft.y:F4})");
-            }
-        }
-
-        int rendered = 0;
-        foreach (var r in _roofs) if (r.confirmed) rendered++;
-        Debug.Log($"[CALIB_RENDER_OK] roofs={rendered}");
-        _saveStatus = $"LOADED  {loaded_count}/6  →  {SavePath}";
-        _saveStatusTimer = 5f;
-        _renderLogDone = false; // 次の OnGUI で描画ログを出す
-        BuildAndInjectRoofDefinitions();
-    }
-
-
-    // ── Polygon → RoofDefinition 注入 ──────────────────────
-    // キャリブレーション済み4点から RoofDefinition を生成し
-    // RoofDefinitionProvider に注入する。
-    // BackgroundImage の3Dワールド座標を使って normalized → world 変換を行う。
-    void BuildAndInjectRoofDefinitions()
-    {
-        // BackgroundImage の4隅ワールド座標を取得
-        var bgGo = GameObject.Find("BackgroundImage");
-        var cam = Camera.main;
-        if (bgGo == null || cam == null)
-        {
-            Debug.LogWarning("[POLYGON_ROOF_SHAPE] BackgroundImage not found – cannot inject RoofDefinitions");
-            return;
-        }
-
-        var t = bgGo.transform;
-        // BackgroundImage の4隅（ローカル座標 ±0.5）をワールド座標に変換
-        Vector3 wTL = t.TransformPoint(new Vector3(-0.5f,  0.5f, 0f));
-        Vector3 wTR = t.TransformPoint(new Vector3( 0.5f,  0.5f, 0f));
-        Vector3 wBL = t.TransformPoint(new Vector3(-0.5f, -0.5f, 0f));
-        Vector3 wBR = t.TransformPoint(new Vector3( 0.5f, -0.5f, 0f));
-
-        // normalized (u,v) → ワールド座標（双線形補間）
-        // u=0→左端, u=1→右端, v=0→上端, v=1→下端
-        System.Func<Vector2, Vector3> normToWorld = (n) =>
-        {
-            Vector3 top    = Vector3.Lerp(wTL, wTR, n.x);
-            Vector3 bottom = Vector3.Lerp(wBL, wBR, n.x);
-            return Vector3.Lerp(top, bottom, n.y);
-        };
-
-        // 屋根面の法線（BackgroundImage の forward）
-        Vector3 roofNormal = -t.forward; // 手前向き（カメラ方向）
-        if (Vector3.Dot(roofNormal, Vector3.up) < 0f) roofNormal = -roofNormal;
-
-        int injected = 0;
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("=== POLYGON TO ROOF SHAPE ===");
-        sb.AppendLine("calibration_pipeline_confirmed=YES");
-        sb.AppendLine("polygon_verified=YES");
-
-        string[] roofLabels = { "TL", "TM", "TR", "BL", "BM", "BR" };
-
-        for (int i = 0; i < 6; i++)
-        {
-            var r = _roofs[i];
-            bool hasData = r.confirmed &&
-                           r.topLeft != Vector2.zero && r.topRight != Vector2.zero &&
-                           r.bottomRight != Vector2.zero && r.bottomLeft != Vector2.zero;
-
-            string label = roofLabels[i];
-
-            if (!hasData)
-            {
-                sb.AppendLine($"roof_shape_bound_to_{label}=NO");
-                Debug.LogWarning($"[POLYGON_ROOF_SHAPE] roof={r.id} skipped=no_data");
-                continue;
-            }
-
-            // 4点をワールド座標に変換
-            Vector3 wPtTL = normToWorld(r.topLeft);
-            Vector3 wPtTR = normToWorld(r.topRight);
-            Vector3 wPtBR = normToWorld(r.bottomRight);
-            Vector3 wPtBL = normToWorld(r.bottomLeft);
-
-            // 中心
-            Vector3 origin = (wPtTL + wPtTR + wPtBR + wPtBL) * 0.25f;
-
-            // 幅: top edge の長さ と bottom edge の長さの平均
-            float topW    = Vector3.Distance(wPtTL, wPtTR);
-            float bottomW = Vector3.Distance(wPtBL, wPtBR);
-            float width   = (topW + bottomW) * 0.5f;
-
-            // 奥行き: left edge と right edge の長さの平均
-            float leftD  = Vector3.Distance(wPtTL, wPtBL);
-            float rightD = Vector3.Distance(wPtTR, wPtBR);
-            float depth  = (leftD + rightD) * 0.5f;
-
-            // R 方向（横方向）: top edge の向き
-            Vector3 roofR = (wPtTR - wPtTL).normalized;
-            if (roofR.sqrMagnitude < 1e-6f) roofR = Vector3.right;
-
-            // 傾斜方向: top → bottom（downhill）
-            Vector3 topCenter    = (wPtTL + wPtTR) * 0.5f;
-            Vector3 bottomCenter = (wPtBL + wPtBR) * 0.5f;
-            Vector3 downhill     = (bottomCenter - topCenter).normalized;
-            if (downhill.sqrMagnitude < 1e-6f) downhill = Vector3.forward;
-
-            // slopeAngle: downhill と水平面のなす角
-            float slopeAngle = Vector3.Angle(downhill, Vector3.ProjectOnPlane(downhill, Vector3.up).normalized);
-
-            var def = new RoofDefinition
-            {
-                width         = Mathf.Max(0.1f, width),
-                depth         = Mathf.Max(0.1f, depth),
-                slopeAngle    = slopeAngle,
-                slopeDirection = downhill,
-                roofOrigin    = origin,
-                roofNormal    = roofNormal,
-                roofR         = roofR,
-                roofF         = Vector3.Cross(roofNormal, roofR).normalized,
-                roofDownhill  = downhill,
-                isValid       = true,
-                useExactRoofSize = true,
-            };
-
-            RoofDefinitionProvider.SetFromExternal(i, def);
-            injected++;
-
-            Debug.Log($"[POLYGON_ROOF_SHAPE] roof={r.id} houseIndex={i} origin=({origin.x:F2},{origin.y:F2},{origin.z:F2}) width={width:F3} depth={depth:F3} slopeAngle={slopeAngle:F1} injected=true");
-            sb.AppendLine($"roof_shape_bound_to_{label}=YES");
-        }
-
-        sb.AppendLine($"snow_spawn_inside_polygon_only={(injected > 0 ? "YES" : "NO")}");
-        sb.AppendLine($"all_6_ok={(injected == 6 ? "YES" : "NO")}");
-        sb.AppendLine($"result={(injected > 0 ? "PASS" : "FAIL")}");
-
-        SnowLoopLogCapture.AppendToAssiReport(sb.ToString());
-        Debug.Log($"[POLYGON_ROOF_SHAPE] inject_done={injected}/6 all_ok={(injected == 6)}");
-
-        // SnowPackSpawner を全軒リビルド
-        var spawners = UnityEngine.Object.FindObjectsByType<SnowPackSpawner>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        foreach (var sp in spawners)
-        {
-            if (sp != null && sp.isActiveAndEnabled)
-            {
-                sp.Rebuild();
-                Debug.Log($"[POLYGON_ROOF_SHAPE] spawner_rebuilt houseIndex={sp.houseIndex}");
-            }
-        }
-    }
-
-    // ── ユーティリティ ───────────────────────────────────────
-    // ── 4点正規化 ──────────────────────────────────────────
-    // top 2点: x が小さい方を TL、大きい方を TR
-    // bottom 2点: x が小さい方を BL、大きい方を BR
     static void NormalizePoints(RoofPoints r)
     {
-        // top pair
-        if (r.topLeft.x > r.topRight.x)
-        {
-            var tmp = r.topLeft; r.topLeft = r.topRight; r.topRight = tmp;
-        }
-        // bottom pair
-        if (r.bottomLeft.x > r.bottomRight.x)
-        {
-            var tmp = r.bottomLeft; r.bottomLeft = r.bottomRight; r.bottomRight = tmp;
-        }
-        Debug.Log($"[CALIB_POINTS_NORMALIZED] roof={r.id} tl=({r.topLeft.x:F3},{r.topLeft.y:F3}) tr=({r.topRight.x:F3},{r.topRight.y:F3}) br=({r.bottomRight.x:F3},{r.bottomRight.y:F3}) bl=({r.bottomLeft.x:F3},{r.bottomLeft.y:F3})");
+        if (r.topLeft.x > r.topRight.x)   { var t = r.topLeft;    r.topLeft    = r.topRight;    r.topRight    = t; }
+        if (r.bottomLeft.x > r.bottomRight.x) { var t = r.bottomLeft; r.bottomLeft = r.bottomRight; r.bottomRight = t; }
     }
 
     static void SetPoint(RoofPoints r, int idx, Vector2 v)
     {
-        switch (idx) {
+        switch (idx)
+        {
             case 0: r.topLeft     = v; break;
             case 1: r.topRight    = v; break;
             case 2: r.bottomRight = v; break;
@@ -575,232 +367,60 @@ public class RoofCalibrationController : MonoBehaviour
         }
     }
 
-    static Vector2[] GetPoints(RoofPoints r) =>
-        new[] { r.topLeft, r.topRight, r.bottomRight, r.bottomLeft };
-
-    // ── ポリゴン検証 ─────────────────────────────────────────
-    // 正規化済み前提。ゼロ点チェックのみ。
-    static bool ValidateQuad(RoofPoints r, out string skipReason)
+    // ── 描画 ────────────────────────────────────────────────────
+    void DrawPointMarker(Vector2 n, Color col, string label)
     {
-        if (r.topLeft == Vector2.zero || r.topRight == Vector2.zero ||
-            r.bottomRight == Vector2.zero || r.bottomLeft == Vector2.zero)
-        {
-            skipReason = "zero_point";
-            return false;
-        }
-        skipReason = "";
-        return true;
-    }
-
-    // 4点を比較用文字列キーに変換（F4精度）
-    static string MakeKey(RoofPoints r) =>
-        $"{r.topLeft.x:F4},{r.topLeft.y:F4}|{r.topRight.x:F4},{r.topRight.y:F4}|{r.bottomRight.x:F4},{r.bottomRight.y:F4}|{r.bottomLeft.x:F4},{r.bottomLeft.y:F4}";
-
-    // Load 後に入力済み点数を復元するためだけに使う（起動時は使わない）
-    static int CountInputtedPoints(RoofPoints r)
-    {
-        if (r.confirmed) return 4;
-        int c = 0;
-        if (r.topLeft     != Vector2.zero) c++;
-        if (r.topRight    != Vector2.zero) c++;
-        if (r.bottomRight != Vector2.zero) c++;
-        if (r.bottomLeft  != Vector2.zero) c++;
-        return c;
-    }
-
-    // normalized (0..1) → OnGUI screen pixel
-    // BackgroundImage の投影矩形が有効なら bgRect 基準、無効なら全画面基準
-    Vector2 NormToScreen(Vector2 n)
-    {
-        if (_bgRectValid)
-            return new Vector2(
-                _bgRect.x + n.x * _bgRect.width,
-                _bgRect.y + n.y * _bgRect.height);
-        return new Vector2(n.x * Screen.width, n.y * Screen.height);
-    }
-
-    // 点ごとの色（TL=赤 TR=緑 BR=青 BL=黄）
-    static Color PointColor(string label)
-    {
-        switch (label)
-        {
-            case "TL": return new Color(1f, 0.2f, 0.2f, 1f);
-            case "TR": return new Color(0.2f, 1f, 0.2f, 1f);
-            case "BR": return new Color(0.2f, 0.5f, 1f, 1f);
-            case "BL": return new Color(1f, 1f, 0.1f, 1f);
-            default:   return Color.white;
-        }
-    }
-
-    // 大型十字マーカー (R=24px) + 16px 塗り + ラベル fontSize=22
-    void DrawPointMarker(Vector2 n, Color roofCol, string label)
-    {
-        var s  = NormToScreen(n);
-        var pc = PointColor(label);
-        const float R  = 24f;  // 十字の半径
-        const float TH = 6f;   // 十字の太さ
-        const float SQ = 16f;  // 中心■のサイズ
-
-        // 十字（水平）
-        GUI.color = pc;
+        var s = NormToScreen(n);
+        const float R = 24f, TH = 6f, SQ = 16f;
+        GUI.color = col;
         GUI.DrawTexture(new Rect(s.x - R, s.y - TH * 0.5f, R * 2f, TH), _fill);
-        // 十字（垂直）
         GUI.DrawTexture(new Rect(s.x - TH * 0.5f, s.y - R, TH, R * 2f), _fill);
-        // 中心■（白）
         GUI.color = Color.white;
         GUI.DrawTexture(new Rect(s.x - SQ * 0.5f, s.y - SQ * 0.5f, SQ, SQ), _fill);
 
-        // ラベル（黒縁取り風に白を重ねる）
         GUIStyle st = new GUIStyle(GUI.skin.label);
-        st.fontSize = 22;
-        st.fontStyle = FontStyle.Bold;
-        // 影（黒）
+        st.fontSize = 22; st.fontStyle = FontStyle.Bold;
         st.normal.textColor = Color.black;
         for (int dx = -1; dx <= 1; dx++)
         for (int dy = -1; dy <= 1; dy++)
             if (dx != 0 || dy != 0)
                 GUI.Label(new Rect(s.x + 14f + dx, s.y - 14f + dy, 50f, 28f), label, st);
-        // 本体（点色）
-        st.normal.textColor = pc;
+        st.normal.textColor = col;
         GUI.Label(new Rect(s.x + 14f, s.y - 14f, 50f, 28f), label, st);
-
         GUI.color = Color.white;
     }
 
-    void DrawDotNorm(Vector2 n, Color col)
+    void DrawQuadOutline(RoofPoints r)
     {
-        var s = NormToScreen(n);
-        GUI.color = col;
-        GUI.DrawTexture(new Rect(s.x - 5, s.y - 5, 10, 10), _dot);
-        GUI.color = Color.white;
+        DrawLine(NormToScreen(r.topLeft),     NormToScreen(r.topRight));
+        DrawLine(NormToScreen(r.topRight),    NormToScreen(r.bottomRight));
+        DrawLine(NormToScreen(r.bottomRight), NormToScreen(r.bottomLeft));
+        DrawLine(NormToScreen(r.bottomLeft),  NormToScreen(r.topLeft));
     }
 
-    void DrawLabelNorm(Vector2 n, string label)
-    {
-        var s = NormToScreen(n);
-        GUIStyle st = new GUIStyle(GUI.skin.label);
-        st.fontSize = 20;
-        st.fontStyle = FontStyle.Bold;
-        // 黒縁
-        st.normal.textColor = Color.black;
-        for (int dx = -1; dx <= 1; dx++)
-        for (int dy = -1; dy <= 1; dy++)
-            if (dx != 0 || dy != 0)
-                GUI.Label(new Rect(s.x + 4 + dx, s.y - 24 + dy, 120, 26), label, st);
-        // 白本体
-        st.normal.textColor = Color.white;
-        GUI.Label(new Rect(s.x + 4, s.y - 24, 120, 26), label, st);
-        GUI.color = Color.white;
-    }
-
-    void DrawQuadNorm(Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl, Color col)
-    {
-        Vector2 sTL = NormToScreen(tl);
-        Vector2 sTR = NormToScreen(tr);
-        Vector2 sBR = NormToScreen(br);
-        Vector2 sBL = NormToScreen(bl);
-
-        float yMin = Mathf.Min(sTL.y, sTR.y, sBR.y, sBL.y);
-        float yMax = Mathf.Max(sTL.y, sTR.y, sBR.y, sBL.y);
-        if (yMax - yMin < 1f) return;
-
-        var drawCol = new Color(col.r, col.g, col.b, Mathf.Max(col.a, 0.55f));
-        GUI.color = drawCol;
-        for (float y = yMin; y <= yMax; y += 1f)
-        {
-            float t = (y - yMin) / (yMax - yMin);
-            float lx = Mathf.Lerp(sTL.x, sBL.x, t);
-            float rx = Mathf.Lerp(sTR.x, sBR.x, t);
-            if (lx > rx) { float tmp = lx; lx = rx; rx = tmp; }
-            if (rx - lx > 0.5f) GUI.DrawTexture(new Rect(lx, y, rx - lx, 2f), _fill);
-        }
-        GUI.color = Color.white;
-        DrawLine(sTL, sTR); DrawLine(sTR, sBR);
-        DrawLine(sBR, sBL); DrawLine(sBL, sTL);
-    }
-
-    // normalized → screen pixel (OnGUI 座標: 左上原点) ※旧関数・互換用
-    static Vector2 N2S(Vector2 n, float sw, float sh) => new Vector2(n.x * sw, n.y * sh);
-
-    void DrawDot(Vector2 n, Color col, float sw, float sh)
-    {
-        var s = N2S(n, sw, sh);
-        GUI.color = col;
-        GUI.DrawTexture(new Rect(s.x - 5, s.y - 5, 10, 10), _dot);
-        GUI.color = Color.white;
-    }
-
-    void DrawLabel(Vector2 n, string label, float sw, float sh)
-    {
-        var s = N2S(n, sw, sh);
-        GUI.color = Color.white;
-        GUI.Label(new Rect(s.x + 4, s.y - 2, 80, 18), label);
-    }
-
-    // 台形を行スキャンで塗りつぶす
-    // 引数: tl=topLeft, tr=topRight, br=bottomRight, bl=bottomLeft (normalized 0..1)
-    void DrawQuad(Vector2 tl, Vector2 tr, Vector2 br, Vector2 bl, Color col, float sw, float sh)
-    {
-        // screen pixel 座標に変換（OnGUI: 左上原点）
-        Vector2 sTL = N2S(tl, sw, sh);
-        Vector2 sTR = N2S(tr, sw, sh);
-        Vector2 sBR = N2S(br, sw, sh);
-        Vector2 sBL = N2S(bl, sw, sh);
-
-        float yMin = Mathf.Min(sTL.y, sTR.y, sBR.y, sBL.y);
-        float yMax = Mathf.Max(sTL.y, sTR.y, sBR.y, sBL.y);
-        if (yMax - yMin < 1f) return;
-
-        // アルファを強めにして視認性を確保
-        var drawCol = new Color(col.r, col.g, col.b, Mathf.Max(col.a, 0.55f));
-        GUI.color = drawCol;
-
-        // 1px ずつスキャン（確実に描画）
-        for (float y = yMin; y <= yMax; y += 1f)
-        {
-            float t = (y - yMin) / (yMax - yMin);
-            // 左辺: TL→BL、右辺: TR→BR
-            float lx = Mathf.Lerp(sTL.x, sBL.x, t);
-            float rx = Mathf.Lerp(sTR.x, sBR.x, t);
-            if (lx > rx) { float tmp = lx; lx = rx; rx = tmp; }
-            float w = rx - lx;
-            if (w > 0.5f)
-                GUI.DrawTexture(new Rect(lx, y, w, 2f), _fill);
-        }
-        GUI.color = Color.white;
-
-        // 輪郭線（白）で4辺を描く
-        DrawLine(sTL, sTR); // 上辺
-        DrawLine(sTR, sBR); // 右辺
-        DrawLine(sBR, sBL); // 下辺
-        DrawLine(sBL, sTL); // 左辺
-    }
-
-    // 2点間に細い線を描く（1px 幅の矩形を並べる）
     void DrawLine(Vector2 a, Vector2 b)
     {
         GUI.color = new Color(1f, 1f, 1f, 0.9f);
         int steps = Mathf.Max(1, (int)Vector2.Distance(a, b));
         for (int i = 0; i <= steps; i++)
         {
-            float t = (float)i / steps;
-            var p = Vector2.Lerp(a, b, t);
+            var p = Vector2.Lerp(a, b, (float)i / steps);
             GUI.DrawTexture(new Rect(p.x - 1, p.y - 1, 2, 2), _fill);
         }
         GUI.color = Color.white;
     }
 
-    static Texture2D MakeTex(int w, int h, Color c)
+    Vector2 NormToScreen(Vector2 n)
     {
-        var t = new Texture2D(w, h);
-        t.SetPixel(0, 0, c);
-        t.Apply();
-        return t;
+        if (_bgRectValid)
+            return new Vector2(_bgRect.x + n.x * _bgRect.width, _bgRect.y + n.y * _bgRect.height);
+        return new Vector2(n.x * Screen.width, n.y * Screen.height);
     }
 
-    void OnDestroy()
+    static Texture2D MakeTex(int w, int h, Color c)
     {
-        if (_dot  != null) Destroy(_dot);
-        if (_fill != null) Destroy(_fill);
+        var t = new Texture2D(w, h); t.SetPixel(0, 0, c); t.Apply(); return t;
     }
+
+    void OnDestroy() { if (_fill != null) Destroy(_fill); }
 }

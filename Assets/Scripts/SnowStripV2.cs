@@ -151,6 +151,8 @@ public class SnowStripV2 : MonoBehaviour
 
         if (anyNotReady)
         {
+            // 1軒モード等で対象IDが存在しない場合は再試行しない
+            if (_v2Exhausted) return;
             if (Screen.width > 1 && Screen.height > 1)
                 BuildAllRoofData();
             return;
@@ -161,11 +163,14 @@ public class SnowStripV2 : MonoBehaviour
     }
 
     // ── ルーフデータ構築 ─────────────────────────────────────
+    // _v2Exhausted: 1軒モード等でキャリブデータに対象IDがない場合は再試行しない
+    bool _v2Exhausted = false;
+
     void BuildAllRoofData()
     {
-        if (!File.Exists(CALIB_PATH)) return;
+        if (!File.Exists(CALIB_PATH)) { _v2Exhausted = true; return; }
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));
-        if (sd == null || sd.roofs == null) return;
+        if (sd == null || sd.roofs == null) { _v2Exhausted = true; return; }
 
         for (int ri = 0; ri < 6; ri++)
         {
@@ -205,6 +210,8 @@ public class SnowStripV2 : MonoBehaviour
                       $" eaveGuiY={roof.eaveGuiY:F1}" +
                       $" downhill=({roof.downhillDir.x:F3},{roof.downhillDir.y:F3})");
         }
+        // 1軒モードではマッチするIDが0件→全 ready=false のまま → 再試行ループ防止
+        _v2Exhausted = true;
     }
 
     // ── タップ処理（円形ブラシ）────────────────────────────────
