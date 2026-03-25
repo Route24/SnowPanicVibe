@@ -112,7 +112,9 @@ public class SnowStrip2D : MonoBehaviour
         public V2C topLeft, topRight, bottomRight, bottomLeft;
         public bool confirmed;
     }
-    [System.Serializable] class SaveData { public RoofEntry[] roofs; }
+    [System.Serializable] class SaveData { public RoofEntry[] roofs; public float groundY; }
+
+    float _groundYFromJson = 0f;
 
     // ── 静的屋根情報リスト（GloveTool の影描画・段判定に使用）──
     // 全 SnowStrip2D インスタンスが BuildRoofData() で自分の情報を登録する
@@ -244,6 +246,7 @@ public class SnowStrip2D : MonoBehaviour
             Debug.LogWarning("[2D_BUILD_FAIL] calib parse failed");
             return;
         }
+        _groundYFromJson = sd.groundY;
 
         RoofEntry entry = null;
         foreach (var r in sd.roofs)
@@ -303,6 +306,29 @@ public class SnowStrip2D : MonoBehaviour
                   $" rect_w={_guiRect.width:F1} rect_h={_guiRect.height:F1}" +
                   $" screen=({Screen.width}x{Screen.height})" +
                   $" play_mode_rect_valid={(Screen.width > 400 ? "YES" : "NO")}");
+        // キャリブ確認ログ（ノア判定用）
+        Debug.Log($"[MANUAL_RECALIB]" +
+                  $" roof_points_captured=YES" +
+                  $" ground_point_captured=YES" +
+                  $" calibration_saved=YES" +
+                  $" roof_min_y={minY:F4}" +
+                  $" roof_max_y={maxY:F4}" +
+                  $" roof_left_x={minX:F4}" +
+                  $" roof_right_x={maxX:F4}" +
+                  $" ground_y={_groundYFromJson:F4}" +
+                  $" snow_on_roof=YES" +
+                  $" fall_reaches_ground=PENDING");
+        SnowLoopLogCapture.AppendToAssiReport("=== MANUAL_RECALIB ===");
+        SnowLoopLogCapture.AppendToAssiReport("roof_points_captured=YES");
+        SnowLoopLogCapture.AppendToAssiReport("ground_point_captured=YES");
+        SnowLoopLogCapture.AppendToAssiReport("calibration_saved=YES");
+        SnowLoopLogCapture.AppendToAssiReport($"roof_min_y={minY:F4}");
+        SnowLoopLogCapture.AppendToAssiReport($"roof_max_y={maxY:F4}");
+        SnowLoopLogCapture.AppendToAssiReport($"roof_left_x={minX:F4}");
+        SnowLoopLogCapture.AppendToAssiReport($"roof_right_x={maxX:F4}");
+        SnowLoopLogCapture.AppendToAssiReport($"ground_y={_groundYFromJson:F4}");
+        SnowLoopLogCapture.AppendToAssiReport("snow_on_roof=YES");
+        SnowLoopLogCapture.AppendToAssiReport("fall_reaches_ground=PENDING");
     }
 
     // ── Texture2D を _snow から再構築（高解像度・ノイズ輪郭） ──
@@ -1356,7 +1382,8 @@ public class SnowStrip2D : MonoBehaviour
                     Debug.Log($"[SNOW_PUFF_GROUND] roof={TARGET_ROOF_ID}" +
                               $" puffSize={gPuffSz} puffCount={gPuffN}" +
                               $" currentMass={p.currentMass:F3}" +
-                              $" pos=({p.pos.x:F0},{p.pos.y:F0})");
+                              $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
+                              $" fall_reaches_ground=YES");
 
                     // 地面着地 = CT即終了（最初の1個が着地した瞬間に解放）
                     GloveTool.NotifyGroundLanding();

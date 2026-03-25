@@ -85,6 +85,9 @@ public class RoofCalibrationController : MonoBehaviour
         if (Input.GetKeyDown(KeyCode.Alpha1)) { _mode = CalibMode.Roof;   Debug.Log("[CALIB] mode=ROOF"); }
         if (Input.GetKeyDown(KeyCode.Alpha2)) { _mode = CalibMode.Ground; Debug.Log("[CALIB] mode=GROUND"); }
 
+        // H: 積雪表示トグル（キャリブ時に屋根の角を見やすくする）
+        if (Input.GetKeyDown(KeyCode.H)) ToggleSnow();
+
         // R: リセット
         if (Input.GetKeyDown(KeyCode.R))
         {
@@ -118,7 +121,7 @@ public class RoofCalibrationController : MonoBehaviour
             {
                 SetPoint(_roof, _clickCount, norm);
                 _clickCount++;
-                Debug.Log($"[CALIB] roof=Roof_Main point={PointLabels[_clickCount-1]}({_clickCount}/4) norm=({norm.x:F4},{norm.y:F4})");
+                Debug.Log($"[CALIB] roof=Roof_Main point={PointLabels[_clickCount-1]}({_clickCount}/4) norm=({norm.x:F4},{norm.y:F4}) screen=({Screen.width}x{Screen.height}) bgRect_valid={_bgRectValid} bgRect=({_bgRect.x:F1},{_bgRect.y:F1},{_bgRect.width:F1},{_bgRect.height:F1})");
 
                 if (_clickCount == 4)
                 {
@@ -194,7 +197,7 @@ public class RoofCalibrationController : MonoBehaviour
         }
 
         // ── HUD パネル ──
-        float hudW = 380, hudH = 180;
+        float hudW = 380, hudH = 200;
         GUI.color = new Color(0, 0, 0, 0.75f);
         GUI.DrawTexture(new Rect(8, 8, hudW, hudH), _fill);
         GUI.color = Color.white;
@@ -227,10 +230,31 @@ public class RoofCalibrationController : MonoBehaviour
             GUI.Label(new Rect(14, 88, hudW - 10, 22), _status, svSt);
         }
 
+        // 積雪非表示中の警告
+        if (_snowHidden)
+        {
+            GUIStyle warn = new GUIStyle(GUI.skin.label);
+            warn.fontSize = 20; warn.fontStyle = FontStyle.Bold;
+            warn.normal.textColor = new Color(1f, 0.4f, 0.1f, 1f);
+            GUI.Label(new Rect(14, 160, hudW - 10, 26), "⚠ SNOW HIDDEN  (H to restore)", warn);
+        }
+
         GUI.color = new Color(1, 1, 1, 0.55f);
         GUI.Label(new Rect(14, 116, hudW - 10, 20), "key1=roof  key2=ground  LClick=point  R=reset");
-        GUI.Label(new Rect(14, 138, hudW - 10, 20), "S=save  L=load");
+        GUI.Label(new Rect(14, 138, hudW - 10, 20), "S=save  L=load  H=snow hide/show");
         GUI.color = Color.white;
+    }
+
+    // ── 積雪表示トグル ─────────────────────────────────────────
+    bool _snowHidden = false;
+
+    void ToggleSnow()
+    {
+        _snowHidden = !_snowHidden;
+        var strips = Object.FindObjectsByType<SnowStrip2D>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        foreach (var s in strips)
+            s.enabled = !_snowHidden;
+        Debug.Log($"[CALIB] snow_hidden={_snowHidden} strips={strips.Length}");
     }
 
     // ── Save / Load ────────────────────────────────────────────

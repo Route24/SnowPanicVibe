@@ -46,8 +46,10 @@ public static class SnowLoopNoaReportAutoCopy
             string deltaReport = BuildDeltaReport(lines, fullReport);
             var dir = Path.GetDirectoryName(ReportPath);
             if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(ReportPath, deltaReport);
-            File.WriteAllText(PreviousFullPath, fullReport);
+            // キャリブヘッダーを先頭に付けてから書き込む
+            string calibHeader = BuildCalibHeader();
+            File.WriteAllText(ReportPath, calibHeader + deltaReport);
+            File.WriteAllText(PreviousFullPath, calibHeader + fullReport);
             return true;
         }
         catch (Exception ex)
@@ -55,6 +57,85 @@ public static class SnowLoopNoaReportAutoCopy
             Debug.LogError($"[ASSI Report Error] {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
             return false;
         }
+    }
+
+    /// <summary>キャリブレーション値をJSONから読んでレポート先頭ブロックを生成する</summary>
+    static string BuildCalibHeader()
+    {
+        const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
+        string roofCaptured    = "NO";
+        string groundCaptured  = "NO";
+        string calibSaved      = "NO";
+        string roofMinY        = "N/A";
+        string roofMaxY        = "N/A";
+        string groundYStr      = "N/A";
+        string snowOnRoof      = "PENDING";
+        string fallReachGround = "PENDING";
+
+        if (File.Exists(CALIB_PATH))
+        {
+            try
+            {
+                string json = File.ReadAllText(CALIB_PATH);
+                if (json.Contains("\"Roof_Main\"") && json.Contains("\"confirmed\": true"))
+                {
+                    roofCaptured = "YES";
+                    calibSaved   = "YES";
+                    var ys = Regex.Matches(json, "\"y\":\\s*([0-9.]+)");
+                    var yVals = new List<float>();
+                    foreach (Match m in ys)
+                        if (float.TryParse(m.Groups[1].Value,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out float v))
+                            yVals.Add(v);
+                    if (yVals.Count >= 4)
+                    {
+                        float mn = float.MaxValue, mx = float.MinValue;
+                        for (int i = 0; i < 4; i++)
+                        {
+                            if (yVals[i] < mn) mn = yVals[i];
+                            if (yVals[i] > mx) mx = yVals[i];
+                        }
+                        roofMinY = mn.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+                        roofMaxY = mx.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+                var gm = Regex.Match(json, "\"groundY\":\\s*([0-9.]+)");
+                if (gm.Success)
+                {
+                    groundYStr    = float.Parse(gm.Groups[1].Value,
+                        System.Globalization.CultureInfo.InvariantCulture)
+                        .ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+                    groundCaptured = "YES";
+                }
+            }
+            catch { }
+        }
+
+        // Consoleログから snow_on_roof / fall_reaches_ground を確認
+        if (File.Exists(LogPath))
+        {
+            string log = File.ReadAllText(LogPath);
+            if (log.Contains("snow_on_roof=YES"))      snowOnRoof      = "YES";
+            if (log.Contains("fall_reaches_ground=YES")) fallReachGround = "YES";
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("=== CALIBRATION ===");
+        sb.AppendLine("report_source_file=Assets/Logs/noa_report_latest.txt");
+        sb.AppendLine("report_write_target_file=Assets/Logs/noa_report_latest.txt");
+        sb.AppendLine("same_file=YES");
+        sb.AppendLine("roof_points_captured="  + roofCaptured);
+        sb.AppendLine("ground_point_captured=" + groundCaptured);
+        sb.AppendLine("calibration_saved="     + calibSaved);
+        sb.AppendLine("roof_min_y="            + roofMinY);
+        sb.AppendLine("roof_max_y="            + roofMaxY);
+        sb.AppendLine("ground_y="              + groundYStr);
+        sb.AppendLine("snow_on_roof="          + snowOnRoof);
+        sb.AppendLine("fall_reaches_ground="   + fallReachGround);
+        sb.AppendLine("=== END CALIBRATION ===");
+        sb.AppendLine();
+        return sb.ToString();
     }
 
     /// <summary>SelfTest用レポート。早出し時はEARLY REPORT、後追い完了時はEARLY+FINALを明示。</summary>

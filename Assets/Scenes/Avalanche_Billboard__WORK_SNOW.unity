@@ -313,7 +313,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 709e6c0a654254c5ba0c4d4ee3596bf8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::RoofCalibrationController
-  calibrationModeActive: 0
+  calibrationModeActive: 1
 --- !u!4 &275973187
 Transform:
   m_ObjectHideFlags: 0

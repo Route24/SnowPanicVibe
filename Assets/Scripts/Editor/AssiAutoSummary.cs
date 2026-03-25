@@ -117,6 +117,62 @@ public static class AssiAutoSummary
             sb.AppendLine("error_count="         + errorCount);
             sb.AppendLine("warning_count="       + warningCount);
             sb.AppendLine();
+
+            // --- キャリブレーション状態（JSONから直接読む） ---
+            string calibPath = Path.GetFullPath("Assets/Art/RoofCalibrationData.json");
+            string roofPointsCaptured = "NO";
+            string groundPointCaptured = "NO";
+            string calibSaved = "NO";
+            string roofMinY = "N/A";
+            string roofMaxY = "N/A";
+            string groundYVal = "N/A";
+            if (File.Exists(calibPath))
+            {
+                try
+                {
+                    string calibJson = File.ReadAllText(calibPath);
+                    // roofs 配列に Roof_Main が confirmed=true で存在するか
+                    if (calibJson.Contains("\"Roof_Main\"") && calibJson.Contains("\"confirmed\": true"))
+                    {
+                        roofPointsCaptured = "YES";
+                        calibSaved = "YES";
+                        // minY / maxY を正規表現で抽出
+                        var ys = System.Text.RegularExpressions.Regex.Matches(calibJson, @"""y"":\s*([\d.]+)");
+                        var yVals = new System.Collections.Generic.List<float>();
+                        foreach (System.Text.RegularExpressions.Match m2 in ys)
+                            if (float.TryParse(m2.Groups[1].Value, System.Globalization.NumberStyles.Float,
+                                System.Globalization.CultureInfo.InvariantCulture, out float fy))
+                                yVals.Add(fy);
+                        if (yVals.Count >= 4)
+                        {
+                            float mn = float.MaxValue, mx = float.MinValue;
+                            // 最初の4つが4点のY（groundY は別フィールド）
+                            for (int i = 0; i < 4 && i < yVals.Count; i++)
+                            { if (yVals[i] < mn) mn = yVals[i]; if (yVals[i] > mx) mx = yVals[i]; }
+                            roofMinY = mn.ToString("F4");
+                            roofMaxY = mx.ToString("F4");
+                        }
+                    }
+                    var gm = System.Text.RegularExpressions.Regex.Match(calibJson, @"""groundY"":\s*([\d.]+)");
+                    if (gm.Success)
+                    {
+                        groundYVal = float.Parse(gm.Groups[1].Value,
+                            System.Globalization.CultureInfo.InvariantCulture).ToString("F4");
+                        groundPointCaptured = "YES";
+                    }
+                }
+                catch { }
+            }
+            sb.AppendLine("=== CALIBRATION ===");
+            sb.AppendLine("roof_points_captured="  + roofPointsCaptured);
+            sb.AppendLine("ground_point_captured=" + groundPointCaptured);
+            sb.AppendLine("calibration_saved="     + calibSaved);
+            sb.AppendLine("roof_min_y="            + roofMinY);
+            sb.AppendLine("roof_max_y="            + roofMaxY);
+            sb.AppendLine("ground_y="              + groundYVal);
+            sb.AppendLine("snow_on_roof="          + (Has(r, "snow_on_roof=YES") ? "YES" : "PENDING"));
+            sb.AppendLine("fall_reaches_ground="   + (Has(r, "fall_reaches_ground=YES") ? "YES" : "PENDING"));
+            sb.AppendLine();
             sb.AppendLine("snow_state="          + snowState);
             sb.AppendLine("under_eave_stop="     + underEave);
             sb.AppendLine("falls_straight_down=" + fallsStraight);

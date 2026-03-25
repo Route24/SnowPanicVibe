@@ -272,6 +272,9 @@ public class SnowLoopLogCapture : MonoBehaviour
             $"---{Environment.NewLine}";
         File.WriteAllText(_latestLogPath, header);
 
+        // キャリブレーション値をレポート先頭に書き込む（ノア判定用）
+        AppendCalibrationHeader();
+
         Application.logMessageReceived += OnLogMessageReceived;
     }
 
@@ -293,8 +296,72 @@ public class SnowLoopLogCapture : MonoBehaviour
         catch (Exception ex) { Debug.LogWarning($"[SnowLoopLogCapture] buffer write failed: {ex.Message}"); }
     }
 
-    static void EmitConsoleSnapshot()
+    static void AppendCalibrationHeader()
     {
+        const string CALIB_PATH = "Assets/Art/RoofCalibrationData.json";
+        string roofCaptured   = "NO";
+        string groundCaptured = "NO";
+        string calibSaved     = "NO";
+        string roofMinY       = "N/A";
+        string roofMaxY       = "N/A";
+        string groundY        = "N/A";
+
+        if (File.Exists(CALIB_PATH))
+        {
+            try
+            {
+                string json = File.ReadAllText(CALIB_PATH);
+                if (json.Contains("\"Roof_Main\"") && json.Contains("\"confirmed\": true"))
+                {
+                    roofCaptured = "YES";
+                    calibSaved   = "YES";
+                    var ys = System.Text.RegularExpressions.Regex.Matches(
+                        json, "\"y\":\\s*([0-9.]+)");
+                    var yVals = new System.Collections.Generic.List<float>();
+                    foreach (System.Text.RegularExpressions.Match m in ys)
+                        if (float.TryParse(m.Groups[1].Value,
+                            System.Globalization.NumberStyles.Float,
+                            System.Globalization.CultureInfo.InvariantCulture, out float v))
+                            yVals.Add(v);
+                    // 最初の4つが屋根4点のY
+                    if (yVals.Count >= 4)
+                    {
+                        float mn = float.MaxValue, mx = float.MinValue;
+                        for (int i = 0; i < 4; i++)
+                        {
+                            if (yVals[i] < mn) mn = yVals[i];
+                            if (yVals[i] > mx) mx = yVals[i];
+                        }
+                        roofMinY = mn.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+                        roofMaxY = mx.ToString("F4", System.Globalization.CultureInfo.InvariantCulture);
+                    }
+                }
+                var gm = System.Text.RegularExpressions.Regex.Match(
+                    json, "\"groundY\":\\s*([0-9.]+)");
+                if (gm.Success)
+                {
+                    groundY       = float.Parse(gm.Groups[1].Value,
+                        System.Globalization.CultureInfo.InvariantCulture).ToString("F4",
+                        System.Globalization.CultureInfo.InvariantCulture);
+                    groundCaptured = "YES";
+                }
+            }
+            catch { }
+        }
+
+        AppendToAssiReport("=== CALIBRATION ===");
+        AppendToAssiReport("roof_points_captured="  + roofCaptured);
+        AppendToAssiReport("ground_point_captured=" + groundCaptured);
+        AppendToAssiReport("calibration_saved="     + calibSaved);
+        AppendToAssiReport("roof_min_y="            + roofMinY);
+        AppendToAssiReport("roof_max_y="            + roofMaxY);
+        AppendToAssiReport("ground_y="              + groundY);
+        AppendToAssiReport("snow_on_roof=PENDING");
+        AppendToAssiReport("fall_reaches_ground=PENDING");
+        AppendToAssiReport("=== END CALIBRATION ===");
+    }
+
+    static void EmitConsoleSnapshot()    {
         try
         {
             AppendToAssiReport("=== CONSOLE SNAPSHOT (last 30 lines) ===");
