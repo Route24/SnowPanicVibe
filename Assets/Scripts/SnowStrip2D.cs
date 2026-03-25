@@ -23,8 +23,8 @@ public class SnowStrip2D : MonoBehaviour
 {
     // ── 設定（外部から設定可能）──────────────────────────────
     // WorkSnowForcer から AddComponent 後に設定する
-    public string roofId  = "Roof_BR";
-    public string guideId = "RoofGuide_BR";
+    public string roofId  = "Roof_Main";
+    public string guideId = "RoofGuide_Main";
 
     // ── 定数 ──────────────────────────────────────────────────
     const string CALIB_PATH        = "Assets/Art/RoofCalibrationData.json";

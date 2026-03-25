@@ -455,26 +455,33 @@ public class GloveTool : MonoBehaviour, IToolUI
             _gloveIsUpper        = gloveIsUpper;
             _selectedBandIsUpper = info.isUpper;
 
-            Debug.Log($"[SHADOW_MAPPING]" +
-                      $" glove_y={my:F0}" +
-                      $" normalized_t={t:F3}" +
-                      $" shadow_y={_shadowCY:F0}" +
-                      $" roof_min_y={roofTop:F0}" +
-                      $" roof_max_y={roofShadowMax:F0}" +
-                      $" full_range_tracking=YES" +
-                      $" dead_band_exists=NO");
-            Debug.Log($"[SHADOW_BEHAVIOR]" +
-                      $" using_remap=YES" +
-                      $" using_raycast_for_roof=NO" +
-                      $" clamp_used=NO" +
-                      $" shadow_stops_anywhere=NO");
+            // 影Y が 5px 以上変化したときのみログ出力（毎フレーム連打を防ぐ）
+            if (Mathf.Abs(_shadowCY - _lastLoggedShadowCY) >= 5f)
+            {
+                _lastLoggedShadowCY = _shadowCY;
+                Debug.Log($"[SHADOW_MAPPING]" +
+                          $" glove_y={my:F0}" +
+                          $" normalized_t={t:F3}" +
+                          $" shadow_y={_shadowCY:F0}" +
+                          $" roof_min_y={roofTop:F0}" +
+                          $" roof_max_y={roofShadowMax:F0}" +
+                          $" full_range_tracking=YES" +
+                          $" dead_band_exists=NO");
+                Debug.Log($"[SHADOW_BEHAVIOR]" +
+                          $" using_remap=YES" +
+                          $" using_raycast_for_roof=NO" +
+                          $" clamp_used=NO" +
+                          $" shadow_stops_anywhere=NO");
+            }
             break;
         }
     }
 
     // 段ログ用フィールド
-    bool _gloveIsUpper        = false;
-    bool _selectedBandIsUpper = false;
+    bool  _gloveIsUpper        = false;
+    bool  _selectedBandIsUpper = false;
+    // SHADOW_MAPPING ログを間引くための前回値
+    float _lastLoggedShadowCY  = -9999f;
 
     // ─── IToolUI 実装: OnGUI から呼ばれる ────────────────────
     public void DrawToolUI()

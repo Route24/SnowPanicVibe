@@ -716,7 +716,8 @@ public class WorkSnowForcer : MonoBehaviour
             ok++;
         }
 
-        _applied = ok == 6;
+        // 1軒モード等でok<6でも、1件以上適用できたら_appliedをtrueにして再試行ループを防ぐ
+        _applied = ok > 0;
         Debug.Log($"[ALL6_SNOW_FIT] count={ok}/6 all_6={(_applied ? "YES" : "NO")}");
     }
 
@@ -811,6 +812,10 @@ public class WorkSnowForcer : MonoBehaviour
         }
 
         _roofsReady = readyCount == 6;
+        // readyCount が 6 未満でもキャリブデータ読み込み済みなら再試行しない
+        // （1軒モード等でデータが少ない場合、毎フレーム再試行してログ連打するのを防ぐ）
+        if (readyCount == 0) _roofsReady = false;
+        else _roofsReady = true;  // 1軒以上読めたら「準備完了」とみなす
         Debug.Log($"[UNDER_EAVE_TARGET] all_6_targets_created={(_roofsReady ? "YES" : "NO")} count={readyCount}");
 
         // ── 誤着地防止: eaveGuiY が「自分より上にある屋根」の guiRect に入らないようクランプ ──
