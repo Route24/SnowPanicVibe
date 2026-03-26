@@ -1,5 +1,5 @@
 === SUMMARY ===
-generated_at=2026-03-26 18:53:15
+generated_at=2026-03-26 19:35:01
 scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
@@ -14,7 +14,7 @@ roof_min_y=0.2417
 roof_max_y=0.4470
 ground_y=0.6736
 snow_on_roof=YES
-fall_reaches_ground=YES
+fall_reaches_ground=PENDING
 
 snow_state=ALL6_THICK
 under_eave_stop=UNKNOWN
