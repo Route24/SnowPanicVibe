@@ -244,6 +244,18 @@ public class UnifiedHUD : MonoBehaviour
 
     void Update()
     {
+        // HUD 全体の表示/非表示を SnowStrip2D.s_hudVisible に追従
+        bool vis = SnowStrip2D.s_hudVisible;
+        if (_scoreText  != null) _scoreText.gameObject.SetActive(vis);
+        if (_scoreTMP   != null) _scoreTMP.gameObject.SetActive(vis);
+        if (_statusText != null) _statusText.gameObject.SetActive(vis);
+        if (_statusTMP  != null) _statusTMP.gameObject.SetActive(vis);
+        // ScoreBacking（黒背景）も同期
+        var backing = transform.Find("ScoreBacking");
+        if (backing != null) backing.gameObject.SetActive(vis);
+
+        if (!vis) return;
+
         if (_scoreText == null && _scoreTMP == null) return;
         var mgr = SnowPhysicsScoreManager.Instance;
         if (mgr != null) SetScoreText("SCORE: " + mgr.Score);

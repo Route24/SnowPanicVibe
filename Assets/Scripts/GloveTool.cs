@@ -476,14 +476,20 @@ public class GloveTool : MonoBehaviour, IToolUI
 
         // ── 手袋描画Y の決定 ──
         // Ready   : _drawGloveY（影基準固定オフセット）
-        // Striking: ease-in で _strikeStartY → _strikeTargetY - h * RATIO
+        // Striking: ease-in で _strikeStartY → 雪面に向かって降下
+        //   targetDrawY = 影の下端（雪面ヒット位置）に手袋下端が触れる位置
+        //   = _shadowCY - _curH * 0.2f（影下端すぐ上）
+        //   必ず startY より下（大きい値）になるよう Mathf.Max で保証
         // Cooldown: _drawGloveY（マウス追従、グレー表示）
         float drawY;
         if (_state == GloveState.Striking)
         {
             float t     = Mathf.Clamp01(_strikeTimer / STRIKE_DURATION);
             float eased = t * t;
-            float targetDrawY = _strikeTargetY - _curH * SHADOW_GLOVE_OFFSET_RATIO;
+            // 雪面（影下端）に手袋下端が触れる位置 = shadowCY - curH * 0.2
+            float hitDrawY    = _strikeTargetY - _curH * 0.2f;
+            // 必ず下方向（startY より大きい）を保証
+            float targetDrawY = Mathf.Max(hitDrawY, _strikeStartY + _curH * 0.5f);
             drawY = Mathf.Lerp(_strikeStartY, targetDrawY, eased);
         }
         else

@@ -28,6 +28,9 @@ public class SnowStrip2D : MonoBehaviour
     [Tooltip("true にすると詳細ログを Console に出す（通常はOFF）")]
     public bool   verboseLog = false;
 
+    // ── HUD / デバッグ表示トグル（H キーで切り替え、デフォルト非表示）──
+    public static bool s_hudVisible = false;
+
     // ── 定数 ──────────────────────────────────────────────────
     const string CALIB_PATH        = "Assets/Art/RoofCalibrationData.json";
     // TARGET_ROOF_ID / TARGET_GUIDE_ID は roofId / guideId に移行
@@ -232,6 +235,13 @@ public class SnowStrip2D : MonoBehaviour
     void Update()
     {
         if (!Application.isPlaying) return;
+
+        // H キーで HUD / デバッグ表示をトグル
+        if (Input.GetKeyDown(KeyCode.H))
+        {
+            s_hudVisible = !s_hudVisible;
+            AssiLogger.Info($"[HUD_VISIBILITY] hud_visible={s_hudVisible}");
+        }
 
         if (!_ready)
         {
@@ -678,12 +688,12 @@ public class SnowStrip2D : MonoBehaviour
         //
         // TAP_TOTAL_CAP: 1タップ総削り量の上限（暴走防止）
         //
-        const float FP_RX         = 6f;   // X方向半径（グリッドセル単位）
-        const float FP_RY         = 4f;   // Y方向半径
-        // FP_MAX は後で動的計算（ヒット位置の局所雪密度に応じて 0.25〜1.8 に変化）
-        const float SEC_RATIO     = 0.25f; // secondary = primary の25%
-        const int   SEC_DEPTH     = 2;    // 下方向2段まで
-        const float TAP_TOTAL_CAP = 80f;  // 1タップ上限（暴走防止）
+        const float FP_RX         = 3f;   // 6→3: 横方向を半減（横広がり排除）
+        const float FP_RY         = 3f;   // 4→3: 縦も少し絞る
+        // FP_MAX は後で動的計算（ヒット位置の局所雪密度に応じて揺らぎ付与）
+        const float SEC_RATIO     = 0.15f; // 0.25→0.15: 下への伝播も減らす
+        const int   SEC_DEPTH     = 1;    // 2→1: 伝播1段のみ
+        const float TAP_TOTAL_CAP = 15f;  // 80→15: 1タップ削り量を大幅制限
 
         // ── 状態依存 hit_class 分類 ──────────────────────────────
         // ヒット中心周辺 5×5 セルの平均雪量（localMetric）で small/medium/large を決定
@@ -713,23 +723,23 @@ public class SnowStrip2D : MonoBehaviour
         if (localMetric < THRESHOLD_LOW)
         {
             hitClass  = "small";
-            hitFP_RX  = FP_RX * 0.30f;
-            hitFP_RY  = FP_RY * 0.30f;
-            hitFP_MAX = 0.30f;
+            hitFP_RX  = FP_RX * 0.5f;
+            hitFP_RY  = FP_RY * 0.5f;
+            hitFP_MAX = Random.Range(0.15f, 0.35f);  // 揺らぎ付与
         }
         else if (localMetric < THRESHOLD_HIGH)
         {
             hitClass  = "medium";
             hitFP_RX  = FP_RX;
             hitFP_RY  = FP_RY;
-            hitFP_MAX = 1.0f;
+            hitFP_MAX = Random.Range(0.35f, 0.65f);  // 揺らぎ付与（旧1.0→0.35〜0.65）
         }
         else
         {
             hitClass  = "large";
-            hitFP_RX  = FP_RX * 3.0f;
-            hitFP_RY  = FP_RY * 3.0f;
-            hitFP_MAX = 3.0f;
+            hitFP_RX  = FP_RX * 1.5f;               // 3.0→1.5
+            hitFP_RY  = FP_RY * 1.5f;
+            hitFP_MAX = Random.Range(0.65f, 1.2f);   // 揺らぎ付与（旧3.0→0.65〜1.2）
         }
 
         AssiLogger.Verbose($"[STATE_DEPENDENT_HIT_CLASS] roof={TARGET_ROOF_ID}" +
@@ -966,27 +976,26 @@ public class SnowStrip2D : MonoBehaviour
             // spawn Y: 屋根の中央付近（_guiRect.y = 上端、yMax = 下端）
             float spawnY = Mathf.Lerp(_guiRect.y, _guiRect.yMax, 0.3f);
 
-            // ── 叩き雪煙: 雪セルにヒットした時のみ ──────────────
-            // 大中小: totalDelta に基づいて分類（サイズ・数を大幅強化）
+            // ── 叩き雪煙: 小さめに固定（eave=中・ground=大と明確に差をつける）
             float puffDelta = totalDelta;
-            string puffSize = puffDelta > 2.0f ? "large" : (puffDelta > 0.8f ? "medium" : "small");
-            int   puffCount    = puffDelta > 2.0f ? 14 : (puffDelta > 0.8f ? 9 : 6);
-            float puffBaseSize = puffDelta > 2.0f ? 72f : (puffDelta > 0.8f ? 50f : 34f);
+            string puffSize = puffDelta > 1.5f ? "medium" : "small";  // tap時は最大medium
+            int   puffCount    = puffDelta > 1.5f ? 5 : 3;            // 14/9/6 → 5/3
+            float puffBaseSize = puffDelta > 1.5f ? 22f : 14f;        // 72/50/34 → 22/14
 
             for (int pi = 0; pi < puffCount; pi++)
             {
-                // 広がりを大きく: 放射状に散らばる
-                float angle  = Random.Range(0f, Mathf.PI * 2f);
-                float spread = Random.Range(8f, 38f);
+                // 横拡散を抑制: 上方向中心の小さい広がり
+                float angle  = Random.Range(-Mathf.PI * 0.4f, -Mathf.PI * 0.6f) + Random.Range(-0.3f, 0.3f);
+                float spread = Random.Range(3f, 12f);
                 float pjx    = Mathf.Cos(angle) * spread;
-                float pjy    = Mathf.Sin(angle) * spread * 0.5f - Random.Range(4f, 18f); // 上方向に偏らせる
-                float psz    = puffBaseSize * Random.Range(0.6f, 1.6f);
-                float pl     = Random.Range(0.5f, 0.9f);
-                float spd    = Random.Range(30f, 80f);
+                float pjy    = Mathf.Sin(angle) * spread;
+                float psz    = puffBaseSize * Random.Range(0.7f, 1.3f);
+                float pl     = Random.Range(0.3f, 0.5f);
+                float spd    = Random.Range(15f, 35f);
                 _puffs.Add(new Puff
                 {
                     pos     = new Vector2(spawnX + pjx, spawnY + pjy),
-                    vel     = new Vector2(Mathf.Cos(angle) * spd, -Random.Range(20f, 60f)),
+                    vel     = new Vector2(Mathf.Cos(angle) * spd * 0.2f, -Random.Range(10f, 30f)),
                     size    = psz,
                     life    = pl,
                     maxLife = pl,
@@ -999,7 +1008,7 @@ public class SnowStrip2D : MonoBehaviour
 
             for (int i = 0; i < spawnCount; i++)
             {
-                float jx = Random.Range(-roofW * 0.10f, roofW * 0.10f);
+                float jx = Random.Range(-roofW * 0.02f, roofW * 0.02f);  // 0.10→0.02: 横拡散排除
 
                 // サイズ: 屋根幅の 1/8〜1/10 程度を目標に縮小
                 // 旧: roofW * [0.10, 0.26] → clamp [14, 52]
@@ -1071,7 +1080,7 @@ public class SnowStrip2D : MonoBehaviour
             // large : 主落雪の後に追加（0.3〜0.6秒遅れ）
             for (int fi = 0; fi < followupCount; fi++)
             {
-                float fjx = Random.Range(-roofW * 0.12f, roofW * 0.12f);
+                float fjx = Random.Range(-roofW * 0.03f, roofW * 0.03f);  // 0.12→0.03
                 float fsz = Mathf.Clamp(roofW * Random.Range(0.04f, 0.10f), 5f, 18f);
                 float fDelay = classSlideDelay + Random.Range(0.05f, 0.15f);  // 0.12-0.25 → 0.05-0.15
                 Color fsc = new Color(
@@ -1106,7 +1115,7 @@ public class SnowStrip2D : MonoBehaviour
             // 主落雪・followup よりさらに遅れて（0.8〜1.4秒後）少量ずつ落ちる
             for (int si = 0; si < sparseCount; si++)
             {
-                float sjx = Random.Range(-roofW * 0.18f, roofW * 0.18f);
+                float sjx = Random.Range(-roofW * 0.04f, roofW * 0.04f);  // 0.18→0.04
                 float ssz = Mathf.Clamp(roofW * Random.Range(0.03f, 0.07f), 4f, 12f);
                 float sDelay = classSlideDelay + Random.Range(0.10f, 0.25f);  // 0.25-0.5 → 0.10-0.25
                 Color ssc = new Color(
@@ -1375,21 +1384,21 @@ public class SnowStrip2D : MonoBehaviour
                         transitionToFall = true;
                         AssiLogger.Verbose($"[2D_SLIDE_EAVE] roof={TARGET_ROOF_ID} pos=({p.pos.x:F0},{p.pos.y:F0}) mass={p.currentMass:F3}");
 
-                        // 軒落下時の雪煙: 大中小を currentMass で分類
+                        // 軒落下時の雪煙: 「中」サイズ（tap=小 / eave=中 / ground=大）
                         string eavePuffSz = p.currentMass > 1.5f ? "large" :
                                             (p.currentMass > 0.7f ? "medium" : "small");
-                        int eavePuffN = p.currentMass > 1.5f ? 4 : (p.currentMass > 0.7f ? 3 : 2);
-                        float eavePuffBase = p.currentMass > 1.5f ? 22f : (p.currentMass > 0.7f ? 14f : 8f);
+                        int eavePuffN = p.currentMass > 1.5f ? 6 : (p.currentMass > 0.7f ? 4 : 3);
+                        float eavePuffBase = p.currentMass > 1.5f ? 48f : (p.currentMass > 0.7f ? 34f : 22f);
                         for (int pi2 = 0; pi2 < eavePuffN; pi2++)
                         {
-                            float pjx = Random.Range(-10f, 10f);
-                            float pjy = Random.Range(-6f, 6f);
+                            float pjx = Random.Range(-8f, 8f);
+                            float pjy = Random.Range(-4f, 4f);
                             float psz = eavePuffBase * Random.Range(0.7f, 1.4f);
                             float pl  = Random.Range(0.5f, 0.9f);
                             _puffs.Add(new Puff
                             {
                                 pos     = new Vector2(p.pos.x + pjx, p.pos.y + pjy),
-                                vel     = new Vector2(Random.Range(-15f, 15f), Random.Range(-20f, 5f)),
+                                vel     = new Vector2(Random.Range(-12f, 12f), Random.Range(-25f, -5f)),
                                 size    = psz,
                                 life    = pl,
                                 maxLife = pl,
@@ -1442,19 +1451,20 @@ public class SnowStrip2D : MonoBehaviour
                 // 地面着弾雪煙: 速度があった時のみ（停止から来たPuffは出さない）
                 if (wasMoving && !p.slideActive)
                 {
-                    float gPuffBase = p.currentMass > 1.5f ? 20f : (p.currentMass > 0.7f ? 13f : 7f);
+                    // 地面着地雪煙: 「大」サイズ（tap=小 / eave=中 / ground=大）
+                    float gPuffBase = p.currentMass > 1.5f ? 70f : (p.currentMass > 0.7f ? 50f : 34f);
                     string gPuffSz  = p.currentMass > 1.5f ? "large" :
                                       (p.currentMass > 0.7f ? "medium" : "small");
-                    int gPuffN = p.currentMass > 1.5f ? 4 : (p.currentMass > 0.7f ? 3 : 2);
+                    int gPuffN = p.currentMass > 1.5f ? 8 : (p.currentMass > 0.7f ? 6 : 4);
                     for (int pi3 = 0; pi3 < gPuffN; pi3++)
                     {
-                        float pjx = Random.Range(-14f, 14f);
+                        float pjx = Random.Range(-18f, 18f);
                         float psz = gPuffBase * Random.Range(0.8f, 1.5f);
-                        float pl  = Random.Range(0.4f, 0.8f);
+                        float pl  = Random.Range(0.6f, 1.0f);
                         _puffs.Add(new Puff
                         {
                             pos     = new Vector2(p.pos.x + pjx, p.pos.y),
-                            vel     = new Vector2(Random.Range(-25f, 25f), Random.Range(-40f, -10f)),
+                            vel     = new Vector2(Random.Range(-30f, 30f), Random.Range(-50f, -15f)),
                             size    = psz,
                             life    = pl,
                             maxLife = pl,
@@ -1666,6 +1676,8 @@ public class SnowStrip2D : MonoBehaviour
         }
 
         // ── fill ゲージ（左端黄バー）──────────────────────────
+        if (s_hudVisible)
+        {
         GUI.color = new Color(1f, 1f, 0f, 0.85f);
         float barH = _guiRect.height * fillAvg;
         GUI.DrawTexture(new Rect(_guiRect.x - 6f, _guiRect.yMax - barH, 5f, barH),
@@ -1689,6 +1701,7 @@ public class SnowStrip2D : MonoBehaviour
         GUI.Label(new Rect(tx+2, ty+25, 168, 14), _lastInfo, style);
 
         GUI.color = Color.white;
+        }
 
         // 道具UI前面描画の共通エントリポイント
         // ToolUIRenderer が「全軒OnGUI完了後の最後の1回」に全道具UIを描画する
