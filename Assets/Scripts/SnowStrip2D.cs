@@ -265,9 +265,19 @@ public class SnowStrip2D : MonoBehaviour
     // ── 初期化 ───────────────────────────────────────────────
     void InitSnow()
     {
+        // 初期積雪: 表面(y=0)に近いほど厚く、奥(y=GRID_H-1)に向かって薄くなる
+        // さらに列ごとにランダムな厚みオフセットを加える（叩く前から厚みの差を感じさせる）
         for (int x = 0; x < GRID_W; x++)
-        for (int y = 0; y < GRID_H; y++)
-            _snow[x, y] = 1f;
+        {
+            float colBase = Random.Range(0.85f, 1.0f); // 列ごとの厚みベース
+            for (int y = 0; y < GRID_H; y++)
+            {
+                // 表面0行目=最厚(1.5)、奥へ向かって徐々に増厚（多層積雪感）
+                float depthMult = 1.0f + (1f - (float)y / GRID_H) * 0.5f; // 1.0〜1.5
+                float noise     = Random.Range(-0.08f, 0.08f);
+                _snow[x, y]     = Mathf.Clamp(colBase * depthMult + noise, 0.8f, 1.5f);
+            }
+        }
     }
 
     // ── 遅延崩れ処理（中心先・周辺遅延の時間差） ─────────────────
@@ -725,21 +735,21 @@ public class SnowStrip2D : MonoBehaviour
             hitClass  = "small";
             hitFP_RX  = FP_RX * 0.5f;
             hitFP_RY  = FP_RY * 0.5f;
-            hitFP_MAX = Random.Range(0.15f, 0.35f);  // 揺らぎ付与
+            hitFP_MAX = Random.Range(0.10f, 0.25f);  // 下限を下げてさらに薄削れも出す
         }
         else if (localMetric < THRESHOLD_HIGH)
         {
             hitClass  = "medium";
-            hitFP_RX  = FP_RX;
-            hitFP_RY  = FP_RY;
-            hitFP_MAX = Random.Range(0.35f, 0.65f);  // 揺らぎ付与（旧1.0→0.35〜0.65）
+            hitFP_RX  = FP_RX * Random.Range(0.8f, 1.2f);  // 半径にも揺らぎ
+            hitFP_RY  = FP_RY * Random.Range(0.8f, 1.2f);
+            hitFP_MAX = Random.Range(0.25f, 0.70f);  // 幅を広げる（旧0.35〜0.65）
         }
         else
         {
             hitClass  = "large";
-            hitFP_RX  = FP_RX * 1.5f;               // 3.0→1.5
-            hitFP_RY  = FP_RY * 1.5f;
-            hitFP_MAX = Random.Range(0.65f, 1.2f);   // 揺らぎ付与（旧3.0→0.65〜1.2）
+            hitFP_RX  = FP_RX * Random.Range(1.2f, 1.8f);  // 1.5固定→揺らぎ
+            hitFP_RY  = FP_RY * Random.Range(1.2f, 1.8f);
+            hitFP_MAX = Random.Range(0.55f, 1.4f);   // 上限を上げて大当たりを出す
         }
 
         AssiLogger.Verbose($"[STATE_DEPENDENT_HIT_CLASS] roof={TARGET_ROOF_ID}" +
@@ -980,8 +990,8 @@ public class SnowStrip2D : MonoBehaviour
             // ── 叩き雪煙: 「小」だが視認できるサイズ（eave=中・ground=大との差は維持）
             float puffDelta = totalDelta;
             string puffSize = puffDelta > 1.5f ? "medium" : "small";
-            int   puffCount    = puffDelta > 1.5f ? 6 : 4;          // 5/3 → 6/4
-            float puffBaseSize = puffDelta > 1.5f ? 38f : 28f;      // 22/14 → 38/28（視認サイズへ）
+            int   puffCount    = puffDelta > 1.5f ? 7 : 5;          // 6/4 → 7/5
+            float puffBaseSize = puffDelta > 1.5f ? 52f : 40f;      // 38/28 → 52/40
 
             for (int pi = 0; pi < puffCount; pi++)
             {
@@ -1149,38 +1159,27 @@ public class SnowStrip2D : MonoBehaviour
 
             AssiLogger.Verbose($"[2D_FP#{_tapCount}] spawnCount={spawnCount}" +
                       $" downhill=({_downhillDir.x:F2},{_downhillDir.y:F2})");
-            // [FALL_SEQUENCE] / [HIT_TIME_PROFILE] verbose のみ
             AssiLogger.Verbose($"[FALL_SEQUENCE] hit_class={hitClass} main={spawnCount} followup={followupCount} sparse={sparseCount}" +
                       $" slide_delay={classSlideDelay:F2}");
-            Debug.Log($"[FALL_TIMING]" +
+            AssiLogger.Verbose($"[FALL_TIMING]" +
                       $" hit_class={hitClass}" +
                       $" slide_delay_runtime={classSlideDelay:F3}" +
                       $" slide_speed_runtime={SLIDE_SPD:F0}" +
                       $" slide_max_spd_runtime={classSlideMaxSpd:F0}" +
                       $" slide_accel_runtime={classSlideAccel:F0}" +
-                      $" gravity_runtime=1400" +
-                      $" total_time_to_ground=~0.15-0.45s" +
-                      $" uses_modified_values=YES" +
-                      $" wrong_file_modified=NO" +
-                      $" source_file_paths=Assets/Scripts/SnowStrip2D.cs" +
-                      $" timing_faster_than_before=YES");
-            Debug.Log($"[ACTIVE_FALL_RUNTIME]" +
+                      $" gravity_runtime=1400");
+            AssiLogger.Verbose($"[ACTIVE_FALL_RUNTIME]" +
                       $" active_system=2D_ONGUI" +
                       $" slide_delay_runtime={classSlideDelay:F3}" +
-                      $" slide_speed_runtime={SLIDE_SPD:F0}" +
-                      $" fall_duration_runtime=gravity1400_from_eave" +
-                      $" uses_modified_values=YES" +
-                      $" source_file_paths=Assets/Scripts/SnowStrip2D.cs" +
-                      $" wrong_file_modified=NO");
+                      $" slide_speed_runtime={SLIDE_SPD:F0}");
 
             // 全ピース数（main + followup + sparse）を GloveTool に登録
             // 最後の1個が着地した瞬間にCT終了する
             int totalTracked = spawnCount + followupCount + sparseCount;
             GloveTool.BeginCooldownTracking(totalTracked);
-            Debug.Log($"[COOLDOWN_SYNC] hit_class={hitClass}" +
+            AssiLogger.Verbose($"[COOLDOWN_SYNC] hit_class={hitClass}" +
                       $" main={spawnCount} followup={followupCount} sparse={sparseCount}" +
-                      $" total_tracked={totalTracked}" +
-                      $" cooldown_ends_on_last_visible_ground=YES");
+                      $" total_tracked={totalTracked}");
         }
 
         _lastInfo    = $"TAP#{_tapCount} fill={fillAfter:F2} sp={(spawned ? spawnCount.ToString() : "NO")}";
@@ -1192,14 +1191,8 @@ public class SnowStrip2D : MonoBehaviour
             if (_snow[ex, ey] <= EXPOSED_CELL_THRESHOLD) exposedCellCount++;
         float exposedAreaRatio = (float)exposedCellCount / (GRID_W * GRID_H);
 
-        // 叩いた時の主要イベントログ（Console に残す）
-        Debug.Log($"[2D_FP#{_tapCount}] roof={TARGET_ROOF_ID}" +
-                  $" hitPos=({guiPos.x:F0},{guiPos.y:F0})" +
-                  $" hitClass={hitClass}" +
-                  $" totalDelta={totalDelta:F2}" +
-                  $" fillBefore={fillBefore:F3} fillAfter={fillAfter:F3}" +
-                  $" exposed={exposedAreaRatio:F2}" +
-                  $" spawned={(spawned ? $"YES({spawnCount})" : "NO")}");
+        // 叩き結果（1行要約）
+        AssiLogger.Info($"[HIT] tap={_tapCount} class={hitClass} delta={totalDelta:F2} fill={fillBefore:F2}→{fillAfter:F2} spawn={(spawned ? spawnCount.ToString() : "NO")}");
 
         AssiLogger.Verbose($"[GLOVE_SNOW_FALL_RESTORE]" +
                   $" snow_fell={(spawned ? "YES" : "NO")}" +
@@ -1413,7 +1406,7 @@ public class SnowStrip2D : MonoBehaviour
                                 kind    = 1,
                             });
                         }
-                        Debug.Log($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID} puffSize={eavePuffSz} puffCount={eavePuffN} pos=({p.pos.x:F0},{p.pos.y:F0})");
+                        AssiLogger.Verbose($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID} puffSize={eavePuffSz} puffCount={eavePuffN} pos=({p.pos.x:F0},{p.pos.y:F0})");
                     }
 
                     // 屋根左右外に出たら停止
@@ -1480,10 +1473,7 @@ public class SnowStrip2D : MonoBehaviour
                             kind    = 2,
                         });
                     }
-                    Debug.Log($"[SNOW_PUFF_GROUND] roof={TARGET_ROOF_ID}" +
-                              $" puffSize={gPuffSz} puffCount={gPuffN}" +
-                              $" pos=({p.pos.x:F0},{p.pos.y:F0})" +
-                              $" fall_reaches_ground=YES");
+                    AssiLogger.Verbose($"[SNOW_PUFF_GROUND] roof={TARGET_ROOF_ID} puffSize={gPuffSz} puffCount={gPuffN}");
 
                     // 地面着地 = CT即終了（最初の1個が着地した瞬間に解放）
                     GloveTool.NotifyGroundLanding();
