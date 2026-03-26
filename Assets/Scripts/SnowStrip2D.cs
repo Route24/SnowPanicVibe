@@ -968,7 +968,8 @@ public class SnowStrip2D : MonoBehaviour
                 sparseCount      = 4;
             }
 
-            const float SLIDE_SPD = 10f;  // 共通初速（遅い）
+            const float SLIDE_SPD     = 10f;   // 共通初速
+            const float SLIDE_MIN_SPD = 120f;  // 最低保証速度: これ未満のまま滑り続けることを禁止
 
             float roofW  = _guiRect.width;
             // spawn X: タップ位置付近（屋根面上）
@@ -976,11 +977,11 @@ public class SnowStrip2D : MonoBehaviour
             // spawn Y: 屋根の中央付近（_guiRect.y = 上端、yMax = 下端）
             float spawnY = Mathf.Lerp(_guiRect.y, _guiRect.yMax, 0.3f);
 
-            // ── 叩き雪煙: 小さめに固定（eave=中・ground=大と明確に差をつける）
+            // ── 叩き雪煙: 「小」だが視認できるサイズ（eave=中・ground=大との差は維持）
             float puffDelta = totalDelta;
-            string puffSize = puffDelta > 1.5f ? "medium" : "small";  // tap時は最大medium
-            int   puffCount    = puffDelta > 1.5f ? 5 : 3;            // 14/9/6 → 5/3
-            float puffBaseSize = puffDelta > 1.5f ? 22f : 14f;        // 72/50/34 → 22/14
+            string puffSize = puffDelta > 1.5f ? "medium" : "small";
+            int   puffCount    = puffDelta > 1.5f ? 6 : 4;          // 5/3 → 6/4
+            float puffBaseSize = puffDelta > 1.5f ? 38f : 28f;      // 22/14 → 38/28（視認サイズへ）
 
             for (int pi = 0; pi < puffCount; pi++)
             {
@@ -1279,6 +1280,12 @@ public class SnowStrip2D : MonoBehaviour
                     curSpd = Mathf.Min(curSpd + p.slideAccel * accelMult * dt, p.slideMaxSpd);
                     p.vel  = _downhillDir * curSpd;
                 }
+                // 最低速度保証: delay 終了後に速度が 120px/s 未満なら強制引き上げ
+                // （「ほぼ停止」に見える個体を排除）
+                if (p.slideDelay <= 0f && p.vel.magnitude < 120f)
+                {
+                    p.vel = _downhillDir * Mathf.Max(p.vel.magnitude + 400f * dt, 120f);
+                }
 
                 if (_ready && _guiRect.width > 1f)
                 {
@@ -1438,7 +1445,8 @@ public class SnowStrip2D : MonoBehaviour
                 p.pos   += p.vel * dt;
             }
 
-            p.life  -= dt;
+            p.life  -= dt;   // ※ slideActive中は減算しない（軒前消滅禁止）
+            if (p.slideActive) p.life += dt;  // 打ち消し: 軒到達まで寿命停止
             p.alpha  = Mathf.Clamp01(p.life * 0.8f);
 
             if (p.pos.y >= _groundGuiY)
