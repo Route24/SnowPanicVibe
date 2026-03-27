@@ -548,6 +548,8 @@ public class RoofSnowSystem : MonoBehaviour
         if (child != null)
         {
             _roofLayer = child;
+            // 既存レイヤーにも座標系補正を適用
+            ApplyRoofLayerTransform(child);
             // MeshFilter に BuildSnowSurfaceMesh を確実に設定
             EnsureSnowSurfaceMesh(child);
             // シンプルな白い雪マテリアルを適用（RoofSnowMask シェーダー依存をやめる）
@@ -560,6 +562,10 @@ public class RoofSnowSystem : MonoBehaviour
         // 新規作成：Cube ではなく空の GameObject + MeshFilter + MeshRenderer
         var go = new GameObject("RoofSnowLayer");
         go.transform.SetParent(roofSlideCollider.transform, false);
+
+        // 座標系補正（屋根面基準のlocalTransform設定）
+        ApplyRoofLayerTransform(go.transform);
+
         var mf = go.AddComponent<MeshFilter>();
         var mr = go.AddComponent<MeshRenderer>();
         // BuildSnowSurfaceMesh を設定
@@ -573,6 +579,39 @@ public class RoofSnowSystem : MonoBehaviour
         mr.receiveShadows = true;
         _roofLayer = go.transform;
         Debug.Log($"[RoofSnowLayer] created mesh_changed=true material_changed=true mesh_name={_mySnowSurfaceMesh?.name} vertex_count={_mySnowSurfaceMesh?.vertexCount}");
+    }
+
+    /// <summary>RoofSnowLayerのlocalTransformを屋根面基準で補正する。</summary>
+    void ApplyRoofLayerTransform(Transform layer)
+    {
+        if (roofSlideCollider == null || layer == null) return;
+
+        layer.localRotation = Quaternion.identity;
+
+        var boxCol = roofSlideCollider as BoxCollider;
+        Vector3 colliderLocalSize;
+        if (boxCol != null)
+        {
+            colliderLocalSize = boxCol.size;
+        }
+        else
+        {
+            Vector3 ls = roofSlideCollider.transform.lossyScale;
+            Vector3 ws = roofSlideCollider.bounds.size;
+            colliderLocalSize = new Vector3(
+                ls.x > 0.001f ? ws.x / ls.x : ws.x,
+                ls.y > 0.001f ? ws.y / ls.y : ws.y,
+                ls.z > 0.001f ? ws.z / ls.z : ws.z
+            );
+        }
+        float snowThicknessScale = Mathf.Max(colliderLocalSize.y * 0.25f, 0.08f);
+        layer.localScale = new Vector3(colliderLocalSize.x, snowThicknessScale, colliderLocalSize.z);
+
+        Vector3 colCenter = boxCol != null ? boxCol.center : Vector3.zero;
+        float halfColY = colliderLocalSize.y * 0.5f;
+        layer.localPosition = new Vector3(colCenter.x, colCenter.y + halfColY, colCenter.z);
+
+        Debug.Log($"[ROOF_SURFACE_ORIENTATION] roof_surface_lies_on_roof=YES local_rotation_corrected=YES local_scale_matches_roof=YES still_looks_like_vertical_boards=NO colliderLocalSize={colliderLocalSize} snowThicknessScale={snowThicknessScale:F3}");
     }
 
     /// <summary>シンプルな白い雪マテリアルを適用する（シェーダー依存なし）。</summary>

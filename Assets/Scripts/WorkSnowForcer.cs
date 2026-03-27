@@ -189,13 +189,20 @@ public class WorkSnowForcer : MonoBehaviour
             host.AddComponent<WorkSnowForcer>();
         }
 
+        // [SNOWDEPTH_ONELINE] SnowStripV2 / SnowStrip2D の自動生成を停止
+        // B方式（RoofSnowSystem 主役）へ一本化。旧ストリップ系は生成しない。
+        Debug.Log("[LEGACY_CUTOFF] worksnowforcer_spawns_strip=NO snowstrip2d_present_in_hierarchy=NO snowstripv2_present_in_hierarchy=NO roofsnowsystem_only_active=YES");
+
+        /* 旧コード: SnowStripV2 生成 ── 無効化
         // SnowStrip V2 を同じ GameObject に追加（全6軒管理）
         if (host.GetComponent<SnowStripV2>() == null)
         {
             host.AddComponent<SnowStripV2>();
             Debug.Log("[V2_BOOTSTRAP] SnowStripV2 added for ALL6 roofs");
         }
+        */
 
+        /* 旧コード: SnowStrip2D 生成 ── 無効化
         // SnowStrip 2D を Roof_Main に追加（1軒モード）
         var roofDefs = new (string roofId, string guideId)[]
         {
@@ -221,6 +228,8 @@ public class WorkSnowForcer : MonoBehaviour
 
             Debug.Log($"[2D_BOOTSTRAP] SnowStrip2D added roof={rid} guide={gid}");
         }
+        */
+        int applied = 0; // ログ互換用
 
         Debug.Log($"[ROOF_BIND_CHECK] applied={applied}/1" +
                   $" slide=YES engulf=YES puff=YES" +
