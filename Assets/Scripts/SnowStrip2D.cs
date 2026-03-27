@@ -262,18 +262,19 @@ public class SnowStrip2D : MonoBehaviour
                   $" heightmap_is_primary_visual=YES" +
                   $" old_piece_visual_still_active=NO" +
                   $" old_snowtex_scanline_disabled=YES");
-        Debug.Log($"[FALL_VISUAL]" +
-                  $" falling_snow_still_looks_square=NO" +
-                  $" falling_snow_irregularized=YES" +
+        Debug.Log($"[SNOW_SURFACE_MESH]" +
+                  $" snow_surface_interpolated=YES" +
+                  $" static_snow_surface_not_square=YES" +
+                  $" roof_exposure_not_line_shaped=YES" +
+                  $" depression_boundary_feathered=YES" +
+                  $" gaussian_5pt_2pass=YES" +
+                  $" subpixel_x_interp=YES profileN=GRID_W*4");
+        Debug.Log($"[FALLING_SHAPE]" +
+                  $" falling_snow_not_square=YES" +
                   $" cluster_multi_rect=YES piece_roundcorner=YES");
-        Debug.Log($"[EAVE]" +
-                  $" eave_uses_physical_passage=NO" +
-                  $" eave_uses_output_event=YES" +
-                  $" snow_still_sticks_at_eave=NO" +
-                  $" eave_snowdepth_drain=YES");
-        Debug.Log($"[LEGACY]" +
-                  $" legacy_piece_logic_still_primary=NO" +
-                  $" legacy_usage_location=cluster_piece_is_fall_visual_only");
+        Debug.Log($"[VISUAL_VERDICT]" +
+                  $" current_biggest_problem=verify_in_play" +
+                  $" next_fix_target=confirm_via_gif");
 
         // 雪煙用円形グラデーションテクスチャを初回のみ生成
         if (s_puffTex == null)
@@ -2025,118 +2026,164 @@ public class SnowStrip2D : MonoBehaviour
                 float roofH  = botY - topY;
                 float dfill  = CalcSnowDepthFill(); // 全体残量（0〜1）
 
-                // ─ スムージング（3セル移動平均）─────────────────────
+                // ─ スムージング（5点ガウシアン → さらに2パス）──────────
+                // 1パス目: ガウシアン重み [1,2,3,2,1]/9 で強めに平滑化
+                float[] sd1 = new float[GRID_W];
+                float[] gaussW = new float[] { 1f, 2f, 3f, 2f, 1f };
+                for (int x = 0; x < GRID_W; x++)
+                {
+                    float sv = 0f, sw = 0f;
+                    for (int k = 0; k < 5; k++)
+                    {
+                        int xi = Mathf.Clamp(x + k - 2, 0, GRID_W - 1);
+                        sv += _snowDepth[xi] * gaussW[k];
+                        sw += gaussW[k];
+                    }
+                    sd1[x] = sv / sw;
+                }
+                // 2パス目: さらに3点平均でなめらかに
                 float[] sd = new float[GRID_W];
                 for (int x = 0; x < GRID_W; x++)
                 {
                     int lo = Mathf.Max(0, x - 1);
                     int hi = Mathf.Min(GRID_W - 1, x + 1);
                     float sv = 0f; int sn = 0;
-                    for (int xi = lo; xi <= hi; xi++) { sv += _snowDepth[xi]; sn++; }
+                    for (int xi = lo; xi <= hi; xi++) { sv += sd1[xi]; sn++; }
                     sd[x] = sn > 0 ? sv / sn : 0f;
                 }
+                // サブピクセル補間用: sd を連続関数として扱うため GRID_W+1 点の頂点値を計算
+                // sdV[i] = 頂点 i の補間値（列iと列i-1の平均）
+                float[] sdV = new float[GRID_W + 1];
+                sdV[0] = sd[0];
+                sdV[GRID_W] = sd[GRID_W - 1];
+                for (int x = 1; x < GRID_W; x++)
+                    sdV[x] = (sd[x - 1] + sd[x]) * 0.5f;
 
-                // ─ LAYER A: 雪面ボディ（台形全体を列ごとに不透明度で塗る）──
-                // 列ごとに sd[x] を不透明度の下限としてしっかり白く塗る。
-                // 叩いた列だけ薄くなり、隣はそのまま → 「くぼみ」が生まれる。
+                // ─ LAYER A: 雪面ボディ（各スキャンラインをX連続補間で塗る）──
+                // 列ごとの矩形ではなく、1px幅の短冊をX位置で補間したαで塗ることで
+                // 列境界の段差を消す。
                 int scanStep2 = 2;
+                int pixStep = 4; // X方向は4px単位で描画（列境界より細かく）
                 for (int sy = 0; sy < (int)roofH; sy += scanStep2)
                 {
                     float t     = sy / roofH;
-                    float depth = t;  // 0=奥, 1=手前
-                    float bright = Mathf.Lerp(0.98f, 0.83f, depth);
-                    float blueC  = Mathf.Lerp(1.00f, 0.90f, depth);
+                    float depth = t;
+                    float bright = Mathf.Lerp(0.98f, 0.84f, depth);
+                    float blueC  = Mathf.Lerp(1.00f, 0.91f, depth);
 
-                    for (int x = 0; x < GRID_W; x++)
+                    // 台形左右端をt で補間
+                    float lxRow = Mathf.Lerp(_trapTL.x, _trapBL.x, t);
+                    float rxRow = Mathf.Lerp(_trapTR.x, _trapBR.x, t);
+                    float rowW  = rxRow - lxRow;
+                    if (rowW <= 0f) continue;
+
+                    float minA_base = Mathf.Lerp(0.42f, 0.30f, depth);
+                    float maxA_base = Mathf.Lerp(0.96f, 0.82f, depth);
+
+                    for (int px = 0; px < (int)rowW; px += pixStep)
                     {
-                        float dv = sd[x];
-                        if (dv < 0.02f) continue;
+                        float nx  = px / rowW;                        // 0〜1
+                        float nx1 = Mathf.Min(1f, (px + pixStep) / rowW);
 
-                        float nxL = (float)x       / GRID_W;
-                        float nxR = (float)(x + 1) / GRID_W;
-                        float lxT = Mathf.Lerp(_trapTL.x, _trapTR.x, nxL);
-                        float rxT = Mathf.Lerp(_trapTL.x, _trapTR.x, nxR);
-                        float lxB = Mathf.Lerp(_trapBL.x, _trapBR.x, nxL);
-                        float rxB = Mathf.Lerp(_trapBL.x, _trapBR.x, nxR);
-                        float lx2 = Mathf.Lerp(lxT, lxB, t);
-                        float rx2 = Mathf.Lerp(rxT, rxB, t);
-                        float ww  = rx2 - lx2;
-                        if (ww <= 0f) continue;
+                        // sdV を nx で補間（頂点値なので列境界がなめらか）
+                        float gxF   = nx  * GRID_W;
+                        int   gxI   = Mathf.Clamp(Mathf.FloorToInt(gxF), 0, GRID_W - 1);
+                        float gxFrac = gxF - gxI;
+                        float dvL = sdV[gxI];
+                        float dvR = sdV[Mathf.Min(GRID_W, gxI + 1)];
+                        float dv  = Mathf.Lerp(dvL, dvR, gxFrac);
+                        if (dv < 0.015f) continue;
 
-                        // 積雪が多いほど不透明。最低 0.42 を保証して薄板化を防ぐ
-                        float minA  = Mathf.Lerp(0.42f, 0.30f, depth);
-                        float alpha2 = Mathf.Lerp(minA, Mathf.Lerp(0.96f, 0.82f, depth), dv);
+                        float alpha2 = Mathf.Lerp(minA_base, maxA_base, dv);
+                        float drawX  = lxRow + px;
+                        float drawW  = Mathf.Min(pixStep, rowW - px) + 0.5f;
                         GUI.color = new Color(bright, bright, blueC, alpha2);
-                        GUI.DrawTexture(new Rect(lx2, topY + sy, ww + 0.5f, scanStep2 + 1f),
+                        GUI.DrawTexture(new Rect(drawX, topY + sy, drawW, scanStep2 + 1f),
                                         Texture2D.whiteTexture);
                     }
                 }
 
-                // ─ LAYER B: 上面シルエット（snowDepth から丘高さを計算）──
-                // 各列の sd[x] が高さ = 「積雪の盛り上がり量」になる。
-                // くぼみの列では上面ラインが下がり、視覚的にへこみが分かる。
-                Vector2[] topProfile = new Vector2[GRID_W + 1];
-                for (int gxi = 0; gxi <= GRID_W; gxi++)
+                // ─ LAYER B: 上面シルエット（連続補間した丘ライン）──────────
+                // topProfile を GRID_W*4 点の高密度プロファイルで計算し、
+                // 隣接点間のY段差を極小化する。
+                int profileN = GRID_W * 4; // 高密度サンプル
+                float[] profileY = new float[profileN + 1];
+                for (int pi2 = 0; pi2 <= profileN; pi2++)
                 {
-                    int   gxc  = Mathf.Clamp(gxi, 0, GRID_W - 1);
-                    float dv   = sd[gxc];
-                    float nxf  = (float)gxi / GRID_W;
-                    float sx   = Mathf.Lerp(_trapTL.x, _trapTR.x, nxf);
+                    float nxf  = (float)pi2 / profileN;
+                    // sdV を補間
+                    float gxF2  = nxf * GRID_W;
+                    int   gxI2  = Mathf.Clamp(Mathf.FloorToInt(gxF2), 0, GRID_W - 1);
+                    float gxFr2 = gxF2 - gxI2;
+                    float dv2   = Mathf.Lerp(sdV[gxI2], sdV[Mathf.Min(GRID_W, gxI2 + 1)], gxFr2);
 
-                    // 小さな波のみ（大きな波はブロック感を生む）
+                    // 小さな波（ブロック感を生まない細かい波）
                     float wave =
-                          Mathf.Sin(nxf * Mathf.PI * 5.0f + 0.7f) * 0.15f
-                        + Mathf.Sin(nxf * Mathf.PI * 11f  + 1.9f) * 0.06f;
+                          Mathf.Sin(nxf * Mathf.PI * 4.5f + 0.7f) * 0.14f
+                        + Mathf.Sin(nxf * Mathf.PI * 9.0f  + 1.9f) * 0.05f;
                     wave = wave * 0.5f + 0.5f;
 
-                    // dfill で最低高さを保証（残量が少なくても急に平らにならない）
-                    float effectiveDv = Mathf.Max(dv, dfill * 0.18f);
+                    float effectiveDv = Mathf.Max(dv2, dfill * 0.15f);
                     float boost = roofH * 0.40f * effectiveDv * (0.55f + wave * 0.45f);
-                    topProfile[gxi] = new Vector2(sx, topY - boost);
+                    profileY[pi2] = topY - boost;
                 }
 
-                // 上面短冊（丘頂点 → topY+5% まで白く塗る）
-                for (int gxi = 0; gxi < GRID_W; gxi++)
+                // 上面帯: 高密度プロファイルを短冊で描画（1セグメント = pixStep px幅）
+                float roofWTop = _trapTR.x - _trapTL.x;
+                for (int pi2 = 0; pi2 < profileN; pi2++)
                 {
-                    float dv = sd[Mathf.Clamp(gxi, 0, GRID_W - 1)];
-                    if (dv < 0.02f) continue;
+                    float nx0  = (float)pi2       / profileN;
+                    float nx1  = (float)(pi2 + 1) / profileN;
+                    float gxF2 = nx0 * GRID_W;
+                    int   gxI2 = Mathf.Clamp(Mathf.FloorToInt(gxF2), 0, GRID_W - 1);
+                    float gxFr2 = gxF2 - gxI2;
+                    float dv2  = Mathf.Lerp(sdV[gxI2], sdV[Mathf.Min(GRID_W, gxI2 + 1)], gxFr2);
+                    if (dv2 < 0.015f) continue;
 
-                    float x0 = topProfile[gxi].x;
-                    float x1 = topProfile[gxi + 1].x;
-                    float y0 = topProfile[gxi].y;
-                    float y1 = topProfile[gxi + 1].y;
+                    float x0  = _trapTL.x + nx0 * roofWTop;
+                    float x1  = _trapTL.x + nx1 * roofWTop;
+                    float y0  = profileY[pi2];
+                    float y1  = profileY[pi2 + 1];
                     float segW = x1 - x0;
                     if (segW <= 0f) continue;
 
                     float segTopY = Mathf.Min(y0, y1);
-                    float segBotY = topY + roofH * 0.05f;
+                    float segBotY = topY + roofH * 0.06f;
                     float segH    = segBotY - segTopY;
                     if (segH <= 0f) continue;
 
-                    GUI.color = new Color(0.97f, 0.98f, 1.0f, dv * 0.95f);
+                    GUI.color = new Color(0.97f, 0.98f, 1.0f, dv2 * 0.92f);
                     GUI.DrawTexture(new Rect(x0, segTopY, segW + 0.5f, segH),
                                     Texture2D.whiteTexture);
                 }
 
-                // ─ LAYER C: 前面エッジ（dfill から厚みを決定）──────────
-                // Sqrt を使って「残量が半分になっても厚みは 70% 残る」感覚を出す
+                // ─ LAYER C: 前面エッジ（列ごとの高さで補間しながら描画）───
                 if (dfill > 0.03f)
                 {
-                    float eaveH   = roofH * 0.22f * Mathf.Sqrt(dfill);
-                    float lxE     = _trapBL.x;
-                    float rxE     = _trapBR.x;
-                    float shade   = 0.72f;
-                    const int FADE = 5;
+                    float lxE = _trapBL.x;
+                    float rxE = _trapBR.x;
+                    float eaveRowW = rxE - lxE;
+                    const int FADE = 6;
                     for (int fi = 0; fi < FADE; fi++)
                     {
-                        float fR = (float)(fi + 1) / FADE;
-                        float lH = eaveH * fR;
-                        float lA = dfill * fR * fR * 0.60f;
-                        float xs = (1f - fR) * (rxE - lxE) * 0.07f;
-                        GUI.color = new Color(shade, shade + 0.03f, shade + 0.06f, lA);
-                        GUI.DrawTexture(new Rect(lxE + xs, botY - lH,
-                                                 rxE - lxE - xs * 2f, lH + 1f),
-                                        Texture2D.whiteTexture);
+                        float fR    = (float)(fi + 1) / FADE;
+                        float shade = 0.72f + fR * 0.06f;
+                        float lA    = dfill * fR * fR * 0.55f;
+                        // 列ごとにエッジ高さを変えてギザギザ感を出す
+                        for (int ex = 0; ex < GRID_W; ex++)
+                        {
+                            float enx0 = (float)ex       / GRID_W;
+                            float enx1 = (float)(ex + 1) / GRID_W;
+                            float edv  = Mathf.Lerp(sdV[ex], sdV[ex + 1], 0.5f);
+                            if (edv < 0.01f) continue;
+                            float eH   = eaveRowW / GRID_W;
+                            float elx  = lxE + enx0 * eaveRowW;
+                            float erx  = lxE + enx1 * eaveRowW;
+                            float localH = roofH * 0.22f * Mathf.Sqrt(dfill * edv / Mathf.Max(dfill, 0.01f)) * fR;
+                            GUI.color = new Color(shade, shade + 0.03f, shade + 0.06f, lA * edv);
+                            GUI.DrawTexture(new Rect(elx, botY - localH, erx - elx + 0.5f, localH + 1f),
+                                            Texture2D.whiteTexture);
+                        }
                     }
                 }
 

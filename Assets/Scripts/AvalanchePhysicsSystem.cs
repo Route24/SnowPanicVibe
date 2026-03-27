@@ -110,6 +110,13 @@ public class AvalanchePhysicsSystem : MonoBehaviour
 
     void Start()
     {
+        // [SNOWDEPTH_ONELINE] AvalanchePhysicsSystem は廃止。旧パーツ物理は停止。
+        useAvalanchePhysics = false;
+        enabled = false;
+        Debug.Log("[LEGACY] AvalanchePhysicsSystem disabled: snowDepth one-line mode");
+    }
+    void StartLegacy()
+    {
         if (snowPackSpawner == null) snowPackSpawner = FindFirstObjectByType<SnowPackSpawner>();
         if (roofSnowSystem == null) roofSnowSystem = FindFirstObjectByType<RoofSnowSystem>();
         _clustersDetachedTotal = 0;

@@ -88,6 +88,12 @@ public class RoofSnowSystem : MonoBehaviour
     public const int MAP_W = 20;
     public const int MAP_H = 12;
 
+    // ── Step2: 1D snowDepth（主データ）──────────────────────────────────
+    // X方向64分割の高さマップ。0=完全露出, 1=最大積雪。
+    // これが唯一の正（Single Source of Truth）。
+    public const int SD_WIDTH = 64;
+    public float[] snowDepth1D = new float[SD_WIDTH];
+
     public float ComputedThreshold { get; private set; }
     public float AngleDeg { get; private set; }
     /// <summary>雪崩クールダウン中（この間は Pool返却・RemoveLayers を避ける）</summary>
@@ -113,6 +119,12 @@ public class RoofSnowSystem : MonoBehaviour
         EnsureAvalanchePhysicsSystem();
         EnsureRoofVisual();
         UpdateRoofVisual();
+
+        // Step2: snowDepth1D を最大値で初期化（全面積雪）
+        for (int i = 0; i < SD_WIDTH; i++)
+            snowDepth1D[i] = 1f;
+        Debug.Log($"[SNOWDEPTH_INIT] snowDepth1D initialized SD_WIDTH={SD_WIDTH} all=1.0");
+
         if (roofSlideCollider != null)
         {
             Vector3 rn = roofSlideCollider.transform.up.normalized;
@@ -333,108 +345,51 @@ public class RoofSnowSystem : MonoBehaviour
             return;
         }
 
-        if (roofSlideCollider == null || snowPackSpawner == null)
-{
-    Debug.Log("[SNOW_TAP_PATH] step=return reason=null_ref");
-    Debug.Log($"[SNOW_HIT_PIPE] hit=false reason=null_ref object=tap_point time={Time.time:F2}");
-    return;
-}
-Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        int scoreNow = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
-        Debug.Log($"[SNOW_HIT_CHECK] hit_detected=true hit_object_name=tap_point script_source=RoofSnowSystem.cs time={Time.time:F2} current_score={scoreNow}");
-        BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowHit, "RoofTap", "RoofSnowSystem.cs", tapWorldPoint);
-        if (SnowVerifyB2Debug.Enabled) SnowVerifyB2Debug.RecordTapForTestB(Time.time);
-        snowPackSpawner.LogNearestPieceToTap(tapWorldPoint);
-        _nextAvalancheTime = Time.time + 0.3f;
-
-        Debug.Log($"[SNOW_DETACH_PIPE] requested=true weakpoint=unknown pieces=-1");
-        var avalanchePhys = FindFirstObjectByType<AvalanchePhysicsSystem>();
-        bool useAvalanche = avalanchePhys != null && avalanchePhys.useAvalanchePhysics;
-        Debug.Log($"[SNOW_TAP_PATH] step=weakpoint_check result={(useAvalanche ? "avalanche" : "local")}");
-        if (avalanchePhys != null && avalanchePhys.useAvalanchePhysics)
+        if (roofSlideCollider == null)
         {
-            int sourceCount = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
-            Debug.Log("[SNOW_TAP_PATH] step=detach_execute");
-            avalanchePhys.OnSnowHit(tapWorldPoint);
-            SnowPackSpawner.LastRemovedCount = AvalanchePhysicsSystem.LastTapRemovedTotal;
-            int clustersTotal = AvalanchePhysicsSystem.ClustersTotal;
-            int clustersDetached = AvalanchePhysicsSystem.ClustersDetached;
-            string returnReason = clustersTotal <= 0 ? "clusters_zero" : (clustersDetached <= 0 ? "no_cluster_in_radius_or_not_critical" : "detached_ok");
-            Debug.Log($"[SNOW_PIECE_MAP] weakpoint_name=tap");
-            Debug.Log($"[SNOW_PIECE_MAP] source_collection_count={sourceCount}");
-            Debug.Log($"[SNOW_PIECE_MAP] matched_piece_count={SnowPackSpawner.LastRemovedCount}");
-            Debug.Log($"[SNOW_PIECE_MAP] return reason={returnReason}");
-            float nearestDist = AvalanchePhysicsSystem.LastTapNearestClusterDistance;
-            int hitCount = AvalanchePhysicsSystem.LastTapHitClustersCount;
-            bool clusterCritical = AvalanchePhysicsSystem.LastTapAnyClusterCritical;
-            float searchRadius = avalanchePhys.hitRadius;
-            string clusterReason = hitCount <= 0 ? "no_cluster_in_radius" : (!clusterCritical ? "not_critical" : "detached_ok");
-            Debug.Log($"[SNOW_CLUSTER_CHECK] tap_world=({tapWorldPoint.x:F3},{tapWorldPoint.y:F3},{tapWorldPoint.z:F3})");
-            Debug.Log($"[SNOW_CLUSTER_CHECK] search_radius={searchRadius:F3}");
-            Debug.Log($"[SNOW_CLUSTER_CHECK] nearest_cluster_distance={(nearestDist >= 0 ? nearestDist.ToString("F3") : "-1")}");
-            Debug.Log($"[SNOW_CLUSTER_CHECK] cluster_found={(hitCount > 0).ToString().ToLower()}");
-            Debug.Log($"[SNOW_CLUSTER_CHECK] cluster_is_critical={clusterCritical.ToString().ToLower()}");
-            Debug.Log($"[SNOW_CLUSTER_CHECK] return reason={clusterReason}");
-
-            // DEBUG: cluster_found かつ critical でない場合、critical bypass して detach/score 発生
-            bool clusterFound = hitCount > 0;
-            bool criticalOverride = false;
-            if (clusterFound && !clusterCritical && SnowPackSpawner.LastRemovedCount <= 0)
-            {
-                criticalOverride = true;
-                Debug.Log("[SNOW_TAP_PATH] step=critical_bypass_detach");
-                snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
-            }
-            int scoreBefore = SnowPhysicsScoreManager.Instance != null ? SnowPhysicsScoreManager.Instance.Score : 0;
-            int scoreAdded = SnowPackSpawner.LastRemovedCount > 0 ? 1 : 0;
-            int scoreAfter = scoreBefore + scoreAdded;
-            Debug.Log($"[SCORE_DEBUG] cluster_found={clusterFound.ToString().ToLower()} critical_original={clusterCritical.ToString().ToLower()} critical_override={criticalOverride.ToString().ToLower()} score_added={scoreAdded} score_after={scoreAfter}");
+            Debug.Log("[SNOW_TAP_PATH] step=return reason=null_ref");
+            return;
         }
-        else
+
+        // [SNOWDEPTH_ONELINE] 旧 SnowPackSpawner / AvalanchePhysicsSystem 依存を完全遮断
+        // 1D snowDepth[] に対するすり鉢状(crater)減算のみ実施
+        Debug.Log("[SNOW_TAP_PATH] step=snowdepth_oneline");
+
+        // 屋根 collider の AABB からタップ位置の正規化 X 座標を算出
+        Bounds rb = roofSlideCollider.bounds;
+        float tapNX = Mathf.Clamp01((tapWorldPoint.x - rb.min.x) / Mathf.Max(rb.size.x, 0.01f));
+        int SD_W = snowDepth1D.Length;
+        float centerIdx = tapNX * (SD_W - 1);
+        float radiusCells = hitRadiusR * SD_W * 0.18f; // タップ半径 → セル数
+
+        float removedVol = 0f;
+        for (int xi = 0; xi < SD_W; xi++)
         {
-            Debug.Log("[SNOW_TAP_PATH] step=detach_execute");
-            snowPackSpawner.PlayLocalAvalancheAt(tapWorldPoint, hitRadiusR, localAvalancheSlideSpeed);
+            float dist = Mathf.Abs(xi - centerIdx);
+            if (dist >= radiusCells) continue;
+            float t = dist / radiusCells;
+            float falloff = Mathf.SmoothStep(1f, 0f, t); // 中心が最大
+            float carve = falloff * 0.55f * snowDepth1D[xi];
+            float prev = snowDepth1D[xi];
+            snowDepth1D[xi] = Mathf.Max(0f, prev - carve);
+            removedVol += prev - snowDepth1D[xi];
         }
-        int removed = SnowPackSpawner.LastRemovedCount;
-        Debug.Log($"[SNOW_TAP_PATH] step=piece_lookup count={removed}");
-        BugOriginTracker.RecordEvent(BugOriginTracker.EventSnowAvalanche, "TapSlide", "RoofSnowSystem.cs", tapWorldPoint);
-        if (removed > 0)
+
+        Debug.Log($"[SNOWDEPTH_TAP] centerNX={tapNX:F3} removedVol={removedVol:F3} radiusCells={radiusCells:F1}");
+
+        if (removedVol > 0.01f)
         {
-            Debug.Log("[SNOW_TAP_PATH] step=slide_execute");
             SnowPhysicsScoreManager.Instance?.Add(1);
-            Debug.Log("[SNOW_TAP_PATH] step=score_execute add=1");
             SnowVisual.SpawnPowderAt(tapWorldPoint);
-            Vector3 roofUp = roofSlideCollider.transform.up.normalized;
-            Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
-            if (slopeDir.sqrMagnitude < 0.0001f) slopeDir = -roofSlideCollider.transform.forward.normalized;
-            SpawnLocalBurstAt(tapWorldPoint, removed, slopeDir);
+            Vector3 roofUp2 = roofSlideCollider.transform.up.normalized;
+            Vector3 slopeDir2 = Vector3.ProjectOnPlane(Vector3.down, roofUp2).normalized;
+            if (slopeDir2.sqrMagnitude < 0.0001f) slopeDir2 = -roofSlideCollider.transform.forward.normalized;
+            // Step5: 演出専用バースト（当たり判定なし）
+            int approxCount = Mathf.RoundToInt(removedVol * 120f);
+            SpawnLocalBurstAt(tapWorldPoint, approxCount, slopeDir2);
         }
-        int packedAfter = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
-        Debug.Log($"[TapSlide] tapPoint={tapWorldPoint} removed={removed} packedAfter={packedAfter} primary_detach_count={removed} primary_cluster_size={removed} largest_fall_group={removed} active_snow_visual=RoofSnowLayer+SnowPackPiece active_snow_break_logic=SnowPackSpawner.HandleTap+DetachInRadius");
-        PaintClearedPatchAt(tapWorldPoint, hitRadiusR);
-        if (removed >= 60) AvalancheFeedback.TriggerSmallShakeIfLarge(removed);
 
-        string sizeStr = removed <= 3 ? "Small" : (removed <= 12 ? "Medium" : "Large");
-        int burstCount = removed > 0 ? Mathf.Min(removed, burstChunkCount) : 0;
-        int movedCount = removed + burstCount;
-        bool reachedGround = removed > 0;
-        SnowLoopLogCapture.AppendToAssiReport("=== TAP AVALANCHE ===");
-        SnowLoopLogCapture.AppendToAssiReport($"tapPos=({tapWorldPoint.x:F3},{tapWorldPoint.y:F3},{tapWorldPoint.z:F3}) radius=0.6 removedCount={removed}");
-        SnowLoopLogCapture.AppendToAssiReport($"size={sizeStr}");
-        SnowLoopLogCapture.AppendToAssiReport($"movedCount={movedCount} reachedGround={reachedGround}");
-        SnowLoopLogCapture.AppendToAssiReport("=== TAP AVALANCHE MIX ===");
-        SnowLoopLogCapture.AppendToAssiReport($"Powder moved={SnowPackSpawner.LastTapPowderMoved}");
-        SnowLoopLogCapture.AppendToAssiReport($"Slab moved={SnowPackSpawner.LastTapSlabMoved}");
-        SnowLoopLogCapture.AppendToAssiReport($"Base moved={SnowPackSpawner.LastTapBaseMoved}");
-        SnowLoopLogCapture.AppendToAssiReport($"smallCluster={SnowPackSpawner.LastTapSmallCluster}");
-        SnowLoopLogCapture.AppendToAssiReport($"midCluster={SnowPackSpawner.LastTapMidCluster}");
-        SnowLoopLogCapture.AppendToAssiReport($"largeCluster={SnowPackSpawner.LastTapLargeCluster}");
-        SnowLoopLogCapture.AppendToAssiReport("=== VISUAL RESULT CHECK ===");
-        bool hasSmall = SnowPackSpawner.LastTapSmallCluster > 0;
-        bool hasMid = SnowPackSpawner.LastTapMidCluster > 0;
-        bool hasLarge = SnowPackSpawner.LastTapLargeCluster > 0;
-        bool threeVarieties = hasSmall && hasMid && hasLarge;
-        SnowLoopLogCapture.AppendToAssiReport($"小粒/中塊/大塊の3種類が出たか: {(threeVarieties ? "Yes" : "No")}");
-        SnowLoopLogCapture.AppendToAssiReport($"根拠: smallCluster={SnowPackSpawner.LastTapSmallCluster} midCluster={SnowPackSpawner.LastTapMidCluster} largeCluster={SnowPackSpawner.LastTapLargeCluster}");
+        SnowLoopLogCapture.AppendToAssiReport($"[SNOWDEPTH_TAP] centerNX={tapNX:F3} removedVol={removedVol:F3}");
     }
 
     static int _spawnErrorCount;

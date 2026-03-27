@@ -1958,61 +1958,62 @@ public class SnowPackSpawner : MonoBehaviour
 
     Transform SpawnPieceRoofBasis(Vector3 worldPos, Quaternion worldRot, float size, int ix = 0, int iz = 0, int layer = 0)
     {
-        var go = new GameObject("SnowPackPiece");
-        int before = _piecesRoot.childCount;
-        go.transform.SetParent(_piecesRoot, true);
-        BugOriginTracker.RecordEvent(BugOriginTracker.EventObjectSpawn, go.name, "SnowPackSpawner.cs", worldPos);
-        LogRootMutation(before, before + 1, "SpawnPieceRoofBasis");
-        PushLastEvent("SpawnPieceRoofBasis", $"pieceId={go.GetInstanceID()}", null);
-        GetDeterministicJitter(ix, iz, layer, jitter, scaleJitterXZ, out _, out _, out float sx, out float sy, out float sz);
+        // [SNOWDEPTH_ONELINE] 物理パーツ生成を停止（演出専用モードに移行）
+        return null;
+        // int before = _piecesRoot.childCount;
+        // go.transform.SetParent(_piecesRoot, true);
+        // BugOriginTracker.RecordEvent(BugOriginTracker.EventObjectSpawn, go.name, "SnowPackSpawner.cs", worldPos);
+        // LogRootMutation(before, before + 1, "SpawnPieceRoofBasis");
+        // PushLastEvent("SpawnPieceRoofBasis", $"pieceId={go.GetInstanceID()}", null);
+        // GetDeterministicJitter(ix, iz, layer, jitter, scaleJitterXZ, out _, out _, out float sx, out float sy, out float sz);
         // 側面改善: 外周ピースを少し外側へ張らせる。積み木断面感を減らす。
-        float edgeScale = 1f;
-        if (_cachedNx > 1 || _cachedNz > 1)
-        {
-            bool atEdgeX = (ix == 0 || ix == Mathf.Max(1, _cachedNx) - 1);
-            bool atEdgeZ = (iz == 0 || iz == Mathf.Max(1, _cachedNz) - 1);
-            if (atEdgeX || atEdgeZ) edgeScale = 1.03f;
-        }
-        float h = Mathf.Max(0.03f, size * pieceHeightScale * sy) * snowPieceThicknessScale;
-        float baseSize = Mathf.Max(0.05f, size);
-        Vector3 scale = debugForcePieceRendererDirect
-            ? new Vector3(baseSize * sx * edgeScale, h * snowRenderThicknessScale, baseSize * sz * edgeScale)
-            : new Vector3(baseSize * sx * edgeScale, h, baseSize * sz * edgeScale);
-        go.transform.position = worldPos;
-        go.transform.rotation = worldRot;
-        go.transform.localScale = scale;
+        // float edgeScale = 1f;
+        // if (_cachedNx > 1 || _cachedNz > 1)
+        // {
+        // bool atEdgeX = (ix == 0 || ix == Mathf.Max(1, _cachedNx) - 1);
+        // bool atEdgeZ = (iz == 0 || iz == Mathf.Max(1, _cachedNz) - 1);
+        // if (atEdgeX || atEdgeZ) edgeScale = 1.03f;
+        // }
+        // float h = Mathf.Max(0.03f, size * pieceHeightScale * sy) * snowPieceThicknessScale;
+        // float baseSize = Mathf.Max(0.05f, size);
+        // Vector3 scale = debugForcePieceRendererDirect
+        // ? new Vector3(baseSize * sx * edgeScale, h * snowRenderThicknessScale, baseSize * sz * edgeScale)
+        // : new Vector3(baseSize * sx * edgeScale, h, baseSize * sz * edgeScale);
+        // go.transform.position = worldPos;
+        // go.transform.rotation = worldRot;
+        // go.transform.localScale = scale;
 
-        if (debugForcePieceRendererDirect)
-        {
-            var mf = go.AddComponent<MeshFilter>();
-            var mr = go.AddComponent<MeshRenderer>();
-            var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
-            if (_snowMat != null) mr.sharedMaterial = _snowMat;
-            mr.enabled = GridVisualWatchdog.showSnowGridDebug;
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            mr.receiveShadows = true;
-        }
-        else
-        {
-            var meshGo = new GameObject("Mesh");
-            meshGo.transform.SetParent(go.transform, false);
-            meshGo.transform.localPosition = Vector3.zero;
-            meshGo.transform.localRotation = Quaternion.identity;
-            meshGo.transform.localScale = new Vector3(1f, snowRenderThicknessScale, 1f);
-            var mf = meshGo.AddComponent<MeshFilter>();
-            var mr = meshGo.AddComponent<MeshRenderer>();
-            var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
-            if (_snowMat != null) mr.sharedMaterial = _snowMat;
-            mr.enabled = GridVisualWatchdog.showSnowGridDebug;
-            mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-            mr.receiveShadows = true;
-        }
-        int snowLayer = LayerMask.NameToLayer(SnowVisualLayerName);
-        if (snowLayer < 0) snowLayer = LayerMask.NameToLayer("Ignore Raycast");
-        if (snowLayer < 0) snowLayer = 2;
-        SetLayerRecursively(go, snowLayer);
-        SetPieceVisualState(go.transform, PieceVisualState.Accumulating);
-        return go.transform;
+        // if (debugForcePieceRendererDirect)
+        // {
+        // var mf = go.AddComponent<MeshFilter>();
+        // var mr = go.AddComponent<MeshRenderer>();
+        // var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
+        // if (_snowMat != null) mr.sharedMaterial = _snowMat;
+        // mr.enabled = GridVisualWatchdog.showSnowGridDebug;
+        // mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        // mr.receiveShadows = true;
+        // }
+        // else
+        // {
+        // var meshGo = new GameObject("Mesh");
+        // meshGo.transform.SetParent(go.transform, false);
+        // meshGo.transform.localPosition = Vector3.zero;
+        // meshGo.transform.localRotation = Quaternion.identity;
+        // meshGo.transform.localScale = new Vector3(1f, snowRenderThicknessScale, 1f);
+        // var mf = meshGo.AddComponent<MeshFilter>();
+        // var mr = meshGo.AddComponent<MeshRenderer>();
+        // var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
+        // if (_snowMat != null) mr.sharedMaterial = _snowMat;
+        // mr.enabled = GridVisualWatchdog.showSnowGridDebug;
+        // mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        // mr.receiveShadows = true;
+        // }
+        // int snowLayer = LayerMask.NameToLayer(SnowVisualLayerName);
+        // if (snowLayer < 0) snowLayer = LayerMask.NameToLayer("Ignore Raycast");
+        // if (snowLayer < 0) snowLayer = 2;
+        // SetLayerRecursively(go, snowLayer);
+        // SetPieceVisualState(go.transform, PieceVisualState.Accumulating);
+        // return go.transform;
     }
 
     void ReturnToPool(Transform t, string reason, string source, bool allowDuringSlide = false)
@@ -2036,41 +2037,42 @@ public class SnowPackSpawner : MonoBehaviour
 
     Transform SpawnPieceLocal(Vector3 localPos, float size)
     {
-        var go = new GameObject("SnowPackPiece");
-        int before = _piecesRoot.childCount;
-        go.transform.SetParent(_piecesRoot, false);
-        LogRootMutation(before, before + 1, "SpawnPieceLocal");
-        PushLastEvent("SpawnPieceLocal", $"pieceId={go.GetInstanceID()}", null);
-        float sh = 0.9f + UnityEngine.Random.value * 0.25f;
-        float sx = 1f + (UnityEngine.Random.value * 2f - 1f) * scaleJitterXZ;
-        float sz = 1f + (UnityEngine.Random.value * 2f - 1f) * scaleJitterXZ;
-        float h = Mathf.Max(0.03f, size * pieceHeightScale * sh) * snowPieceThicknessScale;
-        go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
-        float baseSize = Mathf.Max(0.05f, size);
-        Vector3 scale = new Vector3(baseSize * sx, h * snowRenderThicknessScale, baseSize * sz);
-        go.transform.localScale = scale;
+        // [SNOWDEPTH_ONELINE] 物理パーツ生成を停止
+        return null;
+        // int before = _piecesRoot.childCount;
+        // go.transform.SetParent(_piecesRoot, false);
+        // LogRootMutation(before, before + 1, "SpawnPieceLocal");
+        // PushLastEvent("SpawnPieceLocal", $"pieceId={go.GetInstanceID()}", null);
+        // float sh = 0.9f + UnityEngine.Random.value * 0.25f;
+        // float sx = 1f + (UnityEngine.Random.value * 2f - 1f) * scaleJitterXZ;
+        // float sz = 1f + (UnityEngine.Random.value * 2f - 1f) * scaleJitterXZ;
+        // float h = Mathf.Max(0.03f, size * pieceHeightScale * sh) * snowPieceThicknessScale;
+        // go.transform.localPosition = localPos;
+        // go.transform.localRotation = Quaternion.identity;
+        // float baseSize = Mathf.Max(0.05f, size);
+        // Vector3 scale = new Vector3(baseSize * sx, h * snowRenderThicknessScale, baseSize * sz);
+        // go.transform.localScale = scale;
 
-        var meshGo = new GameObject("Mesh");
-        meshGo.transform.SetParent(go.transform, false);
-        meshGo.transform.localPosition = Vector3.zero;
-        meshGo.transform.localRotation = Quaternion.identity;
-        meshGo.transform.localScale = new Vector3(1f, snowRenderThicknessScale, 1f);
-        var mf = meshGo.AddComponent<MeshFilter>();
-        var mr = meshGo.AddComponent<MeshRenderer>();
-        var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
-        if (_snowMat != null) mr.sharedMaterial = _snowMat;
-        mr.enabled = GridVisualWatchdog.showSnowGridDebug;
-        mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-        mr.receiveShadows = true;
-        int snowLayer = LayerMask.NameToLayer(SnowVisualLayerName);
-        if (snowLayer < 0) snowLayer = LayerMask.NameToLayer("Ignore Raycast");
-        if (snowLayer < 0) snowLayer = 2;
-        SetLayerRecursively(go, snowLayer);
-        LogSpawnOnce(go);
-        SetPieceVisualState(go.transform, PieceVisualState.Accumulating);
-        if (!_scaleLogOnce) { _scaleLogOnce = true; UnityEngine.Debug.Log($"[SnowPieceScale] kind=Packed scale=({scale.x:F3},{scale.y:F3},{scale.z:F3})"); }
-        return go.transform;
+        // var meshGo = new GameObject("Mesh");
+        // meshGo.transform.SetParent(go.transform, false);
+        // meshGo.transform.localPosition = Vector3.zero;
+        // meshGo.transform.localRotation = Quaternion.identity;
+        // meshGo.transform.localScale = new Vector3(1f, snowRenderThicknessScale, 1f);
+        // var mf = meshGo.AddComponent<MeshFilter>();
+        // var mr = meshGo.AddComponent<MeshRenderer>();
+        // var mesh = GetCurrentPieceMesh(); if (mesh != null) mf.sharedMesh = mesh;
+        // if (_snowMat != null) mr.sharedMaterial = _snowMat;
+        // mr.enabled = GridVisualWatchdog.showSnowGridDebug;
+        // mr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+        // mr.receiveShadows = true;
+        // int snowLayer = LayerMask.NameToLayer(SnowVisualLayerName);
+        // if (snowLayer < 0) snowLayer = LayerMask.NameToLayer("Ignore Raycast");
+        // if (snowLayer < 0) snowLayer = 2;
+        // SetLayerRecursively(go, snowLayer);
+        // LogSpawnOnce(go);
+        // SetPieceVisualState(go.transform, PieceVisualState.Accumulating);
+        // if (!_scaleLogOnce) { _scaleLogOnce = true; UnityEngine.Debug.Log($"[SnowPieceScale] kind=Packed scale=({scale.x:F3},{scale.y:F3},{scale.z:F3})"); }
+        // return go.transform;
     }
 
     /// <summary>SnowPackVisual/SnowPackPiecesRoot を RoofSlideCollider 直下に作成する。外部からフォールバック呼び出し可。</summary>
