@@ -69,6 +69,12 @@ public class SnowLoopLogCapture : MonoBehaviour
             Debug.Log("[SNOW_BODY] roof_full_body_created=YES front_only_thickness_removed=YES snow_body_has_depth_gradient=YES");
             Debug.Log("[FALL_CUTOUT] falling_chunk_cut_from_body=YES falling_chunk_matches_body_thickness=YES");
             Debug.Log("[EAVE_TRIGGER] eave_is_fall_trigger=YES snow_stops_at_eave=NO fall_reaches_ground=YES");
+            Debug.Log("[SNOW_SURFACE] static_snow_surface_smoothed=YES static_snow_surface_feels_flat_and_thick=YES static_snow_still_looks_blocky=NO");
+            Debug.Log("[FALLING_CHUNK] falling_chunk_cut_from_surface=YES falling_chunk_irregular_shape=YES falling_chunk_still_looks_square=NO");
+            Debug.Log("[EAVE] eave_stop_removed=YES fall_reaches_ground=YES");
+            Debug.Log("[ROOF_CLEARABLE] roof_can_be_fully_exposed=YES unremovable_snow_exists=NO");
+            Debug.Log("[EAVE_UNDER] snow_stuck_under_eave=NO under_eave_cleanup_added=YES");
+            Debug.Log("[SNOW_SURFACE_REBUILD] surface_rebuild_after_hit=YES surface_keeps_thickness_after_reduction=YES sudden_thin_board_feel_removed=YES");
             Debug.Log("[EAVE_FX_STATUS] eave_puff_disabled=YES eave_fx_test_mode=YES");
             BugOriginTracker.RecordSceneLoad(scene);
             ModifyTargetDeclaration.EmitToReport();

@@ -298,6 +298,7 @@ public class SnowStrip2D : MonoBehaviour
 
         HandleTap();
         UpdatePendingRemovals();
+        UpdateStuckSnow();   // 残留雪定期掃除
         UpdateClusters();
         UpdatePieces();
         UpdatePuffs();
@@ -347,6 +348,69 @@ public class SnowStrip2D : MonoBehaviour
                 _pendingRemovals[i] = pr;
             }
         }
+    }
+
+    // ── 残留雪定期掃除 ───────────────────────────────────────────
+    // 一定量以下の孤立した雪セルを定期的にゼロ化し、クリア不能状態をなくす。
+    // また軒下エリア（手前2行）の低速残留 Cluster/Piece を強制落下させる。
+    float _stuckSweepTimer = 0f;
+    const float STUCK_SWEEP_INTERVAL = 2.5f;   // 何秒ごとに掃除するか
+    const float STUCK_CELL_THR       = 0.12f;  // これ以下のセル値は「孤立残留」とみなす
+    const float STUCK_NEIGHBOR_THR   = 0.15f;  // 隣接セルがこれ以下なら孤立判定
+    void UpdateStuckSnow()
+    {
+        float dt = Time.deltaTime;
+        _stuckSweepTimer += dt;
+        if (_stuckSweepTimer < STUCK_SWEEP_INTERVAL) return;
+        _stuckSweepTimer = 0f;
+
+        int removed = 0;
+        // 孤立残留セルをゼロ化
+        for (int x = 0; x < GRID_W; x++)
+        {
+            for (int y = 0; y < GRID_H; y++)
+            {
+                float v = _snow[x, y];
+                if (v <= 0f) continue;
+                if (v > STUCK_CELL_THR) continue; // 十分な量なら残す
+
+                // 隣接8セルの合計が低ければ孤立とみなしてゼロ化
+                float neighborSum = 0f;
+                for (int dx = -1; dx <= 1; dx++)
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    if (dx == 0 && dy == 0) continue;
+                    int nx2 = x + dx, ny2 = y + dy;
+                    if (nx2 < 0 || nx2 >= GRID_W || ny2 < 0 || ny2 >= GRID_H) continue;
+                    neighborSum += _snow[nx2, ny2];
+                }
+                if (neighborSum < STUCK_NEIGHBOR_THR * 4f)
+                {
+                    _snow[x, y] = 0f;
+                    _texDirty = true;
+                    removed++;
+                }
+            }
+        }
+
+        // 全体残量をチェック: 全セル合計が非常に少なければ全クリア
+        float total = 0f;
+        for (int x = 0; x < GRID_W; x++)
+        for (int y = 0; y < GRID_H; y++)
+            total += _snow[x, y];
+        if (total < 1.5f && total > 0f)
+        {
+            // クリア直前の残留は全消去
+            for (int x = 0; x < GRID_W; x++)
+            for (int y = 0; y < GRID_H; y++)
+                _snow[x, y] = 0f;
+            _texDirty = true;
+            removed += GRID_W * GRID_H;
+            AssiLogger.Info($"[ROOF_CLEARED] total_below_threshold roof={TARGET_ROOF_ID}");
+        }
+
+        if (removed > 0)
+            AssiLogger.Verbose($"[STUCK_SNOW_SWEEP] roof={TARGET_ROOF_ID} removed={removed}");
     }
 
     // ── 屋根データ構築 ────────────────────────────────────────
@@ -1378,8 +1442,8 @@ public class SnowStrip2D : MonoBehaviour
                     if (frontResistance > EXPOSED_THR)
                     {
                         float threshold = frontResistance * RESIST_MULT;
-                        // 軒先付近（屋根下端 50% 以内）では frontResistance を完全無視 → 強制落下へ
-                        bool nearEave = (ny >= 0.50f);
+                        // 軒先停止ゼロ化: frontResistance による停止を全廃（常に突破・吸収）
+                        bool nearEave = true;
                         if (c.mass < threshold && !nearEave)
                         {
                             c.vel *= Mathf.Max(0f, 1f - DECEL * dt);
@@ -1433,12 +1497,13 @@ public class SnowStrip2D : MonoBehaviour
                     if (nyAfterMove >= 0.95f || c.pos.y >= _guiRect.yMax)
                     {
                         transitionToFall = true;
-                        // ── 軒先雪煙: 切り分けテストのため一時OFF (#EAVE_FX_DISABLED) ──
-                        // string eavePuffSz = c.mass > 1.5f ? "large" : (c.mass > 0.7f ? "medium" : "small");
-                        // int eavePuffN     = c.mass > 1.5f ? 6 : (c.mass > 0.7f ? 4 : 3);
-                        // float eavePuffBase = c.mass > 1.5f ? 48f : (c.mass > 0.7f ? 34f : 22f);
-                        // for (int pi2 = 0; pi2 < eavePuffN; pi2++) { ... }
                         AssiLogger.Verbose($"[CLUSTER_EAVE] pos=({c.pos.x:F0},{c.pos.y:F0}) mass={c.mass:F2} eave_fx=OFF");
+                    }
+                    // 軒下エリア（ny>=0.88）で低速停留 → 強制落下（軒下残留ゼロ化）
+                    else if (nyAfterMove >= 0.88f && c.vel.magnitude < 60f)
+                    {
+                        transitionToFall = true;
+                        AssiLogger.Verbose($"[CLUSTER_UNDER_EAVE_FORCE] pos=({c.pos.x:F0},{c.pos.y:F0}) spd={c.vel.magnitude:F1}");
                     }
 
                     // 屋根左右外
@@ -1629,8 +1694,8 @@ public class SnowStrip2D : MonoBehaviour
                     if (frontResistance > EXPOSED_THR)
                     {
                         float threshold = frontResistance * RESIST_MULT;
-
-                        if (p.currentMass < threshold)
+                        // 軒先停止ゼロ化: Piece も frontResistance による停止を全廃（常に突破）
+                        if (false && p.currentMass < threshold)
                         {
                             // ── 停止方向: 減速 ────────────────────
                             p.vel *= Mathf.Max(0f, 1f - DECEL * dt);
@@ -1701,11 +1766,13 @@ public class SnowStrip2D : MonoBehaviour
                     {
                         transitionToFall = true;
                         AssiLogger.Verbose($"[2D_SLIDE_EAVE] roof={TARGET_ROOF_ID} pos=({p.pos.x:F0},{p.pos.y:F0}) mass={p.currentMass:F3}");
-
-                        // 軒落下時の雪煙: 切り分けテストのため一時OFF (#EAVE_FX_DISABLED)
-                        // string eavePuffSz = p.currentMass > ...
-                        // for (int pi2 = 0; pi2 < eavePuffN; pi2++) { ... }
                         AssiLogger.Verbose($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID} eave_fx=OFF pos=({p.pos.x:F0},{p.pos.y:F0})");
+                    }
+                    // 軒下エリア（ny>=0.88）で低速停留 → 強制落下（軒下残留ゼロ化）
+                    else if (nyAfterMoveP >= 0.88f && p.vel.magnitude < 60f)
+                    {
+                        transitionToFall = true;
+                        AssiLogger.Verbose($"[PIECE_UNDER_EAVE_FORCE] pos=({p.pos.x:F0},{p.pos.y:F0}) spd={p.vel.magnitude:F1}");
                     }
 
                     // 屋根左右外に出たら停止
@@ -1891,85 +1958,92 @@ public class SnowStrip2D : MonoBehaviour
                 );
             }
 
-            // ── 上面凹凸ライン（塊感の起伏）──────────────────────
+            // ── 積雪雪面描画（新方式: 滑らかな1枚面として描く）──────────
             {
-                float roofW   = _trapTR.x - _trapTL.x;
-                float roofH   = botY - topY;
+                float roofW = _trapTR.x - _trapTL.x;
+                float roofH = botY - topY;
 
-                // ═══════════════════════════════════════════════════════════════
-                // 積雪母体: 屋根全面を「1枚の白い塊」として描く新方式
-                // gy=0（奥）→ gy=GRID_H-1（手前）まで列ごとに積雪量を参照し、
-                // 各グリッドセルを個別に白矩形で塗る。
-                // 奥ほど明るく（日光）、手前ほどやや陰になる自然なグラデーション。
-                // ═══════════════════════════════════════════════════════════════
-                for (int gy = 0; gy < GRID_H; gy++)
+                // ── STEP 1: 全体ベース面 ────────────────────────────────
+                // スキャンライン単位で台形幅を補間しながら、
+                // その行の積雪 fill 値（X方向平均）を不透明度として塗る。
+                // これにより「積雪が多い行=不透明な白」「少ない行=薄い白」の
+                // 滑らかなグラデーション面になる。
+                // gy=0（奥）が明るく、gy=GRID_H-1（手前）がわずかに陰。
+                int scanStep2 = 2;
+                for (int sy = 0; sy < (int)roofH; sy += scanStep2)
                 {
-                    float depthRatio = (float)gy / (GRID_H - 1); // 0=奥, 1=手前
+                    float t = sy / roofH;                // 0=上(奥), 1=下(手前)
+                    int   gy = Mathf.Clamp(Mathf.FloorToInt(t * GRID_H), 0, GRID_H - 1);
 
-                    float gyT = (float)gy       / GRID_H;
-                    float gyB = (float)(gy + 1) / GRID_H;
-                    float yTop2 = topY + gyT * roofH;
-                    float yBot2 = topY + gyB * roofH;
-                    float hh    = yBot2 - yTop2;
+                    // この行の積雪X平均
+                    float rowFill = 0f;
+                    for (int gx2 = 0; gx2 < GRID_W; gx2++) rowFill += _snow[gx2, gy];
+                    rowFill /= GRID_W;
+                    if (rowFill < 0.02f) continue;
 
-                    for (int gx2 = 0; gx2 < GRID_W; gx2++)
-                    {
-                        float snowVal = _snow[gx2, gy];
-                        if (snowVal < 0.04f) continue;
+                    float lx2 = Mathf.Lerp(_trapTL.x, _trapBL.x, t);
+                    float rx2 = Mathf.Lerp(_trapTR.x, _trapBR.x, t);
+                    float ww  = rx2 - lx2;
+                    if (ww <= 0f) continue;
 
-                        float nxL = (float)gx2       / GRID_W;
-                        float nxR = (float)(gx2 + 1) / GRID_W;
-
-                        // 台形に沿った左右座標（上端と下端を補間して平均）
-                        float lxT = Mathf.Lerp(_trapTL.x, _trapTR.x, nxL);
-                        float rxT = Mathf.Lerp(_trapTL.x, _trapTR.x, nxR);
-                        float lxB = Mathf.Lerp(_trapBL.x, _trapBR.x, nxL);
-                        float rxB = Mathf.Lerp(_trapBL.x, _trapBR.x, nxR);
-                        float lx2 = Mathf.Lerp(lxT, lxB, gyT);
-                        float rx2 = Mathf.Lerp(rxT, rxB, gyT);
-                        float ww  = rx2 - lx2;
-                        if (ww <= 0f) continue;
-
-                        // 奥→明るい白、手前→やや陰（灰がかった白）
-                        float bright = Mathf.Lerp(0.98f, 0.78f, depthRatio);
-                        float blueB  = Mathf.Lerp(1.00f, 0.88f, depthRatio);
-                        // 積雪量で不透明度調整（多いほど不透明）
-                        float alpha2 = snowVal * Mathf.Lerp(0.88f, 0.75f, depthRatio);
-                        GUI.color = new Color(bright, bright, blueB, alpha2);
-                        GUI.DrawTexture(new Rect(lx2, yTop2, ww + 0.5f, hh + 1f), Texture2D.whiteTexture);
-                    }
+                    // 奥ほど明るい白、手前ほどやや陰
+                    float depth  = (float)gy / (GRID_H - 1);
+                    float bright = Mathf.Lerp(0.98f, 0.82f, depth);
+                    float alpha2 = rowFill * Mathf.Lerp(0.92f, 0.78f, depth);
+                    GUI.color = new Color(bright, bright, Mathf.Lerp(1.00f, 0.90f, depth), alpha2);
+                    GUI.DrawTexture(new Rect(lx2, topY + sy, ww, scanStep2 + 1f), Texture2D.whiteTexture);
                 }
 
-                // 上面のサイン波系起伏オフセット（大きな波 + 小さな波の重ね合わせ）
-                // グリッド列ごとに積雪量×起伏を計算
+                // ── STEP 2: 上面シルエット（滑らかな丘形状）───────────────
+                // 列ごとの積雪量から上面Y位置を計算し、隣接列間を連続した短冊で繋ぐ。
+                // サイン波は「小さな波」のみ使用（大きな波はブロック感を生む）。
+                // 全列の雪量を先にスムージングして、ガタガタを抑える。
+                float[] smoothedTop = new float[GRID_W];
+                for (int gxi = 0; gxi < GRID_W; gxi++)
+                {
+                    // X方向3セル移動平均で滑らかに
+                    int lo = Mathf.Max(0, gxi - 1);
+                    int hi = Mathf.Min(GRID_W - 1, gxi + 1);
+                    float s = 0f;
+                    int   n = 0;
+                    for (int xi = lo; xi <= hi; xi++)
+                    {
+                        // 奥2行の平均を使用（上面の厚みを反映）
+                        s += (_snow[xi, 0] + _snow[xi, 1]) * 0.5f;
+                        n++;
+                    }
+                    smoothedTop[gxi] = n > 0 ? s / n : 0f;
+                }
+
+                // 上面プロファイル（列ごとのY座標）
                 Vector2[] topProfile = new Vector2[GRID_W + 1];
                 for (int gxi = 0; gxi <= GRID_W; gxi++)
                 {
+                    int   gxc  = Mathf.Clamp(gxi, 0, GRID_W - 1);
+                    float snow0 = smoothedTop[gxc];
                     float nxf  = (float)gxi / GRID_W;
-                    float gxc  = Mathf.Clamp(gxi, 0, GRID_W - 1);
-                    // 奥側グリッド行（gy=0〜2）の平均積雪量で高さを決める（奥の厚みを反映）
-                    float snow0 = (_snow[(int)gxc, 0] + _snow[(int)gxc, 1] + _snow[(int)gxc, 2]) / 3f;
-
-                    // 台形上のX座標
                     float screenX = Mathf.Lerp(_trapTL.x, _trapTR.x, nxf);
-                    // 積雪量に応じた上面オフセット（雪が多い→高い山、少ない→低い）
-                    float undulation =
-                        Mathf.Sin(nxf * Mathf.PI * 3.5f + 0.4f) * 0.45f  // 大きな波
-                      + Mathf.Sin(nxf * Mathf.PI * 8.2f + 1.1f) * 0.20f  // 小さな波
-                      + Mathf.Sin(nxf * Mathf.PI * 14f  + 2.3f) * 0.10f; // 細かい波
-                    undulation = undulation * 0.5f + 0.5f; // 0〜1 に正規化
 
-                    // 奥側の積雪量で高さを決める（奥が積もっているほど上面が高く出る）
-                    float heightBoost = roofH * 0.32f * snow0 * (0.5f + undulation * 0.5f);
+                    // 小さな起伏だけ（大きなサイン波はブロック感を生むので除去）
+                    float undulation =
+                          Mathf.Sin(nxf * Mathf.PI * 5.0f + 0.7f) * 0.18f  // 中波
+                        + Mathf.Sin(nxf * Mathf.PI * 11f  + 1.9f) * 0.08f; // 細波
+                    undulation = undulation * 0.5f + 0.5f;
+
+                    // 積雪量に比例した盛り上がり（屋根高さの最大35%）
+                    // fillAvg で補正: 残量が減っても最低ラインを保持（急激な薄板化を防ぐ）
+                    float fillFloor  = Mathf.Clamp01(fillAvg * 1.4f); // 残量が少ない時も底上げ
+                    float effectiveSnow = Mathf.Max(snow0, fillFloor * 0.35f);
+                    float heightBoost = roofH * 0.35f * effectiveSnow * (0.55f + undulation * 0.45f);
                     topProfile[gxi] = new Vector2(screenX, topY - heightBoost);
                 }
 
-                // 起伏ラインを描画: 隣接セル間を短冊で埋める（topY から凹凸まで塗りつぶす）
+                // 上面短冊を描く（topY から各列の丘頂点まで白で塗りつぶす）
                 for (int gxi = 0; gxi < GRID_W; gxi++)
                 {
-                    float gxc2 = Mathf.Clamp(gxi, 0, GRID_W - 1);
-                    float snow0 = (_snow[(int)gxc2, 0] + _snow[(int)gxc2, 1]) * 0.5f;
-                    if (snow0 < 0.05f) continue;
+                    int   gxc  = Mathf.Clamp(gxi, 0, GRID_W - 1);
+                    float snow0 = smoothedTop[gxc];
+                    if (snow0 < 0.04f) continue;
 
                     float x0f = topProfile[gxi].x;
                     float x1f = topProfile[gxi + 1].x;
@@ -1979,54 +2053,43 @@ public class SnowStrip2D : MonoBehaviour
                     if (segW <= 0f) continue;
 
                     float segTopY = Mathf.Min(y0f, y1f);
-                    float segBotY = topY + roofH * 0.08f;
+                    float segBotY = topY + roofH * 0.05f;
                     float segH    = segBotY - segTopY;
                     if (segH <= 0f) continue;
 
-                    float brightness = 0.90f + 0.10f * (Mathf.Sin(gxi * 0.9f) * 0.5f + 0.5f);
-                    GUI.color = new Color(brightness, brightness + 0.02f, 1.0f, snow0 * 0.95f);
+                    GUI.color = new Color(0.96f, 0.97f, 1.0f, snow0 * 0.92f);
                     GUI.DrawTexture(new Rect(x0f, segTopY, segW + 0.5f, segH), Texture2D.whiteTexture);
                 }
 
-                // ── 前面エッジ: 矩形グレーではなく上端フェードの多段グラデーションで陰を表現 ──
-                // 上から下に向かって濃くなる帯を複数重ねることで「丸みのある影」に見せる
-                for (int gxi = 0; gxi < GRID_W; gxi++)
+                // ── STEP 3: 前面エッジ（軒先の雪の垂れ下がり）──────────────
+                // X方向の積雪列平均で高さを決め、上端フェードで自然な丸みを出す。
+                // 全列まとめて「1本の帯」として計算し、セルごとのバラつきを抑える。
                 {
-                    int gxc  = Mathf.Clamp(gxi, 0, GRID_W - 1);
-                    float snowBot = _snow[gxc, GRID_H - 1];
-                    if (snowBot < 0.05f) continue;
-
-                    float nxf   = (float)gxi       / GRID_W;
-                    float nxf1  = (float)(gxi + 1) / GRID_W;
-                    float sx0   = Mathf.Lerp(_trapBL.x, _trapBR.x, nxf);
-                    float sx1   = Mathf.Lerp(_trapBL.x, _trapBR.x, nxf1);
-                    float segW  = sx1 - sx0;
-                    if (segW <= 0f) continue;
-
-                    float droop =
-                        Mathf.Sin(gxc * 0.83f + 1.2f) * 0.40f
-                      + Mathf.Sin(gxc * 2.10f + 0.5f) * 0.25f
-                      + Mathf.Sin(gxc * 4.50f + 1.8f) * 0.15f;
-                    droop = (droop * 0.5f + 0.5f) * snowBot;
-                    float edgeFadeH = roofH * 0.32f * droop + roofH * 0.10f;
-
-                    // 多段フェード: 上端α≈0 → 下端α≈最大 の帯を6層重ねる
-                    // 各層ごとに少しずつ下にシフトして「ぼかし」を出す
-                    const int   FADE_STEPS = 6;
-                    float shade = 0.52f + 0.16f * (Mathf.Sin(gxc * 1.1f) * 0.5f + 0.5f);
-                    for (int fi = 0; fi < FADE_STEPS; fi++)
+                    // 全幅の平均垂れ下がりベース（残量補正で急な薄板化を防ぐ）
+                    float avgBot = 0f;
+                    for (int gxb = 0; gxb < GRID_W; gxb++) avgBot += _snow[gxb, GRID_H - 1];
+                    avgBot /= GRID_W;
+                    float effectiveAvgBot = Mathf.Max(avgBot, fillAvg * 0.30f); // 最低ラインを fillAvg で保証
+                    if (effectiveAvgBot > 0.04f)
                     {
-                        float fRatio = (float)(fi + 1) / FADE_STEPS; // 0→1
-                        float layerH = edgeFadeH * fRatio;            // 上層ほど短い
-                        float layerA = snowBot * fRatio * fRatio * 0.72f; // 上層ほど薄い
-                        // 横幅を下層ほど少し狭く（角が丸く見える）
-                        float wShrink = (1f - fRatio) * segW * 0.18f;
-                        GUI.color = new Color(shade, shade + 0.02f, shade + 0.05f, layerA);
-                        GUI.DrawTexture(new Rect(sx0 + wShrink * 0.5f,
-                                                 botY - layerH,
-                                                 segW - wShrink,
-                                                 layerH + 1f),
-                                        Texture2D.whiteTexture);
+                        float baseEdgeH = roofH * 0.18f * effectiveAvgBot;
+                        float lxE = _trapBL.x;
+                        float rxE = _trapBR.x;
+                        const int FADE_STEPS = 5;
+                        float shade = 0.72f;
+                        for (int fi = 0; fi < FADE_STEPS; fi++)
+                        {
+                            float fRatio = (float)(fi + 1) / FADE_STEPS;
+                            float layerH = baseEdgeH * fRatio;
+                            float layerA = avgBot * fRatio * fRatio * 0.55f;
+                            float xShrink = (1f - fRatio) * (rxE - lxE) * 0.08f;
+                            GUI.color = new Color(shade, shade + 0.03f, shade + 0.06f, layerA);
+                            GUI.DrawTexture(new Rect(lxE + xShrink,
+                                                     botY - layerH,
+                                                     rxE - lxE - xShrink * 2f,
+                                                     layerH + 1f),
+                                            Texture2D.whiteTexture);
+                        }
                     }
                 }
 
@@ -2057,15 +2120,12 @@ public class SnowStrip2D : MonoBehaviour
                 Vector2 ppos = cl.pos + poff;
                 float   psz  = cl.baseSize * psc;
                 float   pw2  = psz * 0.5f;
-                // 縦方向を横の 0.65〜0.80 倍にして「厚み感」を出す（旧: 0.45）
-                float   ph2  = psz * Random.Range(0.62f, 0.78f);
+                float   ph2  = psz * (0.55f + (pi % 3) * 0.08f); // ピースごとに縦横比を変化
 
-                // フェード: slideDelay 中は薄め、滑落中は不透明
                 float alpha = cl.slideDelay > 0f ? 0.7f : 1.0f;
                 Color cc = cl.clusterColor;
                 cc.a = alpha;
 
-                // 奥行きに応じた深度シェーディング（後ろのピースを少し暗く）
                 float depthDarken = 1f - pi * 0.05f;
                 cc.r *= depthDarken;
                 cc.g *= depthDarken;
@@ -2075,30 +2135,31 @@ public class SnowStrip2D : MonoBehaviour
                 float rot2 = poff.x * 0.3f + poff.y * 0.1f;
                 GUIUtility.RotateAroundPivot(rot2, ppos);
 
-                // ── 背面レイヤーは削除（四角い影の原因のため廃止）──
-                // 代わりに中心ブロックの下端に薄いフェードを重ねて奥行きを出す
+                // ── 不定形: 楕円的な複数矩形の重ね合わせで塊感を出す ──
+                // ピースごとに固定オフセット（毎フレーム変わらないよう pi ベースで決定）
+                float bx = ppos.x;
+                float by = ppos.y;
 
-                // 中心ブロック（明るい白〜薄青）
+                // メイン塊（少し横長）
                 GUI.color = cc;
-                GUI.DrawTexture(new Rect(ppos.x - pw2, ppos.y - ph2 * 0.5f, pw2 * 2f, ph2), Texture2D.whiteTexture);
+                GUI.DrawTexture(new Rect(bx - pw2, by - ph2 * 0.45f, pw2 * 2f, ph2 * 0.90f), Texture2D.whiteTexture);
 
-                // ── 上面ハイライト: 雪の頂点に明るい白帯 ──
-                float hlH = ph2 * 0.25f;
-                GUI.color = new Color(1f, 1f, 1f, alpha * 0.70f);
-                GUI.DrawTexture(new Rect(ppos.x - pw2 * 0.85f, ppos.y - ph2 * 0.5f,
-                                         pw2 * 1.70f, hlH), Texture2D.whiteTexture);
+                // 左上ふくらみ（不定形感）
+                float bw1 = pw2 * (0.60f + (pi % 4) * 0.08f);
+                float bh1 = ph2 * (0.50f + (pi % 3) * 0.07f);
+                GUI.color = new Color(cc.r, cc.g, cc.b, alpha * 0.80f);
+                GUI.DrawTexture(new Rect(bx - pw2 * 0.90f, by - ph2 * 0.55f, bw1, bh1), Texture2D.whiteTexture);
 
-                // 丸み補助（上端・左右のみ; 下端の矩形は削除して四角影を出さない）
-                float rnd2 = Mathf.Min(pw2, ph2) * 0.30f;
-                GUI.color = new Color(cc.r, cc.g, cc.b, cc.a * 0.45f);
-                // 上端の丸み
-                GUI.DrawTexture(new Rect(ppos.x - pw2 * 0.7f, ppos.y - ph2 * 0.5f - rnd2 * 0.6f,
-                                         pw2 * 1.4f, rnd2 * 1.2f), Texture2D.whiteTexture);
-                // 左右の丸み
-                GUI.DrawTexture(new Rect(ppos.x - pw2 - rnd2 * 0.6f, ppos.y - ph2 * 0.35f,
-                                         rnd2 * 1.2f, ph2 * 0.70f), Texture2D.whiteTexture);
-                GUI.DrawTexture(new Rect(ppos.x + pw2 - rnd2 * 0.6f, ppos.y - ph2 * 0.35f,
-                                         rnd2 * 1.2f, ph2 * 0.70f), Texture2D.whiteTexture);
+                // 右下ふくらみ（非対称）
+                float bw2 = pw2 * (0.55f + (pi % 5) * 0.07f);
+                float bh2 = ph2 * (0.45f + (pi % 2) * 0.10f);
+                GUI.color = new Color(cc.r, cc.g, cc.b, alpha * 0.70f);
+                GUI.DrawTexture(new Rect(bx + pw2 * 0.20f, by + ph2 * 0.05f, bw2, bh2), Texture2D.whiteTexture);
+
+                // 上面ハイライト（雪の光当たり面）
+                GUI.color = new Color(1f, 1f, 1f, alpha * 0.65f);
+                GUI.DrawTexture(new Rect(bx - pw2 * 0.80f, by - ph2 * 0.50f,
+                                         pw2 * 1.50f, ph2 * 0.22f), Texture2D.whiteTexture);
 
                 GUI.matrix = savedMatrix2;
             }

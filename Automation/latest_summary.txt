@@ -1,5 +1,5 @@
 === SUMMARY ===
-generated_at=2026-03-27 12:24:49
+generated_at=2026-03-27 15:05:08
 scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
@@ -14,7 +14,7 @@ roof_min_y=0.2417
 roof_max_y=0.4470
 ground_y=0.6736
 snow_on_roof=YES
-fall_reaches_ground=PENDING
+fall_reaches_ground=YES
 
 snow_state=ALL6_THICK
 under_eave_stop=UNKNOWN
@@ -24,7 +24,7 @@ avalanche_feel=WEAK
 red_snow=NO
 white_panel=NO
 
-score_ui=FAIL
+score_ui=PASS
 
 gif_status=OK
 mp4_status=OK
