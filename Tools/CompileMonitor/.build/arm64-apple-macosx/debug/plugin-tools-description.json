@@ -1,0 +1,241 @@
+{
+  "builtTestProducts" : [
+
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.CompileMonitor-arm64-apple-macosx26.0-debug.module" : {
+      "executable" : "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "fileList" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources",
+      "importPath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources"
+        }
+      ],
+      "isLibrary" : false,
+      "moduleName" : "CompileMonitor",
+      "moduleOutputPath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules/CompileMonitor.swiftmodule",
+      "objects" : [
+        "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx13.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j8",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-Xfrontend",
+        "-entry-point-function-name",
+        "-Xfrontend",
+        "CompileMonitor_main",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-I",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-L",
+        "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+        "-plugin-path",
+        "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "compilemonitor"
+      ],
+      "outputFileMapPath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules/CompileMonitor.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift"
+      ],
+      "tempsPath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "CompileMonitor" : [
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc",
+      "-module-name",
+      "CompileMonitor",
+      "-package-name",
+      "compilemonitor",
+      "-c",
+      "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift",
+      "-I",
+      "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx13.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j8",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-Xfrontend",
+      "-entry-point-function-name",
+      "-Xfrontend",
+      "CompileMonitor_main",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-I",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-L",
+      "/Library/Developer/CommandLineTools/Library/Developer/Frameworks",
+      "-plugin-path",
+      "/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "compilemonitor",
+      "-driver-use-frontend-path",
+      "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "CompileMonitor" : [
+
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<entitlement-plist>"
+        },
+        {
+          "kind" : "virtual",
+          "name" : "<com.apple.security.get-task-allow>"
+        }
+      ],
+      "outputFilePath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist"
+    },
+    "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources"
+    },
+    "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList"
+    },
+    "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Library/Developer/CommandLineTools/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+    }
+  }
+}

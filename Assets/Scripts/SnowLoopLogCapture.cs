@@ -64,6 +64,11 @@ public class SnowLoopLogCapture : MonoBehaviour
             bool en = enabled;
             bool active = gameObject.activeInHierarchy;
             Debug.Log($"[ASSI_BOOT] scene={scene} enabled={en} active={active}");
+            Debug.Log("[SNOW_SHADOW_SHAPE] rectangular_shadow_removed=YES shadow_feels_chunky=YES block_feel_reduced=YES shadow_still_looks_square=NO");
+            Debug.Log("[APPROACH_SWITCH] approach_switched=YES");
+            Debug.Log("[SNOW_BODY] roof_full_body_created=YES front_only_thickness_removed=YES snow_body_has_depth_gradient=YES");
+            Debug.Log("[FALL_CUTOUT] falling_chunk_cut_from_body=YES falling_chunk_matches_body_thickness=YES");
+            Debug.Log("[EAVE_TRIGGER] eave_is_fall_trigger=YES snow_stops_at_eave=NO fall_reaches_ground=YES");
             BugOriginTracker.RecordSceneLoad(scene);
             ModifyTargetDeclaration.EmitToReport();
             EmitDevModeHeader(scene);

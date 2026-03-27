@@ -1,0 +1,12 @@
+{
+  "": {
+    "swift-dependencies": "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/master.swiftdeps"
+  },
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift": {
+    "dependencies": "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.d",
+    "object": "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o",
+    "swiftmodule": "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swiftdeps",
+    "diagnostics": "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.dia"
+  }
+}

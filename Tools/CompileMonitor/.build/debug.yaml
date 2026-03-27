@@ -1,0 +1,81 @@
+client:
+  name: basic
+  file-system: device-agnostic
+tools: {}
+targets:
+  "CompileMonitor-arm64-apple-macosx26.0-debug.exe": ["<CompileMonitor-arm64-apple-macosx26.0-debug.exe>"]
+  "CompileMonitor-arm64-apple-macosx26.0-debug.module": ["<CompileMonitor-arm64-apple-macosx26.0-debug.module>"]
+  "PackageStructure": ["<PackageStructure>"]
+  "main": ["<CompileMonitor-arm64-apple-macosx26.0-debug.exe>","<CompileMonitor-arm64-apple-macosx26.0-debug.module>"]
+  "test": ["<CompileMonitor-arm64-apple-macosx26.0-debug.exe>","<CompileMonitor-arm64-apple-macosx26.0-debug.module>"]
+default: "main"
+nodes:
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/":
+    is-directory-structure: true
+    content-exclusion-patterns: [".git",".build"]
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor":
+    is-mutated: true
+commands:
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist":
+    tool: write-auxiliary-file
+    inputs: ["<entitlement-plist>","<com.apple.security.get-task-allow>"]
+    outputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist"]
+    description: "Write auxiliary file /Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist"
+
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources":
+    tool: write-auxiliary-file
+    inputs: ["<sources-file-list>","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift"]
+    outputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources"]
+    description: "Write auxiliary file /Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources"
+
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList":
+    tool: write-auxiliary-file
+    inputs: ["<link-file-list>","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o"]
+    outputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList"]
+    description: "Write auxiliary file /Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList"
+
+  "/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt":
+    tool: write-auxiliary-file
+    inputs: ["<swift-get-version>","/Library/Developer/CommandLineTools/usr/bin/swiftc"]
+    outputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"]
+    always-out-of-date: "true"
+    description: "Write auxiliary file /Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt"
+
+  "<CompileMonitor-arm64-apple-macosx26.0-debug.exe>":
+    tool: phony
+    inputs: ["<CompileMonitor-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    outputs: ["<CompileMonitor-arm64-apple-macosx26.0-debug.exe>"]
+
+  "<CompileMonitor-arm64-apple-macosx26.0-debug.module>":
+    tool: phony
+    inputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules/CompileMonitor.swiftmodule"]
+    outputs: ["<CompileMonitor-arm64-apple-macosx26.0-debug.module>"]
+
+  "C.CompileMonitor-arm64-apple-macosx26.0-debug.exe":
+    tool: shell
+    inputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList"]
+    outputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor"]
+    description: "Linking ./.build/arm64-apple-macosx/debug/CompileMonitor"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-L","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug","-o","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor","-module-name","CompileMonitor","-Xlinker","-no_warn_duplicate_libraries","-emit-executable","-Xlinker","-alias","-Xlinker","_CompileMonitor_main","-Xlinker","_main","-Xlinker","-rpath","-Xlinker","@loader_path","@/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.product/Objects.LinkFileList","-Xlinker","-rpath","-Xlinker","/Library/Developer/CommandLineTools/usr/lib/swift-6.2/macosx","-target","arm64-apple-macosx13.0","-Xlinker","-add_ast_path","-Xlinker","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules/CompileMonitor.swiftmodule","-I","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-L","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-plugin-path","/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g"]
+
+  "C.CompileMonitor-arm64-apple-macosx26.0-debug.exe-entitlements":
+    tool: shell
+    inputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist"]
+    outputs: ["<CompileMonitor-arm64-apple-macosx26.0-debug.exe-CodeSigning>"]
+    description: "Applying debug entitlements to ./.build/arm64-apple-macosx/debug/CompileMonitor"
+    args: ["codesign","--force","--sign","-","--entitlements","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor-entitlement.plist","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor"]
+
+  "C.CompileMonitor-arm64-apple-macosx26.0-debug.module":
+    tool: shell
+    inputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/CompileMonitorApp.swift","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/swift-version--1AB21518FC5DEDBE.txt","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources"]
+    outputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/CompileMonitorApp.swift.o","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules/CompileMonitor.swiftmodule"]
+    description: "Compiling Swift Module 'CompileMonitor' (1 sources)"
+    args: ["/Library/Developer/CommandLineTools/usr/bin/swiftc","-module-name","CompileMonitor","-emit-dependencies","-emit-module","-emit-module-path","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules/CompileMonitor.swiftmodule","-output-file-map","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/output-file-map.json","-incremental","-c","@/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/CompileMonitor.build/sources","-I","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/Modules","-target","arm64-apple-macosx13.0","-incremental","-enable-batch-mode","-serialize-diagnostics","-index-store-path","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/index/store","-Onone","-enable-testing","-j8","-DSWIFT_PACKAGE","-DDEBUG","-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE","-module-cache-path","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/.build/arm64-apple-macosx/debug/ModuleCache","-parseable-output","-Xfrontend","-entry-point-function-name","-Xfrontend","CompileMonitor_main","-parse-as-library","-swift-version","5","-I","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-L","/Library/Developer/CommandLineTools/Library/Developer/Frameworks","-plugin-path","/Library/Developer/CommandLineTools/usr/lib/swift/host/plugins/testing","-sdk","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-g","-Xcc","-isysroot","-Xcc","/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk","-Xcc","-fPIC","-Xcc","-g","-package-name","compilemonitor"]
+
+  "PackageStructure":
+    tool: package-structure-tool
+    inputs: ["/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Sources/","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Package.swift","/Users/kenichinishi/unity/SnowPanicVibe/Tools/CompileMonitor/Package.resolved"]
+    outputs: ["<PackageStructure>"]
+    description: "Planning build"
+    allow-missing-inputs: true
+
