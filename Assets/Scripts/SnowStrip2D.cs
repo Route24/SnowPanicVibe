@@ -199,6 +199,31 @@ public class SnowStrip2D : MonoBehaviour
     /// <summary>全屋根の情報リスト（roofId・段情報付き）</summary>
     public static System.Collections.Generic.IReadOnlyList<RoofInfo> RoofInfos => s_roofInfos;
 
+    /// <summary>
+    /// WorkSnowForcer が持つ guiRect ベースのデータを RoofInfo として登録する。
+    /// SnowStrip2D インスタンスが存在しない B方式でも GloveTool が屋根判定できるようにする。
+    /// </summary>
+    public static void RegisterExternalRoofInfos(
+        System.Collections.Generic.IEnumerable<(string id, Rect rect, bool isUpper)> infos)
+    {
+        // 外部登録分は prefix "ext_" で管理（SnowStrip2D 自身の登録と混在させない）
+        s_roofInfos.RemoveAll(info => info.id.StartsWith("ext_"));
+        foreach (var (id, rect, isUpper) in infos)
+        {
+            s_roofInfos.Add(new RoofInfo
+            {
+                id       = "ext_" + id,
+                rect     = rect,
+                isUpper  = isUpper,
+                trapTL   = new Vector2(rect.xMin, rect.yMin),
+                trapTR   = new Vector2(rect.xMax, rect.yMin),
+                trapBL   = new Vector2(rect.xMin, rect.yMax),
+                trapBR   = new Vector2(rect.xMax, rect.yMax),
+            });
+        }
+        Debug.Log($"[GLOVE_ROOF_SYNC] external_roofs_registered={s_roofInfos.Count} source=WorkSnowForcer");
+    }
+
     // ── ライフサイクル ────────────────────────────────────────
     void OnEnable()
     {

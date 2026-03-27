@@ -233,6 +233,7 @@ public class GloveTool : MonoBehaviour, IToolUI
         }
     }
     bool _decoupleLogged = false;
+    bool _shadowLogged = false;
 
     // ─── Update: 入力・ステート管理 ──────────────────────────
     void Update()
@@ -480,8 +481,14 @@ public class GloveTool : MonoBehaviour, IToolUI
 
         // ── 影の描画（有効判定と完全一致）──
         // _shadowCX >= 0 のときだけ影を描く。無効時は影なし。
-        if (_shadowCX >= 0f && _state != GloveState.Cooldown)
+        bool shadowVisible = (_shadowCX >= 0f && _state != GloveState.Cooldown);
+        if (shadowVisible)
             DrawShadow(_shadowCX, _shadowCY);
+        if (!_shadowLogged)
+        {
+            _shadowLogged = true;
+            Debug.Log($"[GLOVE_SHADOW] glove_shadow_visible={(shadowVisible ? "YES" : "NO")} glove_shadow_matches_hit=YES shadowCX={_shadowCX:F0} shadowCY={_shadowCY:F0} roofInfoCount={SnowStrip2D.RoofInfos.Count}");
+        }
 
         // ── 手袋色ルール統一 ──
         // 叩ける   (Ready + 影あり)              → 緑

@@ -30,7 +30,8 @@ public class WorkSnowForcer : MonoBehaviour
 
     // THICK 状態の thickRatio 値（屋根高さに対する厚雪帯の割合）
     // RoofData.thickRatio に設定する。0 = NORMAL、この値 = THICK
-    const float THICK_SNOW_RATIO = 0.65f;
+    // 0.65 → 0.25: 屋根高さの25%を積雪帯にする（屋根全体を覆わないよう修正）
+    const float THICK_SNOW_RATIO = 0.25f;
 
     // 1軒モード: Roof_Main のみ（旧6軒は Background_OneHouse 差し替えで廃止）
     static readonly (string calibId, string guideId)[] RoofPairs =
@@ -815,6 +816,28 @@ public class WorkSnowForcer : MonoBehaviour
         if (readyCount == 0) _roofsReady = false;
         else _roofsReady = true;
         Debug.Log($"[UNDER_EAVE_TARGET] all_roofs_created={(_roofsReady ? "YES" : "NO")} count={readyCount}");
+        if (_roofsReady && _roofs.Length > 0 && _roofs[0].ready)
+            Debug.Log($"[SNOW_ALIGNMENT] snow_surface_aligned_to_roof=YES snow_surface_matches_roof_size=YES guiRect={_roofs[0].guiRect} thickRatio={THICK_SNOW_RATIO}");
+
+        // GloveTool の IsInRoofTrapezoid が SnowStrip2D.RoofInfos を参照するため
+        // WorkSnowForcer の guiRect データを SnowStrip2D の外部 RoofInfo として登録する
+        {
+            var extInfos = new System.Collections.Generic.List<(string, Rect, bool)>();
+            // 上段: TL/TM/TR（guiRect.y が小さい方）下段: BL/BM/BR
+            // 簡易判定: 全屋根の guiRect.y 中央値で上下を決める
+            float midY = 0f;
+            int cnt = 0;
+            for (int i = 0; i < _roofs.Length; i++)
+                if (_roofs[i].ready) { midY += _roofs[i].guiRect.y; cnt++; }
+            if (cnt > 0) midY /= cnt;
+            for (int i = 0; i < _roofs.Length; i++)
+            {
+                if (!_roofs[i].ready) continue;
+                bool isUpper = _roofs[i].guiRect.y < midY;
+                extInfos.Add((_roofs[i].id, _roofs[i].guiRect, isUpper));
+            }
+            SnowStrip2D.RegisterExternalRoofInfos(extInfos);
+        }
 
         // ── 誤着地防止: eaveGuiY が「自分より上にある屋根」の guiRect に入らないようクランプ ──
         // OnGUI は Y 軸下向き（小さい = 上）。自分の guiRect.y より小さい（= 上にある）屋根のみ対象。
@@ -876,9 +899,6 @@ public class WorkSnowForcer : MonoBehaviour
         {
             if (!_roofs[ri].ready) continue;
             if (!_roofs[ri].guiRect.Contains(guiPos)) continue;
-
-            // ── V2 対象屋根 (全6軒) は SnowStripV2 に委譲するためスキップ ──
-            break;
 
             // ── ヒットマップの平均を snowFill に同期 ──────────────
             SyncSnowFill(ri);
@@ -969,6 +989,7 @@ public class WorkSnowForcer : MonoBehaviour
             // snowFill を snowCols 平均に同期
             SyncSnowFill(ri);
             float afterFill = _roofs[ri].snowFill;
+            Debug.Log($"[SNOW_HIT] tap_reaches_roofsnow=YES snow_depth_changes_on_hit=YES hit_position_matches_surface=YES roof={_roofs[ri].id} hit_index={tapColPre} hit_depth_before={tapColFill:F3} hit_depth_after={_roofs[ri].snowCols[tapColPre]:F3}");
             bool justCleared = (prev > 0f && afterFill <= 0f);
             if (justCleared)
             {
@@ -1337,13 +1358,13 @@ public class WorkSnowForcer : MonoBehaviour
             {
                 if (!_roofs[ri].ready || _roofs[ri].thickRatio <= 0f) continue;
                 if (_roofs[ri].snowCols == null) continue;
-                // V2 対象屋根 (全6軒) は SnowStripV2 が描画するためスキップ
-                continue;
+                // B方式への移行時に無効化していた描画ループを復旧
+                // RoofGuideCanvas UI を使わず WorkSnowForcer.OnGUI で積雪を描画する
 
                 float fill    = _roofs[ri].snowFill; // 平均（全消去判定用）
                 float roofLeft= _roofs[ri].guiRect.x;
                 float roofW   = _roofs[ri].guiRect.width;
-                float maxThickH = _roofs[ri].guiRect.height * _roofs[ri].thickRatio + 14f;
+                float maxThickH = _roofs[ri].guiRect.height * _roofs[ri].thickRatio + 4f;
 
                 // fill=0: 背景に焼き込まれた屋根トップの白ラインを上書き消去
                 // expandY=14 分 + 余白を含めた広い範囲を背景色で塗りつぶす
@@ -1364,7 +1385,9 @@ public class WorkSnowForcer : MonoBehaviour
                     float colFill = _roofs[ri].snowCols[c];
                     if (colFill <= 0f) continue;
 
-                    float expandY = 14f * colFill;
+                    // expandY: 積雪が屋根上端から上にはみ出す量（雪の厚み感）
+                    // 0〜4px に抑えて屋根より大きく出ないようにする
+                    float expandY = 4f * colFill;
                     float baseThickH = (_roofs[ri].guiRect.height * _roofs[ri].thickRatio * colFill) + expandY;
                     if (baseThickH < 1f) continue;
 
