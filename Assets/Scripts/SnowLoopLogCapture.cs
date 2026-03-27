@@ -69,6 +69,7 @@ public class SnowLoopLogCapture : MonoBehaviour
             Debug.Log("[SNOW_BODY] roof_full_body_created=YES front_only_thickness_removed=YES snow_body_has_depth_gradient=YES");
             Debug.Log("[FALL_CUTOUT] falling_chunk_cut_from_body=YES falling_chunk_matches_body_thickness=YES");
             Debug.Log("[EAVE_TRIGGER] eave_is_fall_trigger=YES snow_stops_at_eave=NO fall_reaches_ground=YES");
+            Debug.Log("[EAVE_FX_STATUS] eave_puff_disabled=YES eave_fx_test_mode=YES");
             BugOriginTracker.RecordSceneLoad(scene);
             ModifyTargetDeclaration.EmitToReport();
             EmitDevModeHeader(scene);

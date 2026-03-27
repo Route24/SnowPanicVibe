@@ -1433,28 +1433,12 @@ public class SnowStrip2D : MonoBehaviour
                     if (nyAfterMove >= 0.95f || c.pos.y >= _guiRect.yMax)
                     {
                         transitionToFall = true;
-                        // 軒先雪煙（中）
-                        string eavePuffSz = c.mass > 1.5f ? "large" : (c.mass > 0.7f ? "medium" : "small");
-                        int eavePuffN     = c.mass > 1.5f ? 6 : (c.mass > 0.7f ? 4 : 3);
-                        float eavePuffBase = c.mass > 1.5f ? 48f : (c.mass > 0.7f ? 34f : 22f);
-                        for (int pi2 = 0; pi2 < eavePuffN; pi2++)
-                        {
-                            float pjx = Random.Range(-8f, 8f);
-                            float pjy = Random.Range(-4f, 4f);
-                            float psz = eavePuffBase * Random.Range(0.7f, 1.4f);
-                            float pl  = Random.Range(0.5f, 0.9f);
-                            _puffs.Add(new Puff
-                            {
-                                pos     = new Vector2(c.pos.x + pjx, c.pos.y + pjy),
-                                vel     = new Vector2(Random.Range(-12f, 12f), Random.Range(-25f, -5f)),
-                                size    = psz,
-                                life    = pl,
-                                maxLife = pl,
-                                alpha   = 1f,
-                                kind    = 1,
-                            });
-                        }
-                        AssiLogger.Verbose($"[CLUSTER_EAVE] pos=({c.pos.x:F0},{c.pos.y:F0}) mass={c.mass:F2} puffSize={eavePuffSz}");
+                        // ── 軒先雪煙: 切り分けテストのため一時OFF (#EAVE_FX_DISABLED) ──
+                        // string eavePuffSz = c.mass > 1.5f ? "large" : (c.mass > 0.7f ? "medium" : "small");
+                        // int eavePuffN     = c.mass > 1.5f ? 6 : (c.mass > 0.7f ? 4 : 3);
+                        // float eavePuffBase = c.mass > 1.5f ? 48f : (c.mass > 0.7f ? 34f : 22f);
+                        // for (int pi2 = 0; pi2 < eavePuffN; pi2++) { ... }
+                        AssiLogger.Verbose($"[CLUSTER_EAVE] pos=({c.pos.x:F0},{c.pos.y:F0}) mass={c.mass:F2} eave_fx=OFF");
                     }
 
                     // 屋根左右外
@@ -1718,29 +1702,10 @@ public class SnowStrip2D : MonoBehaviour
                         transitionToFall = true;
                         AssiLogger.Verbose($"[2D_SLIDE_EAVE] roof={TARGET_ROOF_ID} pos=({p.pos.x:F0},{p.pos.y:F0}) mass={p.currentMass:F3}");
 
-                        // 軒落下時の雪煙: 「中」サイズ（tap=小 / eave=中 / ground=大）
-                        string eavePuffSz = p.currentMass > 1.5f ? "large" :
-                                            (p.currentMass > 0.7f ? "medium" : "small");
-                        int eavePuffN = p.currentMass > 1.5f ? 6 : (p.currentMass > 0.7f ? 4 : 3);
-                        float eavePuffBase = p.currentMass > 1.5f ? 48f : (p.currentMass > 0.7f ? 34f : 22f);
-                        for (int pi2 = 0; pi2 < eavePuffN; pi2++)
-                        {
-                            float pjx = Random.Range(-8f, 8f);
-                            float pjy = Random.Range(-4f, 4f);
-                            float psz = eavePuffBase * Random.Range(0.7f, 1.4f);
-                            float pl  = Random.Range(0.5f, 0.9f);
-                            _puffs.Add(new Puff
-                            {
-                                pos     = new Vector2(p.pos.x + pjx, p.pos.y + pjy),
-                                vel     = new Vector2(Random.Range(-12f, 12f), Random.Range(-25f, -5f)),
-                                size    = psz,
-                                life    = pl,
-                                maxLife = pl,
-                                alpha   = 1f,
-                                kind    = 1,
-                            });
-                        }
-                        AssiLogger.Verbose($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID} puffSize={eavePuffSz} puffCount={eavePuffN} pos=({p.pos.x:F0},{p.pos.y:F0})");
+                        // 軒落下時の雪煙: 切り分けテストのため一時OFF (#EAVE_FX_DISABLED)
+                        // string eavePuffSz = p.currentMass > ...
+                        // for (int pi2 = 0; pi2 < eavePuffN; pi2++) { ... }
+                        AssiLogger.Verbose($"[SNOW_PUFF_EAVE] roof={TARGET_ROOF_ID} eave_fx=OFF pos=({p.pos.x:F0},{p.pos.y:F0})");
                     }
 
                     // 屋根左右外に出たら停止
