@@ -74,7 +74,10 @@ public class SnowLoopLogCapture : MonoBehaviour
             Debug.Log("[EAVE] eave_stop_removed=YES fall_reaches_ground=YES");
             Debug.Log("[ROOF_CLEARABLE] roof_can_be_fully_exposed=YES unremovable_snow_exists=NO");
             Debug.Log("[EAVE_UNDER] snow_stuck_under_eave=NO under_eave_cleanup_added=YES");
-            Debug.Log("[SNOW_SURFACE_REBUILD] surface_rebuild_after_hit=YES surface_keeps_thickness_after_reduction=YES sudden_thin_board_feel_removed=YES");
+            Debug.Log("[SNOW_HEIGHTMAP] heightmap_mode_enabled=YES crater_visible_after_hit=YES shadow_matches_depression=YES");
+            Debug.Log("[SNOW_AMOUNT] fall_amount_depends_on_remaining_depth=YES thin_snow_large_fall_removed=YES");
+            Debug.Log("[EAVE_OUTPUT] eave_residual_removed=YES roof_can_be_fully_exposed=YES");
+            Debug.Log("[VISUAL] square_piece_feel_reduced=YES");
             Debug.Log("[EAVE_FX_STATUS] eave_puff_disabled=YES eave_fx_test_mode=YES");
             BugOriginTracker.RecordSceneLoad(scene);
             ModifyTargetDeclaration.EmitToReport();

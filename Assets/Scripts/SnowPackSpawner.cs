@@ -255,6 +255,12 @@ public class SnowPackSpawner : MonoBehaviour
 
     public void RebuildSnowPack(string reason)
     {
+        if (roofSnowSystem != null && roofSnowSystem.heightmap_mode_enabled)
+        {
+            UnityEngine.Debug.Log("[SNOW_HEIGHTMAP] RebuildSnowPack disabled due to heightmap mode.");
+            return;
+        }
+
         if (roofCollider == null)
             roofCollider = ResolveRoofCollider();
         if (roofCollider == null)

@@ -1,5 +1,5 @@
 === SUMMARY ===
-generated_at=2026-03-27 15:05:08
+generated_at=2026-03-27 17:26:25
 scene_name=Avalanche_Billboard__WORK_SNOW
 
 compile_result=PASS
@@ -24,7 +24,7 @@ avalanche_feel=WEAK
 red_snow=NO
 white_panel=NO
 
-score_ui=PASS
+score_ui=FAIL
 
 gif_status=OK
 mp4_status=OK

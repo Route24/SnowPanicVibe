@@ -129,6 +129,7 @@ public class AvalanchePhysicsSystem : MonoBehaviour
     {
         if (snowPackSpawner == null || roofSnowSystem == null) return;
         if (!useAvalanchePhysics) return;
+        if (roofSnowSystem.heightmap_mode_enabled) return;
 
         RebuildClusters();
         if (_clusters.Count == 0) return;

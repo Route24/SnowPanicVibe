@@ -82,6 +82,12 @@ public class RoofSnowSystem : MonoBehaviour
     readonly List<MvpSnowChunkMotion> _chunkPool = new List<MvpSnowChunkMotion>();
     bool _burstScaleLogOnce;
 
+    [Header("ASSI Heightmap Mode")]
+    public bool heightmap_mode_enabled = true;
+    public float[,] snowDepthMap;
+    public const int MAP_W = 20;
+    public const int MAP_H = 12;
+
     public float ComputedThreshold { get; private set; }
     public float AngleDeg { get; private set; }
     /// <summary>雪崩クールダウン中（この間は Pool返却・RemoveLayers を避ける）</summary>
@@ -150,7 +156,24 @@ public class RoofSnowSystem : MonoBehaviour
     {
         if (roofSlideCollider == null) return;
 
-        int packed = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
+        if (heightmap_mode_enabled)
+        {
+            float totalDepth = 0f;
+            if (snowDepthMap != null)
+            {
+                for (int z = 0; z <= MAP_H; z++)
+                    for (int x = 0; x <= MAP_W; x++)
+                        totalDepth += snowDepthMap[x, z];
+            }
+            float curTarget = (MAP_W + 1) * (MAP_H + 1) * 0.45f;
+            if (curTarget <= 0f) curTarget = 1f;
+            float ratio = Mathf.Clamp01(totalDepth / curTarget);
+            _roofSnowVisualAmount = Mathf.MoveTowards(_roofSnowVisualAmount, ratio, VisualFadeSpeed * Time.deltaTime);
+            UpdateSnowSurfaceMesh();
+        }
+        else
+        {
+            int packed = snowPackSpawner != null ? snowPackSpawner.GetPackedCubeCountRealtime() : -1;
         if (packed > 0 && _packedTotalAtStart < 0)
             _packedTotalAtStart = packed;
         if (packed > 0 && packed > _packedTotalAtStart)
@@ -237,6 +260,7 @@ public class RoofSnowSystem : MonoBehaviour
                 TriggerAvalanche();
             }
         }
+        } // close else (non-heightmap path)
     }
 
     /// <summary>Paint a cleared patch at hit location. Call from LocalAvalanche (main hit) and chain waves.</summary>
@@ -266,6 +290,49 @@ public class RoofSnowSystem : MonoBehaviour
     public void RequestTapSlide(Vector3 tapWorldPoint)
     {
         Debug.Log("[SNOW_TAP_PATH] step=enter");
+        if (heightmap_mode_enabled && snowDepthMap != null && _roofLayer != null)
+        {
+            Vector3 localHit = _roofLayer.InverseTransformPoint(tapWorldPoint);
+            float u = localHit.x + 0.5f;
+            float v = localHit.z + 0.5f;
+            float removedVolume = 0f;
+            float radiusUV = hitRadiusR * 0.2f;
+
+            for (int z = 0; z <= MAP_H; z++)
+            {
+                for (int x = 0; x <= MAP_W; x++)
+                {
+                    float mapU = (float)x / MAP_W;
+                    float mapV = (float)z / MAP_H;
+                    float dx = mapU - u;
+                    float dz = mapV - v;
+                    float dist = Mathf.Sqrt(dx * dx + dz * dz);
+                    if (dist < radiusUV)
+                    {
+                        float currentDepth = snowDepthMap[x, z];
+                        float falloff = 1f - (dist / radiusUV);
+                        falloff = Mathf.SmoothStep(0f, 1f, falloff);
+                        float carveAmount = falloff * 0.5f * currentDepth;
+                        float newDepth = Mathf.Max(0f, currentDepth - carveAmount);
+                        removedVolume += (currentDepth - newDepth);
+                        snowDepthMap[x, z] = newDepth;
+                    }
+                }
+            }
+            int removedPiecesApprox = Mathf.RoundToInt(removedVolume * 150f);
+            Debug.Log($"[SNOW_HEIGHTMAP] step=tap removedVolume={removedVolume:F3} approxP={removedPiecesApprox}");
+            if (removedPiecesApprox > 0)
+            {
+                SnowPhysicsScoreManager.Instance?.Add(1);
+                SnowVisual.SpawnPowderAt(tapWorldPoint);
+                Vector3 roofUp = roofSlideCollider.transform.up.normalized;
+                Vector3 slopeDir = Vector3.ProjectOnPlane(Vector3.down, roofUp).normalized;
+                SpawnLocalBurstAt(tapWorldPoint, removedPiecesApprox, slopeDir);
+            }
+            UpdateSnowSurfaceMesh();
+            return;
+        }
+
         if (roofSlideCollider == null || snowPackSpawner == null)
 {
     Debug.Log("[SNOW_TAP_PATH] step=return reason=null_ref");
@@ -427,6 +494,34 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
 
     void TriggerAvalanche()
     {
+        if (heightmap_mode_enabled && snowDepthMap != null)
+        {
+            float removedVolume = 0f;
+            for (int z = 0; z <= MAP_H; z++)
+            {
+                for (int x = 0; x <= MAP_W; x++)
+                {
+                    float cur = snowDepthMap[x, z];
+                    float afterDepth = Mathf.Max(0f, cur * avalancheRetainRatio);
+                    if (z >= MAP_H - 1) afterDepth *= 0.1f;
+                    removedVolume += (cur - afterDepth);
+                    snowDepthMap[x, z] = afterDepth;
+                }
+            }
+            UpdateSnowSurfaceMesh();
+            
+            float hmBurstAmount = removedVolume * 0.05f;
+            Vector3 hmRoofUp = roofSlideCollider.transform.up.normalized;
+            Vector3 hmSlopeDir = Vector3.ProjectOnPlane(Vector3.down, hmRoofUp).normalized;
+            if (hmSlopeDir.sqrMagnitude < 0.0001f) hmSlopeDir = -roofSlideCollider.transform.forward.normalized;
+            
+            SpawnAvalancheBurstVisual(hmBurstAmount);
+            Vector3 hmPowderPos = roofSlideCollider.bounds.center + hmRoofUp * (roofSlideCollider.bounds.extents.y + 0.15f);
+            SnowVisual.SpawnPowderAt(hmPowderPos);
+            _nextAvalancheTime = Time.time + Mathf.Max(0.2f, avalancheCooldownSeconds);
+            return;
+        }
+
         float before = roofSnowDepthMeters;
         float after = Mathf.Max(0f, before * Mathf.Clamp01(avalancheRetainRatio));
         float burstAmount = Mathf.Max(0f, before - after);
@@ -552,6 +647,21 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         if (layer == null) return;
         var mf = layer.GetComponent<MeshFilter>();
         if (mf == null) mf = layer.gameObject.AddComponent<MeshFilter>();
+
+        if (heightmap_mode_enabled && snowDepthMap == null)
+        {
+            snowDepthMap = new float[MAP_W + 1, MAP_H + 1];
+            for (int z = 0; z <= MAP_H; z++)
+            {
+                float t01 = z / (float)MAP_H;
+                float thickness = Mathf.Lerp(0.35f, 0.55f, t01);
+                for (int x = 0; x <= MAP_W; x++)
+                {
+                    snowDepthMap[x, z] = thickness;
+                }
+            }
+        }
+
         // 屋根ごとにシードを変えてバラつきを出す
         int seed = gameObject.GetInstanceID() & 0xFFFF;
         if (_mySnowSurfaceMesh == null) _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed);
@@ -566,6 +676,62 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
         Debug.Log($"[SnowSurfaceMesh] mesh_changed=true mesh_name={_mySnowSurfaceMesh?.name} vertex_count={_mySnowSurfaceMesh?.vertexCount} seed={seed}");
     }
 
+    public void UpdateSnowSurfaceMesh()
+    {
+        if (!heightmap_mode_enabled || _mySnowSurfaceMesh == null || snowDepthMap == null) return;
+        var verts = _mySnowSurfaceMesh.vertices;
+        int seed = gameObject.GetInstanceID() & 0xFFFF;
+        int idx = 0;
+        
+        for (int iz = 0; iz <= MAP_H; iz++)
+        {
+            for (int ix = 0; ix <= MAP_W; ix++)
+            {
+                float n1 = Mathf.PerlinNoise(ix * 0.08f + seed * 0.3f, iz * 0.08f + seed * 0.1f);
+                float n2 = Mathf.PerlinNoise(ix * 0.25f + seed * 0.7f, iz * 0.25f);
+                float bump = (n1 - 0.5f) * 0.10f + (n2 - 0.5f) * 0.04f;
+                float baseThickness = snowDepthMap[ix, iz];
+                
+                float t01 = iz / (float)MAP_H;
+                float frontDroop = 0f;
+                if (t01 > 0.75f) { float d = (t01 - 0.75f)/0.25f; frontDroop = d*d*0.18f; }
+                
+                if (idx < verts.Length)
+                {
+                    verts[idx] = new Vector3(verts[idx].x, baseThickness + bump - frontDroop, verts[idx].z);
+                    idx++;
+                }
+            }
+        }
+        
+        int topBase = 0;
+        int frontBase = (MAP_W + 1) * (MAP_H + 1);
+        const int droopSteps = 5;
+        if (verts.Length >= frontBase + (droopSteps + 1) * (MAP_W + 1))
+        {
+            for (int step = 0; step <= droopSteps; step++)
+            {
+                float t = (float)step / droopSteps;
+                float droopY = -t * 0.25f;
+                float droopZ = t * 0.08f;
+                for (int ix = 0; ix <= MAP_W; ix++)
+                {
+                    float cx = (ix / (float)MAP_W - 0.5f) * 2f;
+                    float extraDroop = 0.05f * Mathf.Max(0f, 1f - cx * cx) * t;
+                    int topFrontIdx = topBase + MAP_H * (MAP_W + 1) + ix;
+                    float baseY = verts[topFrontIdx].y;
+                    
+                    int vIdx = frontBase + step * (MAP_W + 1) + ix;
+                    verts[vIdx] = new Vector3(verts[vIdx].x, baseY + droopY - extraDroop, 0.5f + droopZ);
+                }
+            }
+        }
+        
+        _mySnowSurfaceMesh.vertices = verts;
+        _mySnowSurfaceMesh.RecalculateNormals();
+        _mySnowSurfaceMesh.RecalculateBounds();
+    }
+
     /// <summary>
     /// 屋根雪メッシュ。天面＋前面垂れ＋側面を持つ closed-ish mesh。
     /// - 天面：表面うねり＋中央盛り
@@ -573,10 +739,10 @@ Debug.Log($"[SNOW_HIT_PIPE] hit=true object=roof time={Time.time:F2}");        i
     /// - 厚み：屋根勾配に沿って後ろ薄・前厚
     /// - 屋根ごとにランダムシードで形状バラつき
     /// </summary>
-    static Mesh BuildSnowSurfaceMesh(int seed)
+    Mesh BuildSnowSurfaceMesh(int seed)
     {
-        const int subdivX = 20;
-        const int subdivZ = 12;
+        const int subdivX = MAP_W;
+        const int subdivZ = MAP_H;
         float invX = 1f / subdivX;
         float invZ = 1f / subdivZ;
 
