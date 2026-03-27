@@ -31,6 +31,10 @@ public class SnowStrip2D : MonoBehaviour
     // ── HUD / デバッグ表示トグル（H キーで切り替え、デフォルト非表示）──
     public static bool s_hudVisible = false;
 
+    // ── アクティブインスタンス数（GloveTool の独立描画判定に使用）──
+    static int _activeCount = 0;
+    public static int ActiveCount => _activeCount;
+
     // ── 定数 ──────────────────────────────────────────────────
     const string CALIB_PATH        = "Assets/Art/RoofCalibrationData.json";
     // TARGET_ROOF_ID / TARGET_GUIDE_ID は roofId / guideId に移行
@@ -198,11 +202,13 @@ public class SnowStrip2D : MonoBehaviour
     // ── ライフサイクル ────────────────────────────────────────
     void OnEnable()
     {
+        _activeCount++;
         InitSnow();
     }
 
     void OnDestroy()
     {
+        _activeCount = Mathf.Max(0, _activeCount - 1);
         if (_snowTex != null) { Destroy(_snowTex); _snowTex = null; }
         _pieces.Clear();
         _puffs.Clear();

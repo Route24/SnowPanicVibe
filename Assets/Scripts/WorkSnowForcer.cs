@@ -614,7 +614,6 @@ public class WorkSnowForcer : MonoBehaviour
     {
         if (!_applied) Apply();
         // RoofGuide_* Image を毎フレーム確実に OFF にする
-        // Apply() は _applied=true になると呼ばれなくなるため、ここで保証する
         EnsureRoofGuideImagesOff();
         if (!Application.isPlaying) return;
         if (!_roofsReady) BuildRoofData();
@@ -655,16 +654,12 @@ public class WorkSnowForcer : MonoBehaviour
 
     void Apply()
     {
-        // Edit モードでは RoofGuideCanvas を非表示にして白板が見えないようにする
-        // Play 中のみ Canvas を表示・操作する
-        // ※ RoofGuideCanvas は m_IsActive:0 で保存されているため FindIncludeInactive を使う
+        // RoofGuideCanvas はキャリブ専用UI。B方式（3D主体）では不要。
+        // Edit / Play 問わず常に非表示を維持する。
         var canvas = FindIncludeInactive("RoofGuideCanvas");
-        if (!Application.isPlaying)
-        {
-            if (canvas != null && canvas.activeSelf) canvas.SetActive(false);
-            return;
-        }
-        if (canvas != null && !canvas.activeSelf) canvas.SetActive(true);
+        if (canvas != null && canvas.activeSelf) canvas.SetActive(false);
+        if (!Application.isPlaying) return;
+        // [GUIDE_CANVAS_CUTOFF] worksnowforcer_reactivates_canvas=NO roofguidecanvas_visible_in_play=NO
 
         if (!File.Exists(CALIB_PATH)) return;
         var sd = JsonUtility.FromJson<SaveData>(File.ReadAllText(CALIB_PATH));

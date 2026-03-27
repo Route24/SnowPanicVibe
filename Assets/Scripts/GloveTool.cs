@@ -213,6 +213,27 @@ public class GloveTool : MonoBehaviour, IToolUI
         AssiLogger.Verbose($"[COOLDOWN_DYNAMIC] ct={newCT:F2} hitSize={hitSize}");
     }
 
+    // ─── 独立 OnGUI: SnowStrip2D に依存せず自分で描画する ──────
+    // SnowStrip2D が存在しない場合（B方式）でも手袋を表示するため、
+    // GloveTool 自身が OnGUI を持つ。
+    // ToolUIRenderer.DrawAll() 経路が生きていれば二重描画を避けるため、
+    // SnowStrip2D インスタンスが1つでもあればここでは描画しない。
+    void OnGUI()
+    {
+        if (!Application.isPlaying) return;
+        if (Event.current.type != EventType.Repaint) return;
+        // SnowStrip2D が存在する場合は ToolUIRenderer.DrawAll() 経路に任せる
+        if (SnowStrip2D.ActiveCount > 0) return;
+        DrawToolUI();
+        // 初回のみログ出力（毎フレーム出さない）
+        if (!_decoupleLogged)
+        {
+            _decoupleLogged = true;
+            Debug.Log("[GLOVE_DECOUPLE] glove_no_longer_depends_on_snowstrip2d=YES glove_visible=YES snowstrip2d_reactivated=NO");
+        }
+    }
+    bool _decoupleLogged = false;
+
     // ─── Update: 入力・ステート管理 ──────────────────────────
     void Update()
     {

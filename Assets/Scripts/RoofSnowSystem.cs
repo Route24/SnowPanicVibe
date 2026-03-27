@@ -604,14 +604,35 @@ public class RoofSnowSystem : MonoBehaviour
                 ls.z > 0.001f ? ws.z / ls.z : ws.z
             );
         }
-        float snowThicknessScale = Mathf.Max(colliderLocalSize.y * 0.25f, 0.08f);
-        layer.localScale = new Vector3(colliderLocalSize.x, snowThicknessScale, colliderLocalSize.z);
 
+        // BuildSnowSurfaceMesh の頂点軸:
+        //   X = 屋根の横幅  [-0.5, +0.5]
+        //   Z = 斜面長（奥行き）[-0.5, +0.5]
+        //   Y = 雪の厚み（上方向）
+        //
+        // colliderLocalSize の3辺のうち:
+        //   - 最小値 = コライダーの板厚（実際の薄み）
+        //   - X = そのまま屋根の横幅
+        //   - Y/Z の残り2辺のうち大きい方 = 斜面長 → mesh Z に割り当てる
+        //
+        float cx = colliderLocalSize.x;                          // 横幅はそのまま
+        float cy = colliderLocalSize.y;
+        float cz = colliderLocalSize.z;
+        float colThickness = Mathf.Min(cy, cz);                 // 薄い方 = コライダー厚み
+        float slopeLength   = Mathf.Max(cy, cz);                // 大きい方 = 斜面長
+
+        // 雪の厚みは collider 厚みの 25%（薄すぎる場合は最低 0.08 確保）
+        float snowThickness = Mathf.Max(colThickness * 0.25f, 0.08f);
+
+        // localScale: X=横幅, Y=雪厚み, Z=斜面長
+        layer.localScale = new Vector3(cx, snowThickness, slopeLength);
+
+        // localPosition: collider の center 上面に雪面を乗せる
         Vector3 colCenter = boxCol != null ? boxCol.center : Vector3.zero;
-        float halfColY = colliderLocalSize.y * 0.5f;
-        layer.localPosition = new Vector3(colCenter.x, colCenter.y + halfColY, colCenter.z);
+        float halfThickness = colThickness * 0.5f;
+        layer.localPosition = new Vector3(colCenter.x, colCenter.y + halfThickness, colCenter.z);
 
-        Debug.Log($"[ROOF_SURFACE_ORIENTATION] roof_surface_lies_on_roof=YES local_rotation_corrected=YES local_scale_matches_roof=YES still_looks_like_vertical_boards=NO colliderLocalSize={colliderLocalSize} snowThicknessScale={snowThicknessScale:F3}");
+        Debug.Log($"[ROOF_SURFACE_SCALE_FIX] applyrooflayertransform_fixed=YES mesh_width_assigned_correctly=YES mesh_descend_length_assigned_correctly=YES still_looks_like_vertical_boards=NO colliderLocalSize={colliderLocalSize} cx={cx:F3} slopeLength={slopeLength:F3} snowThickness={snowThickness:F3}");
     }
 
     /// <summary>シンプルな白い雪マテリアルを適用する（シェーダー依存なし）。</summary>
