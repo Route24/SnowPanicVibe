@@ -669,13 +669,17 @@ public class RoofSnowSystem : MonoBehaviour
             slopeIdx = idxA;
         }
 
-        bool invertSlope = axes[slopeIdx].y > 0;
+        // thick軸のワールド向きが上（Y+）側を向くように
         bool invertThick = axes[thickIdx].y < 0;
-
-        Vector3 localUp = Vector3.zero; 
+        Vector3 localUp = Vector3.zero;
         localUp[thickIdx] = invertThick ? -1f : 1f;
 
-        Vector3 localForward = Vector3.zero; 
+        // slope軸：ワールドY成分が負（斜面下方向）になるように設定
+        // axes[slopeIdx].y > 0 なら +1 方向がY上向き → 反転して下向きにする
+        // ただし axes[slopeIdx].y ≈ 0（水平軸）の場合は Z 方向で判定
+        Vector3 slopeWorld = axes[slopeIdx];
+        bool invertSlope = slopeWorld.y > 0f || (Mathf.Abs(slopeWorld.y) < 0.1f && slopeWorld.z > 0f);
+        Vector3 localForward = Vector3.zero;
         localForward[slopeIdx] = invertSlope ? -1f : 1f;
 
         if (localForward.sqrMagnitude > 0.1f && localUp.sqrMagnitude > 0.1f)

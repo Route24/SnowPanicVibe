@@ -64,7 +64,6 @@
     <Compile Include="Assets/Scripts/CameraOrbit.cs" />
     <Compile Include="Assets/Scripts/SnowPhysicsScoreManager.cs" />
     <Compile Include="Assets/Scripts/SnowFallSystem.cs" />
-    <Compile Include="Assets/Scripts/WorkSnowForcer.cs" />
     <Compile Include="Assets/Scripts/SnowClusterFollower.cs" />
     <Compile Include="Assets/Scripts/RunStructureManager.cs" />
     <Compile Include="Assets/Scripts/DirectDropDebug.cs" />
@@ -73,11 +72,8 @@
     <Compile Include="Assets/Scripts/CorniceSnowSegment.cs" />
     <Compile Include="Assets/Scripts/RoofSnowVisToggle.cs" />
     <Compile Include="Assets/Scripts/DebugGloveOnly.cs" />
-    <Compile Include="Assets/Scripts/GloveTool.cs" />
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
     <Compile Include="Assets/Scripts/SnowMvpBootstrap.cs" />
-    <Compile Include="Assets/Scripts/WorkSnowGameBootstrap.cs" />
-    <Compile Include="Assets/Scripts/SnowStripV2.cs" />
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
     <Compile Include="Assets/Scripts/Gate2SnowChecker.cs" />
@@ -121,7 +117,6 @@
     <Compile Include="Assets/Scripts/CorniceSnowManager.cs" />
     <Compile Include="Assets/Scripts/RoofSnowMaskController.cs" />
     <Compile Include="Assets/Scripts/MockHudCanvas.cs" />
-    <Compile Include="Assets/Scripts/SnowStrip2D.cs" />
     <Compile Include="Assets/Scripts/DevelopmentStepTracker.cs" />
     <Compile Include="Assets/Scripts/SnowScoreDisplayUI.cs" />
     <Compile Include="Assets/Scripts/RoofSnowAngleProbe.cs" />
@@ -130,7 +125,6 @@
     <Compile Include="Assets/Scripts/RendererWatch.cs" />
     <Compile Include="Assets/Scripts/RoofDebugAutoSetup.cs" />
     <Compile Include="Assets/Scripts/SnowLoopLogCapture.cs" />
-    <Compile Include="Assets/Scripts/MinimalLandingTest.cs" />
     <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
     <Compile Include="Assets/Scripts/RoofSnowReportWriter.cs" />
     <Compile Include="Assets/Scripts/DebugScreenshotCapture.cs" />

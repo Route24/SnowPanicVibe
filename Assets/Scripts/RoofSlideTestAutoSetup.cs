@@ -986,6 +986,15 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
         {
             targetRoof = cabinRoof.transform.parent != null ? cabinRoof.transform.parent : cabinRoof.transform;
             Debug.Log($"[RoofSlideAutoAssign] targetRoof={targetRoof.name} (from cabin-roof)");
+            return;
+        }
+
+        // SnowVisibilityLab など RoofQuad が屋根代わりのシーン用
+        var roofQuad = GameObject.Find("RoofQuad");
+        if (roofQuad != null)
+        {
+            targetRoof = roofQuad.transform;
+            Debug.Log("[RoofSlideAutoAssign] targetRoof=RoofQuad");
         }
     }
 

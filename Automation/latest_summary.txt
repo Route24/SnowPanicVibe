@@ -1,10 +1,10 @@
 === SUMMARY ===
-generated_at=2026-03-28 19:27:01
+generated_at=2026-03-28 20:19:11
 scene_name=SnowVisibilityLab
 
-compile_result=FAIL
-error_count=2
-warning_count=1
+compile_result=PASS
+error_count=0
+warning_count=2
 
 === CALIBRATION ===
 roof_points_captured=YES
@@ -16,7 +16,7 @@ ground_y=0.6736
 snow_on_roof=PENDING
 fall_reaches_ground=YES
 
-snow_state=UNKNOWN
+snow_state=ALL6_THICK
 under_eave_stop=UNKNOWN
 falls_straight_down=UNKNOWN
 avalanche_feel=WEAK
@@ -29,10 +29,10 @@ score_ui=PASS
 gif_status=OK
 mp4_status=OK
 
-result=FAIL
+result=PASS
 
 gif_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.gif
 mp4_path=/Users/kenichinishi/unity/SnowPanicVibe/Recordings/snow_test_latest.mp4
 report_path=ASSI_REPORT_CURRENT
 
-noa_next_check=Compile FAIL。エラーを修正してから再確認。
+noa_next_check=compile/snow/falls はPASS。次は avalanche_feel を WEAK→GOOD に改善する。SlideMinSpeed か Cascade を調整。

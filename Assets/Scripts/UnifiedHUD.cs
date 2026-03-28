@@ -244,8 +244,8 @@ public class UnifiedHUD : MonoBehaviour
 
     void Update()
     {
-        // HUD 全体の表示/非表示を SnowStrip2D.s_hudVisible に追従
-        bool vis = SnowStrip2D.s_hudVisible;
+        // HUD 全体の表示/非表示（SnowStrip2D 廃止のため常時 true）
+        bool vis = true;
         if (_scoreText  != null) _scoreText.gameObject.SetActive(vis);
         if (_scoreTMP   != null) _scoreTMP.gameObject.SetActive(vis);
         if (_statusText != null) _statusText.gameObject.SetActive(vis);

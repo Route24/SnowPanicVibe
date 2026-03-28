@@ -273,10 +273,8 @@ public class RoofCalibrationController : MonoBehaviour
     void ToggleSnow()
     {
         _snowHidden = !_snowHidden;
-        var strips = Object.FindObjectsByType<SnowStrip2D>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-        foreach (var s in strips)
-            s.enabled = !_snowHidden;
-        Debug.Log($"[CALIB] snow_hidden={_snowHidden} strips={strips.Length}");
+        // SnowStrip2D は無効化済み
+        Debug.Log($"[CALIB] snow_hidden={_snowHidden} strips=0");
     }
 
     // ── Save / Load ────────────────────────────────────────────

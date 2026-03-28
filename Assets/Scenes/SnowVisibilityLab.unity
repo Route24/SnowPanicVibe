@@ -136,8 +136,10 @@ Material:
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses:
+  - MOTIONVECTORS
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
@@ -234,7 +236,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 0.3, g: 0.35, b: 0.3, a: 1}
-    - _Color: {r: 0.3, g: 0.35, b: 0.3, a: 1}
+    - _Color: {r: 0.29999998, g: 0.34999996, b: 0.29999998, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
@@ -495,8 +497,10 @@ Material:
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses:
+  - MOTIONVECTORS
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
@@ -593,7 +597,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 0.55, g: 0.42, b: 0.28, a: 1}
-    - _Color: {r: 0.55, g: 0.42, b: 0.28, a: 1}
+    - _Color: {r: 0.54999995, g: 0.41999996, b: 0.27999997, a: 1}
     - _EmissionColor: {r: 0, g: 0, b: 0, a: 1}
     - _SpecColor: {r: 0.19999996, g: 0.19999996, b: 0.19999996, a: 1}
   m_BuildTextureStacks: []
@@ -610,6 +614,7 @@ GameObject:
   - component: {fileID: 560635673}
   - component: {fileID: 560635672}
   - component: {fileID: 560635671}
+  - component: {fileID: 560635675}
   m_Layer: 0
   m_Name: RoofQuad
   m_TagString: Untagged
@@ -704,12 +709,242 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 560635670}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.1736482, y: 0, z: 0, w: 0.9848078}
+  m_LocalRotation: {x: -0.1736482, y: 0.0, z: 0.0, w: 0.9848078}
   m_LocalPosition: {x: 0, y: 1.2, z: 0}
   m_LocalScale: {x: 4, y: 2.5, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 689193119}
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: -20, y: 0, z: 0}
+--- !u!65 &560635675
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 560635670}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 0.05, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &618129989
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 618129993}
+  - component: {fileID: 618129992}
+  - component: {fileID: 618129991}
+  - component: {fileID: 618129990}
+  m_Layer: 0
+  m_Name: SnowTest
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &618129990
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 618129989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6df20589350d8415192268cf2eb37284, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Gate2SnowChecker
+--- !u!114 &618129991
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 618129989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c74c3bb0c8d54a08a2f86ddf8ca8ef96, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SnowPackSpawner
+  roofCollider: {fileID: 560635675}
+  targetSnowRenderer: {fileID: 0}
+  houseIndex: 0
+  roofAngleReferenceTransform: {fileID: 0}
+  roofSnowSystem: {fileID: 618129992}
+  snowFallSystem: {fileID: 0}
+  syncIntervalSeconds: 0.2
+  addThreshold: 0.08
+  removeThreshold: -0.08
+  minSyncInterval: 0.5
+  maxLayersPerSync: 1
+  visualSmoothTime: 0.8
+  packDepthMeters: 0.4
+  maxDownStepPerSec: 0.25
+  minVisibleDepth: 0.05
+  targetDepthMeters: 0.5
+  snowDepthScale: 0.2
+  snowPieceThicknessScale: 0.25
+  snowRenderThicknessScale: 0.6
+  pieceSize: 0.17
+  visualScale: 0.1
+  pieceHeightScale: 0.85
+  jitter: 0.045
+  scaleJitterXZ: 0.18
+  normalInset: 0.01
+  maxPieces: 1800
+  rebuildOnPlay: 1
+  snowColor: {r: 0.92, g: 0.95, b: 1, a: 1}
+  throwOnFirstPoolReturn: 0
+  debugAlignToRoofUp: 0
+  debugMinPackedPieces: 200
+  debugAutoRefillRoofSnow: 0
+  blockDeactivate: 0
+  debugForcePieceRendererDirect: 0
+  enableStateIndicator: 0
+  unstableRadiusScale: 1.4
+  unstableDurationSec: 1.4
+  secondaryDetachDelaySec: 0.35
+  secondaryDetachFraction: 0.35
+  thirdWaveDelaySec: 0.65
+  thirdWaveFraction: 0.18
+  chainDetachChance: 0.78
+  maxSecondaryDetachPerHit: 28
+  localAvalancheMinDetach: 20
+  localAvalancheMaxDetach: 80
+--- !u!114 &618129992
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 618129989}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d383eaf6db1ac4689a2e3cb37c01d28f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::RoofSnowSystem
+  roofSnowDepthMeters: 0.5
+  baseThresholdMeters: 0.3
+  slopeFactor: 0.0006
+  minThresholdMeters: 0.1
+  avalancheRetainRatio: 0.3
+  avalancheCooldownSeconds: 1.5
+  roofSlideCollider: {fileID: 560635675}
+  roofSnowColor: {r: 0.92, g: 0.95, b: 1, a: 1}
+  roofSnowConstantThickness: 0.08
+  roofSnowSurfaceOffsetY: -0.02
+  burstChunkCount: 36
+  burstChunkLife: 1.8
+  burstChunkSpeed: 2.2
+  hitRadiusR: 1.05
+  localAvalancheSlideSpeed: 0.9
+  burstSpread: 0.8
+  burstGroundDepositPerChunk: 0.015
+  groundSnowSystem: {fileID: 0}
+  snowPackSpawner: {fileID: 618129991}
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  avalancheSlideDuration: 0.6
+  avalancheSlideOffset: 1.2
+  avalancheGraceSeconds: 2
+  heightmap_mode_enabled: 0
+  snowDepth1D:
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  detachedStuckVelThreshold: 0.05
+  detachedStuckVelSeconds: 3
+  detachedStuckSleepSeconds: 3
+--- !u!4 &618129993
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 618129989}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &689193118
@@ -842,8 +1077,10 @@ Material:
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses:
+  - MOTIONVECTORS
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
@@ -876,7 +1113,7 @@ Material:
     - _ZWrite: 1
     m_Colors:
     - _BaseColor: {r: 0.95, g: 0.97, b: 1, a: 1}
-    - _Color: {r: 0.95, g: 0.97, b: 1, a: 1}
+    - _Color: {r: 0.95, g: 0.96999997, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
 --- !u!21 &1208566460
@@ -896,8 +1133,10 @@ Material:
   m_EnableInstancingVariants: 0
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
-  stringTagMap: {}
-  disabledShaderPasses: []
+  stringTagMap:
+    RenderType: Opaque
+  disabledShaderPasses:
+  - MOTIONVECTORS
   m_LockedProperties: 
   m_SavedProperties:
     serializedVersion: 3
@@ -1205,3 +1444,4 @@ SceneRoots:
   - {fileID: 1584223214}
   - {fileID: 560635674}
   - {fileID: 164016899}
+  - {fileID: 618129993}

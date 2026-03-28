@@ -255,6 +255,7 @@ public class SnowPackSpawner : MonoBehaviour
 
     public void RebuildSnowPack(string reason)
     {
+        UnityEngine.Debug.Log($"[SNOW_SPAWN_CALLED] reason={reason} heightmap={roofSnowSystem != null && roofSnowSystem.heightmap_mode_enabled} roofCollider={(roofCollider != null ? roofCollider.name : "NULL")}");
         if (roofSnowSystem != null && roofSnowSystem.heightmap_mode_enabled)
         {
             UnityEngine.Debug.Log("[SNOW_HEIGHTMAP] RebuildSnowPack disabled due to heightmap mode.");
@@ -1945,6 +1946,7 @@ public class SnowPackSpawner : MonoBehaviour
                 if (r != null) r.enabled = GridVisualWatchdog.showSnowGridDebug;
             }
         }
+        if (t == null) return null;
         var key = (ix, iz);
         if (!_gridPieces.TryGetValue(key, out var cellList))
         {
