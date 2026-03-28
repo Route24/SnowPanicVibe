@@ -717,6 +717,7 @@ public class RoofSnowSystem : MonoBehaviour
 
     void EnsureSnowSurfaceMesh(Transform layer)
     {
+        Debug.Log("[NOA_EXEC_CHECK] EnsureSnowSurfaceMesh entered for layer=" + (layer != null ? layer.gameObject.name : "null"));
         if (layer == null) return;
         var mf = layer.GetComponent<MeshFilter>();
         if (mf == null) mf = layer.gameObject.AddComponent<MeshFilter>();
@@ -739,8 +740,41 @@ public class RoofSnowSystem : MonoBehaviour
         int seed = gameObject.GetInstanceID() & 0xFFFF;
         // 台形メッシュ再生成を保証するためキャッシュを強制クリア
         _mySnowSurfaceMesh = null;
-        _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed, LoadTrapTopWidthRatio());
-        if (_mySnowSurfaceMesh != null) mf.sharedMesh = _mySnowSurfaceMesh;
+        _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed, 0.20f);
+        if (_mySnowSurfaceMesh != null) 
+        {
+            mf.sharedMesh = _mySnowSurfaceMesh;
+            var rTarget = layer.GetComponent<Renderer>();
+            string rType = rTarget != null ? rTarget.GetType().Name : "NULL";
+            Debug.Log($"[SNOW_MESH_ASSIGN] assigned_to='{layer.gameObject.name}' rend='{rType}'");
+            Debug.Log($"[SNOW_MESH_DATA] name='{_mySnowSurfaceMesh.name}' vertexCount={_mySnowSurfaceMesh.vertexCount} bounds={_mySnowSurfaceMesh.bounds}");
+
+            var allRends = UnityEngine.Object.FindObjectsByType<Renderer>(UnityEngine.FindObjectsSortMode.None);
+            System.Text.StringBuilder sb = new System.Text.StringBuilder("[ACTIVE_RENDERERS]\n");
+            int actCount = 0;
+            foreach (var r in allRends)
+            {
+                if (r.enabled && r.gameObject.activeInHierarchy)
+                {
+                    string nm = r.gameObject.name.ToLower();
+                    if (nm.Contains("snow") || nm.Contains("roof") || nm.Contains("surface"))
+                    {
+                        string matName = r.sharedMaterial != null ? r.sharedMaterial.name : "NULL";
+                        string mName = "N/A";
+                        if (r is MeshRenderer mrr)
+                        {
+                            var bmf = mrr.GetComponent<MeshFilter>();
+                            mName = bmf?.sharedMesh != null ? bmf.sharedMesh.name : "NULL";
+                        }
+                        sb.AppendLine($"  - go='{r.gameObject.name}' type={r.GetType().Name} mat='{matName}' mesh='{mName}'");
+                        actCount++;
+                    }
+                }
+            }
+            sb.AppendLine($"Total Active Candidates: {actCount}");
+            Debug.Log(sb.ToString());
+            Debug.Log($"[SHAREDMESH_OVERWRITE_CHECK] grep結果: RoofSnowSystem以外で sharedMesh を上書きしているのは SnowPackSpawner(SpawnPiece等) のみで、RoofSnowLayer に対する上書きは見当たりません。");
+        }
         // マテリアルも確実に白い雪に設定
         var rend = layer.GetComponent<Renderer>();
         if (rend != null)
