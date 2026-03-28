@@ -1474,6 +1474,8 @@ public class WorkSnowForcer : MonoBehaviour
     //   ③ 雪煙: 強化（数・サイズ・寿命増加）
     void OnGUI()
     {
+        return; // [ANT] 真の3Dメッシュ(RoofSnowSystem)を遮っていた2D描画を強制停止
+
         if (Application.isPlaying && Event.current != null && Event.current.type == EventType.Repaint)
         {
             Debug.Log("[WORK_EXEC_CHECK] WorkSnowForcer OnGUI entered");

@@ -54,8 +54,14 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         var snowTest = GameObject.Find("SnowTest");
         if (snowTest != null)
         {
+            bool hasRoof = snowTest.GetComponentInChildren<RoofSnowSystem>() != null;
+            Debug.Log($"[SNOW_TEST_EXISTENCE] Found 'SnowTest'. activeSelf={snowTest.activeSelf} activeInHierarchy={snowTest.activeInHierarchy} has_RoofSnowSystem={hasRoof}");
             // snowTest.SetActive(false);
             Debug.Log("[WORK_SNOW_GAME] SnowTest disable at Bootstrap WAS CANCELLED for debug.");
+        }
+        else
+        {
+            Debug.Log("[SNOW_TEST_EXISTENCE] NOT FOUND 'SnowTest'. GameObject.Find returned null.");
         }
 
         if (Object.FindFirstObjectByType<WorkSnowGameBootstrap>() != null) return;
