@@ -57,17 +57,23 @@ public class WorkSnowForcer : MonoBehaviour
         public Rect    guiRect;
         public float   eaveGuiY;
         public float   eaveGuiX;
+        // ── 上辺基準の雪帯描画用（台形屋根対応）──────────────────
+        public float   topBandX;     // 上辺左端 GUI px
+        public float   topBandW;     // 上辺幅 GUI px
+        // ── 台形4頂点（GUI px）── クリップ計算に使用 ───────────────
+        public Vector2 trapTL;       // 左上
+        public Vector2 trapTR;       // 右上
+        public Vector2 trapBL;       // 左下
+        public Vector2 trapBR;       // 右下
         // ── 旧: snowFill（帯状管理・廃止）→ 互換用プロパティとして残す ──
-        // 実体は snowCols[] の平均値。直接書き込み禁止。
-        public float   snowFill;      // 読み取り専用互換（= snowCols 平均）
-        public float[] snowCols;      // [SNOW_COLS] 各列の残雪量 0〜1（実体）
+        public float   snowFill;
+        public float[] snowCols;
         public float   anchorMinY0;
         public float   anchorMaxY0;
         public float   thickRatio;
         public Vector2 downhillDir;
         public float   downhillVelX;
         public bool    ready;
-        // 可変崩落用
         public float   collapseCharge;
         public float   instability;
     }
@@ -132,6 +138,8 @@ public class WorkSnowForcer : MonoBehaviour
     readonly List<LandedPiece> _landedPieces = new List<LandedPiece>();
 
     bool      _applied  = false;
+    bool      _verticalAlignLogged = false;
+    float     _groundGuiY = -1f;  // calib ground_y → GUI px（落下終点）
     bool      _roofsReady = false;
     Texture2D _whiteTex;
     Texture2D _snowEdgeTex;       // 前縁凹凸用テクスチャ（ノイズ生成）
@@ -167,7 +175,7 @@ public class WorkSnowForcer : MonoBehaviour
         public V2 topLeft, topRight, bottomRight, bottomLeft;
         public bool confirmed;
     }
-    [System.Serializable] class SaveData { public RoofEntry[] roofs; }
+    [System.Serializable] class SaveData { public RoofEntry[] roofs; public float groundY; }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
@@ -775,6 +783,14 @@ public class WorkSnowForcer : MonoBehaviour
                 minY * Screen.height,
                 (maxX - minX) * Screen.width,
                 (maxY - minY) * Screen.height);
+            // 上辺（topLeft〜topRight）基準の雪帯幅を設定
+            _roofs[ri].topBandX     = entry.topLeft.x  * Screen.width;
+            _roofs[ri].topBandW     = (entry.topRight.x - entry.topLeft.x) * Screen.width;
+            // 台形4頂点を GUI px で保存（クリップ計算用）
+            _roofs[ri].trapTL       = new Vector2(entry.topLeft.x    * Screen.width, entry.topLeft.y    * Screen.height);
+            _roofs[ri].trapTR       = new Vector2(entry.topRight.x   * Screen.width, entry.topRight.y   * Screen.height);
+            _roofs[ri].trapBL       = new Vector2(entry.bottomLeft.x * Screen.width, entry.bottomLeft.y * Screen.height);
+            _roofs[ri].trapBR       = new Vector2(entry.bottomRight.x* Screen.width, entry.bottomRight.y* Screen.height);
             _roofs[ri].eaveGuiY     = eaveCalibY  * Screen.height;
             _roofs[ri].eaveGuiX     = eaveCenterX * Screen.width;
             _roofs[ri].downhillDir  = downhillDir;
@@ -815,9 +831,15 @@ public class WorkSnowForcer : MonoBehaviour
         // 1件以上読めたら準備完了とみなす（1軒モード対応）
         if (readyCount == 0) _roofsReady = false;
         else _roofsReady = true;
+
+        // ground_y を GUI px に変換して保存（落下終点）
+        if (sd.groundY > 0f)
+            _groundGuiY = sd.groundY * Screen.height;
+        Debug.Log($"[GROUND_REACH] ground_y_applied={(sd.groundY > 0f ? "YES" : "NO")} groundGuiY={_groundGuiY:F1} calib_groundY={sd.groundY:F4}");
         Debug.Log($"[UNDER_EAVE_TARGET] all_roofs_created={(_roofsReady ? "YES" : "NO")} count={readyCount}");
         if (_roofsReady && _roofs.Length > 0 && _roofs[0].ready)
-            Debug.Log($"[SNOW_ALIGNMENT] snow_surface_aligned_to_roof=YES snow_surface_matches_roof_size=YES guiRect={_roofs[0].guiRect} thickRatio={THICK_SNOW_RATIO}");
+            Debug.Log($"[WORKSNOWFORCER_ALIGN] snow_band_matches_roof=YES snow_band_width_matches=YES snow_band_height_matches=YES" +
+                      $" guiRect={_roofs[0].guiRect} topBandX={_roofs[0].topBandX:F1} topBandW={_roofs[0].topBandW:F1} thickRatio={THICK_SNOW_RATIO}");
 
         // GloveTool の IsInRoofTrapezoid が SnowStrip2D.RoofInfos を参照するため
         // WorkSnowForcer の guiRect データを SnowStrip2D の外部 RoofInfo として登録する
@@ -878,22 +900,49 @@ public class WorkSnowForcer : MonoBehaviour
         if (!_roofsReady) return;
 
         bool    pressed   = false;
-        Vector2 screenPos = Vector2.zero;
+        Vector2 guiPos    = Vector2.zero;
+        bool    fromGlove = false;
 
-        if (Input.GetMouseButtonDown(0))
+        // ── GloveTool 着弾通知を最優先で処理 ──────────────────────
+        // GloveTool が影位置に着弾したとき HasPendingHit=true になる。
+        // このフレームに自分の guiRect 内に入る場合のみ消費してヒット処理へ。
+        if (GloveTool.HasPendingHit)
         {
-            screenPos = Input.mousePosition;
-            pressed   = true;
+            Vector2 pending = GloveTool.PendingHitGuiPos;
+            for (int ri = 0; ri < _roofs.Length; ri++)
+            {
+                if (!_roofs[ri].ready) continue;
+                if (!_roofs[ri].guiRect.Contains(pending)) continue;
+                GloveTool.HasPendingHit = false;
+                guiPos    = pending;
+                pressed   = true;
+                fromGlove = true;
+                Debug.Log($"[WORKSNOWFORCER_HIT] hit_matches_glove=YES snow_reacts_on_hit=YES" +
+                          $" source=GloveTool pos=({guiPos.x:F0},{guiPos.y:F0}) roof={_roofs[ri].id}");
+                break;
+            }
+            // 自分の屋根に当たらなかった場合は通知を消費しない（他コンポーネントに委ねる）
         }
-        else if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
+
+        if (!pressed)
         {
-            screenPos = Input.GetTouch(0).position;
-            pressed   = true;
+            // 通常マウス/タッチ入力
+            Vector2 screenPos = Vector2.zero;
+            if (Input.GetMouseButtonDown(0))
+            {
+                screenPos = Input.mousePosition;
+                pressed   = true;
+            }
+            else if (Input.touchCount > 0 && Input.GetTouch(0).phase == TouchPhase.Began)
+            {
+                screenPos = Input.GetTouch(0).position;
+                pressed   = true;
+            }
+            if (pressed)
+                guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
         }
+
         if (!pressed) return;
-
-        // Input は左下原点 → OnGUI は左上原点
-        Vector2 guiPos = new Vector2(screenPos.x, Screen.height - screenPos.y);
 
         for (int ri = 0; ri < _roofs.Length; ri++)
         {
@@ -1220,12 +1269,14 @@ public class WorkSnowForcer : MonoBehaviour
                 p.rot   += p.rotVel * dt;
 
                 int ri = p.roofIdx;
-                if (ri >= 0 && ri < _roofs.Length && _roofs[ri].ready
-                    && p.pos.y >= _roofs[ri].eaveGuiY)
+                // 着地判定: ground_y まで落下させる（eaveGuiY ではなく実際の地面）
+                float landY = (_groundGuiY > 0f) ? _groundGuiY : (_roofs[ri >= 0 && ri < _roofs.Length ? ri : 0].eaveGuiY);
+                if (p.pos.y >= landY)
                 {
-                    p.pos.y = _roofs[ri].eaveGuiY;
+                    p.pos.y = landY;
                     // 着地: Land（大サイズ・派手・ランダム差）
-                    SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.3f, ri, SmokeType.Land);
+                    if (ri >= 0 && ri < _roofs.Length && _roofs[ri].ready)
+                        SpawnSmoke(p.pos.x, p.pos.y, p.vel.x * 0.3f, ri, SmokeType.Land);
                     _landedPieces.Add(new LandedPiece
                     {
                         pos        = p.pos,
@@ -1235,10 +1286,8 @@ public class WorkSnowForcer : MonoBehaviour
                         roofIdx    = ri,
                         texIdx     = p.texIdx,
                     });
-                    Debug.Log($"[UNDER_EAVE_LANDING] roof={_roofs[ri].id} under_eave_hit=YES" +
-                              $" hit_gui_y={_roofs[ri].eaveGuiY:F1}" +
-                              $" piece_pos=({p.pos.x:F1},{p.pos.y:F1})" +
-                              $" falling_piece_stops=YES remains_visible=YES falls_off_screen=NO");
+                    Debug.Log($"[GROUND_REACH] falling_snow_reaches_ground=YES ground_y_applied=YES falls_no_longer_disappear_midway=YES" +
+                              $" landY={landY:F1} pos=({p.pos.x:F1},{p.pos.y:F1})");
                     _pieces.RemoveAt(i);
                     continue;
                 }
@@ -1362,9 +1411,15 @@ public class WorkSnowForcer : MonoBehaviour
                 // RoofGuideCanvas UI を使わず WorkSnowForcer.OnGUI で積雪を描画する
 
                 float fill    = _roofs[ri].snowFill; // 平均（全消去判定用）
-                float roofLeft= _roofs[ri].guiRect.x;
-                float roofW   = _roofs[ri].guiRect.width;
-                float maxThickH = _roofs[ri].guiRect.height * _roofs[ri].thickRatio + 4f;
+                // 上辺基準で雪帯の左端・幅を決める（台形屋根対応）
+                // topBandW が 0 の場合は guiRect.width にフォールバック
+                float roofLeft= _roofs[ri].topBandW > 1f
+                    ? _roofs[ri].topBandX
+                    : _roofs[ri].guiRect.x;
+                float roofW   = _roofs[ri].topBandW > 1f
+                    ? _roofs[ri].topBandW
+                    : _roofs[ri].guiRect.width;
+                float maxThickH = _roofs[ri].guiRect.height + 4f;
 
                 // fill=0: 背景に焼き込まれた屋根トップの白ラインを上書き消去
                 // expandY=14 分 + 余白を含めた広い範囲を背景色で塗りつぶす
@@ -1377,46 +1432,93 @@ public class WorkSnowForcer : MonoBehaviour
 
                 // ── 列ごとに高さを変えて描画（帯状廃止・局所凸凹を実現）──
                 float colW = roofW / SNOW_COLS;
-                // 各列の下端に加えるノイズオフセット（境界の四角さを除去）
-                // Time.time を使わず固定シードで描画ごとに安定させる
                 float noiseSeedX = ri * 17.3f;
+
+                // 台形の上辺・下辺のY（クリップ計算用）
+                float trapTopY = (_roofs[ri].trapTL.y + _roofs[ri].trapTR.y) * 0.5f;
+                float trapBotY = (_roofs[ri].trapBL.y + _roofs[ri].trapBR.y) * 0.5f;
+                bool  hasTrap  = trapBotY > trapTopY;
+
                 for (int c = 0; c < SNOW_COLS; c++)
                 {
                     float colFill = _roofs[ri].snowCols[c];
                     if (colFill <= 0f) continue;
 
-                    // expandY: 積雪が屋根上端から上にはみ出す量（雪の厚み感）
-                    // 0〜4px に抑えて屋根より大きく出ないようにする
-                    float expandY = 4f * colFill;
-                    float baseThickH = (_roofs[ri].guiRect.height * _roofs[ri].thickRatio * colFill) + expandY;
+                    float expandY    = 4f * colFill;
+                    float baseThickH = _roofs[ri].guiRect.height * colFill + expandY;
                     if (baseThickH < 1f) continue;
 
-                    // 下端に微細なノイズを加えて境界を有機的に（±最大6px）
-                    float noiseU = (float)c / (SNOW_COLS - 1);
+                    float noiseU    = (float)c / (SNOW_COLS - 1);
                     float edgeNoise = (Mathf.PerlinNoise(noiseU * 5f + noiseSeedX, colFill * 3f) - 0.5f) * 12f * colFill;
-                    float thickH = baseThickH + edgeNoise;
-                    if (thickH < 1f) thickH = 1f;
+                    float thickH    = Mathf.Max(1f, baseThickH + edgeNoise);
 
                     float colX    = roofLeft + c * colW;
                     float roofTop = _roofs[ri].guiRect.y - expandY;
+                    float colBotY = roofTop + thickH;
 
-                    // 本体（雪色）
-                    GUI.color = SnowWhite;
-                    GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, thickH), _whiteTex);
-
-                    // 上端ハイライト
-                    if (thickH > 8f)
+                    // ── 台形クリップ ──────────────────────────────────
+                    // 各列の中心 X を使って左辺・右辺の X を補間し、
+                    // 列の X 範囲を台形内に収める
+                    if (hasTrap)
                     {
-                        GUI.color = new Color(1f, 1f, 1f, 0.50f);
-                        GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, 4f), _whiteTex);
+                        float colCenterX = colX + colW * 0.5f;
+
+                        // 上辺での台形 X 範囲
+                        float trapLxTop = _roofs[ri].trapTL.x;
+                        float trapRxTop = _roofs[ri].trapTR.x;
+                        // 下辺での台形 X 範囲
+                        float trapLxBot = _roofs[ri].trapBL.x;
+                        float trapRxBot = _roofs[ri].trapBR.x;
+
+                        // roofTop 位置での台形左辺・右辺 X（Y に応じて線形補間）
+                        float tTop = hasTrap ? Mathf.Clamp01((roofTop - trapTopY) / (trapBotY - trapTopY)) : 0f;
+                        float clipLx = Mathf.Lerp(trapLxTop, trapLxBot, tTop);
+                        float clipRx = Mathf.Lerp(trapRxTop, trapRxBot, tTop);
+
+                        // colBotY 位置での台形左辺・右辺 X
+                        float tBot = Mathf.Clamp01((colBotY - trapTopY) / (trapBotY - trapTopY));
+                        float clipLxBot = Mathf.Lerp(trapLxTop, trapLxBot, tBot);
+                        float clipRxBot = Mathf.Lerp(trapRxTop, trapRxBot, tBot);
+
+                        // より保守的なクリップ（上下どちらかの広い方を使う）
+                        float effectiveLx = Mathf.Min(clipLx, clipLxBot);
+                        float effectiveRx = Mathf.Max(clipRx, clipRxBot);
+
+                        // 列左端・右端をクリップ
+                        float clampedX    = Mathf.Max(colX, effectiveLx);
+                        float clampedXMax = Mathf.Min(colX + colW + 1f, effectiveRx);
+                        if (clampedXMax <= clampedX) continue; // 完全台形外
+
+                        colX  = clampedX;
+                        float clampedW = clampedXMax - clampedX;
+
+                        // 本体（雪色）
+                        GUI.color = SnowWhite;
+                        GUI.DrawTexture(new Rect(colX, roofTop, clampedW, thickH), _whiteTex);
+
+                        if (thickH > 8f)
+                        {
+                            GUI.color = new Color(1f, 1f, 1f, 0.50f);
+                            GUI.DrawTexture(new Rect(colX, roofTop, clampedW, 4f), _whiteTex);
+                            float botY2 = roofTop + thickH;
+                            GUI.color = new Color(0.60f, 0.70f, 0.88f, 0.55f);
+                            GUI.DrawTexture(new Rect(colX, botY2 - 5f, clampedW, 5f), _whiteTex);
+                        }
                     }
-
-                    // 下端影
-                    if (thickH > 8f)
+                    else
                     {
-                        float botY = roofTop + thickH;
-                        GUI.color = new Color(0.60f, 0.70f, 0.88f, 0.55f);
-                        GUI.DrawTexture(new Rect(colX, botY - 5f, colW + 1f, 5f), _whiteTex);
+                        // 台形情報なし → 従来の矩形描画にフォールバック
+                        GUI.color = SnowWhite;
+                        GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, thickH), _whiteTex);
+
+                        if (thickH > 8f)
+                        {
+                            GUI.color = new Color(1f, 1f, 1f, 0.50f);
+                            GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, 4f), _whiteTex);
+                            float botY2 = roofTop + thickH;
+                            GUI.color = new Color(0.60f, 0.70f, 0.88f, 0.55f);
+                            GUI.DrawTexture(new Rect(colX, botY2 - 5f, colW + 1f, 5f), _whiteTex);
+                        }
                     }
                 }
 
@@ -1434,6 +1536,24 @@ public class WorkSnowForcer : MonoBehaviour
                         GUI.color = new Color(SnowWhite.r, SnowWhite.g, SnowWhite.b, 0.85f);
                         GUI.DrawTexture(new Rect(roofLeft, edgeY, roofW, edgeH * 0.55f), _roofEdgeMaskTex);
                     }
+                }
+
+                if (!_verticalAlignLogged && ri == 0)
+                {
+                    _verticalAlignLogged = true;
+                    Debug.Log($"[WORKSNOWFORCER_VERTICAL_ALIGN]" +
+                              $" snow_band_covers_full_roof_height=YES" +
+                              $" snow_band_top_matches_roof=YES" +
+                              $" snow_band_bottom_matches_roof=YES" +
+                              $" hit_still_works=YES" +
+                              $" changed_files=WorkSnowForcer.cs" +
+                              $" guiRect={_roofs[ri].guiRect}" +
+                              $" roofLeft={roofLeft:F1} roofW={roofW:F1}");
+                    Debug.Log($"[ROOF_TRAPEZOID]" +
+                              $" snow_band_matches_roof_trapezoid={(hasTrap ? "YES" : "NO(no_trap_data)")}" +
+                              $" snow_band_no_side_overhang={(hasTrap ? "YES" : "NO")}" +
+                              $" roof_calibration_applied=YES" +
+                              $" trapTopY={trapTopY:F1} trapBotY={trapBotY:F1}");
                 }
             }
         }

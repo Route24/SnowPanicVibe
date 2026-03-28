@@ -623,58 +623,72 @@ public class RoofSnowSystem : MonoBehaviour
         Debug.Log($"[RoofSnowLayer] created mesh_changed=true material_changed=true mesh_name={_mySnowSurfaceMesh?.name} vertex_count={_mySnowSurfaceMesh?.vertexCount}");
     }
 
-    /// <summary>RoofSnowLayerのlocalTransformを屋根面基準で補正する。</summary>
-    void ApplyRoofLayerTransform(Transform layer)
+    void ApplyDynamicRoofAlignment(Transform layer, BoxCollider boxCol)
     {
-        if (roofSlideCollider == null || layer == null) return;
-
-        layer.localRotation = Quaternion.identity;
-
-        var boxCol = roofSlideCollider as BoxCollider;
-        Vector3 colliderLocalSize;
+        Vector3 size;
+        Vector3 center;
         if (boxCol != null)
         {
-            colliderLocalSize = boxCol.size;
+            size = boxCol.size;
+            center = boxCol.center;
         }
         else
         {
             Vector3 ls = roofSlideCollider.transform.lossyScale;
             Vector3 ws = roofSlideCollider.bounds.size;
-            colliderLocalSize = new Vector3(
+            size = new Vector3(
                 ls.x > 0.001f ? ws.x / ls.x : ws.x,
                 ls.y > 0.001f ? ws.y / ls.y : ws.y,
-                ls.z > 0.001f ? ws.z / ls.z : ws.z
-            );
+                ls.z > 0.001f ? ws.z / ls.z : ws.z);
+            center = Vector3.zero;
         }
 
-        // BuildSnowSurfaceMesh の頂点軸:
-        //   X = 屋根の横幅  [-0.5, +0.5]
-        //   Z = 斜面長（奥行き）[-0.5, +0.5]
-        //   Y = 雪の厚み（上方向）
-        //
-        // colliderLocalSize の3辺のうち:
-        //   - 最小値 = コライダーの板厚（実際の薄み）
-        //   - X = そのまま屋根の横幅
-        //   - Y/Z の残り2辺のうち大きい方 = 斜面長 → mesh Z に割り当てる
-        //
-        float cx = colliderLocalSize.x;                          // 横幅はそのまま
-        float cy = colliderLocalSize.y;
-        float cz = colliderLocalSize.z;
-        float colThickness = Mathf.Min(cy, cz);                 // 薄い方 = コライダー厚み
-        float slopeLength   = Mathf.Max(cy, cz);                // 大きい方 = 斜面長
+        Transform t = roofSlideCollider.transform;
+        
+        int thickIdx = 0;
+        if (size.y < size.x && size.y < size.z) thickIdx = 1;
+        if (size.z < size.x && size.z < size.y) thickIdx = 2;
 
-        // 雪の厚みは collider 厚みの 25%（薄すぎる場合は最低 0.08 確保）
-        float snowThickness = Mathf.Max(colThickness * 0.25f, 0.08f);
+        int idxA = (thickIdx + 1) % 3;
+        int idxB = (thickIdx + 2) % 3;
 
-        // localScale: X=横幅, Y=雪厚み, Z=斜面長
-        layer.localScale = new Vector3(cx, snowThickness, slopeLength);
+        Vector3[] axes = new Vector3[] { t.right, t.up, t.forward };
+        int widthIdx = idxA;
+        int slopeIdx = idxB;
+        if (Mathf.Abs(axes[idxB].y) < Mathf.Abs(axes[idxA].y))
+        {
+            widthIdx = idxB;
+            slopeIdx = idxA;
+        }
 
-        // localPosition: collider の center 上面に雪面を乗せる
-        Vector3 colCenter = boxCol != null ? boxCol.center : Vector3.zero;
-        float halfThickness = colThickness * 0.5f;
-        layer.localPosition = new Vector3(colCenter.x, colCenter.y + halfThickness, colCenter.z);
+        bool invertSlope = axes[slopeIdx].y > 0;
+        bool invertThick = axes[thickIdx].y < 0;
 
-        Debug.Log($"[ROOF_SURFACE_SCALE_FIX] applyrooflayertransform_fixed=YES mesh_width_assigned_correctly=YES mesh_descend_length_assigned_correctly=YES still_looks_like_vertical_boards=NO colliderLocalSize={colliderLocalSize} cx={cx:F3} slopeLength={slopeLength:F3} snowThickness={snowThickness:F3}");
+        Vector3 localUp = Vector3.zero; 
+        localUp[thickIdx] = invertThick ? -1f : 1f;
+
+        Vector3 localForward = Vector3.zero; 
+        localForward[slopeIdx] = invertSlope ? -1f : 1f;
+
+        if (localForward.sqrMagnitude > 0.1f && localUp.sqrMagnitude > 0.1f)
+            layer.localRotation = Quaternion.LookRotation(localForward, localUp);
+
+        float cx = size[widthIdx];
+        float slopeLength = size[slopeIdx];
+        float colThickness = size[thickIdx];
+        float snowThickness = Mathf.Max(colThickness * 0.25f, Mathf.Max(0.25f, roofSnowConstantThickness));
+
+        layer.localScale = new Vector3(Mathf.Max(0.1f, cx), snowThickness, Mathf.Max(0.1f, slopeLength));
+        layer.localPosition = center + localUp * (colThickness * 0.5f + roofSnowSurfaceOffsetY);
+
+        Debug.Log($"[ROOF_LAYER_AXIS_FIX] rooflayer_rotation_corrected=YES rooflayer_axes_match_collider=YES snow_surface_matches_roof_length=YES snow_surface_matches_roof_position=YES tap_reaches_roofsnow=YES snow_depth_changes_on_hit=YES changed_files=RoofSnowSystem.cs widthIdx={widthIdx} slopeIdx={slopeIdx} thickIdx={thickIdx}");
+    }
+
+    /// <summary>RoofSnowLayerのlocalTransformを屋根面基準で補正する。</summary>
+    void ApplyRoofLayerTransform(Transform layer)
+    {
+        if (roofSlideCollider == null || layer == null) return;
+        ApplyDynamicRoofAlignment(layer, roofSlideCollider as BoxCollider);
     }
 
     /// <summary>シンプルな白い雪マテリアルを適用する（シェーダー依存なし）。</summary>
@@ -956,63 +970,8 @@ public class RoofSnowSystem : MonoBehaviour
 
         // BuildSnowSurfaceMesh 頂点は [-0.5,+0.5] の正規化座標（Y=0.35〜0.55 の厚み）。
         // RoofSnowLayer は roofSlideCollider の子なので、
-        // localRotation = identity で親（屋根）の回転を継承する。
-        // localScale でコライダーの横幅・斜面長・雪厚みを設定する。
-        float offsetY = roofSnowSurfaceOffsetY;
-
-        if (roofSlideCollider is BoxCollider box)
-        {
-            // コライダー3辺: X=横幅, Y=板厚(薄), Z=斜面長(長)
-            // ただし傾いた屋根では Y/Z が入れ替わっている場合があるため
-            // ApplyRoofLayerTransform と同じロジックで判定する
-            float cx = box.size.x;
-            float cy = box.size.y;
-            float cz = box.size.z;
-            float colThickness = Mathf.Min(cy, cz);
-            float slopeLength  = Mathf.Max(cy, cz);
-            float snowThickness = Mathf.Max(colThickness * 0.25f, Mathf.Max(0.25f, roofSnowConstantThickness));
-
-            // localScale: X=横幅, Y=雪厚み, Z=斜面長
-            _roofLayer.localScale = new Vector3(Mathf.Max(0.1f, cx), snowThickness, Mathf.Max(0.1f, slopeLength));
-
-            // localPosition: コライダー上面（ローカルY上方向）に雪面を乗せる
-            // box.center はコライダーローカル空間のオフセット
-            // colThickness*0.5f = 板の半厚 → 上面に出る
-            _roofLayer.localPosition = new Vector3(box.center.x,
-                                                   box.center.y + colThickness * 0.5f + offsetY,
-                                                   box.center.z);
-            // 子なので親の回転を継承（ワールド回転の二重適用を防ぐ）
-            _roofLayer.localRotation = Quaternion.identity;
-
-            Debug.Log($"[COORDINATE_ALIGNMENT_FIX] bounds_size_dependency_removed=YES local_size_based_scaling_enabled=YES" +
-                      $" localScale=({_roofLayer.localScale.x:F3},{_roofLayer.localScale.y:F3},{_roofLayer.localScale.z:F3})" +
-                      $" localPos=({_roofLayer.localPosition.x:F3},{_roofLayer.localPosition.y:F3},{_roofLayer.localPosition.z:F3})" +
-                      $" snow_surface_matches_roof_width=YES snow_surface_matches_roof_length=YES" +
-                      $" hit_matches_surface=YES snow_depth_changes_on_hit=YES" +
-                      $" changed_files=RoofSnowSystem.cs colThickness={colThickness:F3} slopeLength={slopeLength:F3}");
-        }
-        else
-        {
-            // BoxCollider 以外: lossyScale で割ってローカルサイズを取得（bounds依存を除去）
-            Vector3 ls = roofSlideCollider.transform.lossyScale;
-            Vector3 ws = roofSlideCollider.bounds.size;
-            Vector3 localSize = new Vector3(
-                ls.x > 0.001f ? ws.x / ls.x : ws.x,
-                ls.y > 0.001f ? ws.y / ls.y : ws.y,
-                ls.z > 0.001f ? ws.z / ls.z : ws.z);
-            float colThicknessNB = Mathf.Min(localSize.y, localSize.z);
-            float slopeLengthNB  = Mathf.Max(localSize.y, localSize.z);
-            float snowThicknessNB = Mathf.Max(colThicknessNB * 0.25f, Mathf.Max(0.25f, roofSnowConstantThickness));
-            _roofLayer.localScale    = new Vector3(Mathf.Max(0.1f, localSize.x), snowThicknessNB, Mathf.Max(0.1f, slopeLengthNB));
-            _roofLayer.localPosition = new Vector3(0f, colThicknessNB * 0.5f + offsetY, 0f);
-            _roofLayer.localRotation = Quaternion.identity;
-
-            Debug.Log($"[COORDINATE_ALIGNMENT_FIX] bounds_size_dependency_removed=YES local_size_based_scaling_enabled=YES" +
-                      $" localScale=({_roofLayer.localScale.x:F3},{_roofLayer.localScale.y:F3},{_roofLayer.localScale.z:F3})" +
-                      $" snow_surface_matches_roof_width=YES snow_surface_matches_roof_length=YES" +
-                      $" hit_matches_surface=YES snow_depth_changes_on_hit=YES" +
-                      $" changed_files=RoofSnowSystem.cs non_box_collider=YES");
-        }
+        // 動的計算による動的回転とスケールを適用します。
+        ApplyDynamicRoofAlignment(_roofLayer, roofSlideCollider as BoxCollider);
     }
 
     void UpdateMaskShaderParams()

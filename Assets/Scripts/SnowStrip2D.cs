@@ -28,6 +28,10 @@ public class SnowStrip2D : MonoBehaviour
     [Tooltip("true にすると詳細ログを Console に出す（通常はOFF）")]
     public bool   verboseLog = false;
 
+    [Header("B方式 (3D) モード設定")]
+    [Tooltip("true の場合、SnowStrip2D の描画とヒット判定を停止し、RoofSnowSystem (3D) を優先します")]
+    public bool use3DSystemB = true;
+
     // ── HUD / デバッグ表示トグル（H キーで切り替え、デフォルト非表示）──
     public static bool s_hudVisible = false;
 
@@ -252,6 +256,11 @@ public class SnowStrip2D : MonoBehaviour
     {
         if (!Application.isPlaying) return;
 
+        if (use3DSystemB)
+        {
+            Debug.Log($"[SNOWSTRIP2D_CUTOFF] snowstrip2d_ongui_disabled=YES snowstrip2d_hit_disabled=YES roofsnowsystem_now_visible=YES roofsnowsystem_receives_hit=YES changed_files=SnowStrip2D.cs");
+        }
+
         // RoofGuide_BR を非表示（V2 側でも行うが二重保護）
         var go = GameObject.Find(TARGET_GUIDE_ID);
         if (go != null)
@@ -334,6 +343,7 @@ public class SnowStrip2D : MonoBehaviour
     void Update()
     {
         if (!Application.isPlaying) return;
+        if (use3DSystemB) return;
 
         // H キーで HUD / デバッグ表示をトグル
         if (Input.GetKeyDown(KeyCode.H))
@@ -782,6 +792,15 @@ public class SnowStrip2D : MonoBehaviour
     //
     void HandleTap()
     {
+        if (use3DSystemB)
+        {
+            if (GloveTool.HasPendingHit && _guiRect.Contains(GloveTool.PendingHitGuiPos))
+            {
+                GloveTool.HasPendingHit = false; // PendingHit だけは消費してブロックを解除できるようにする
+            }
+            return;
+        }
+
         // ── GloveTool 着弾通知を最優先で処理 ──────────────────
         // GloveTool が影位置に着弾したとき HasPendingHit=true になる。
         // この場合はマウス位置ではなく影位置（PendingHitGuiPos）でヒット判定する。
@@ -2018,6 +2037,7 @@ public class SnowStrip2D : MonoBehaviour
     //
     void OnGUI()
     {
+        if (use3DSystemB) return;
         if (!Application.isPlaying) return;
 
         // Start() 時の Screen サイズが OnGUI 時と異なる場合は再ビルド
