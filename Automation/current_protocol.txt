@@ -23,4 +23,4 @@ SNOW PANIC - ASSI PROTOCOL
 完了条件:
 - under_eave_stop が YES / NO / PARTIAL のいずれかに更新される
 
-生成日時: 2026-03-27 22:48:20
+生成日時: 2026-03-28 10:22:10
