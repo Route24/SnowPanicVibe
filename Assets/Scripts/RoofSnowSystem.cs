@@ -73,6 +73,7 @@ public class RoofSnowSystem : MonoBehaviour
     public float avalancheGraceSeconds = 2.0f;
 
     Transform _roofLayer;
+    bool _roofAxisFixLogged;
     float _startTime;
     float _lastSuppressedLogTime;
     RoofSnowMaskController _maskController;
@@ -706,7 +707,11 @@ public class RoofSnowSystem : MonoBehaviour
         layer.localScale = new Vector3(Mathf.Max(0.01f, localCx), Mathf.Max(0.01f, localThickness), Mathf.Max(0.01f, localSlope));
         layer.localPosition = center + localUp * (boxCol != null ? boxCol.size[thickIdx] * 0.5f + roofSnowSurfaceOffsetY : colThickness * 0.5f + roofSnowSurfaceOffsetY);
 
-        Debug.Log($"[ROOF_LAYER_AXIS_FIX] widthIdx={widthIdx} slopeIdx={slopeIdx} thickIdx={thickIdx} worldSize=({cx:F3},{slopeLength:F3},{colThickness:F3}) localScale=({localCx:F3},{localThickness:F3},{localSlope:F3})");
+        if (!_roofAxisFixLogged)
+        {
+            _roofAxisFixLogged = true;
+            Debug.Log($"[ROOF_LAYER_AXIS_FIX] widthIdx={widthIdx} slopeIdx={slopeIdx} thickIdx={thickIdx} worldSize=({cx:F3},{slopeLength:F3},{colThickness:F3}) localScale=({localCx:F3},{localThickness:F3},{localSlope:F3})");
+        }
     }
 
     /// <summary>RoofSnowLayerのlocalTransformを屋根面基準で補正する。</summary>

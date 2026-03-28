@@ -317,6 +317,7 @@ public class SnowPackSpawner : MonoBehaviour
             {
                 var layerList = SpawnLayer(y);
                 _layerPieces.Add(layerList);
+                UnityEngine.Debug.Log($"[SNOW_COUNT_BIND] before increment layer={y} layerList.Count={layerList.Count} spawned_before={spawned}");
                 spawned += layerList.Count;
                 if (spawned >= maxPieces) break;
                 if (debugAutoRefillRoofSnow && debugMinPackedPieces > 0 && spawned >= debugMinPackedPieces) break;

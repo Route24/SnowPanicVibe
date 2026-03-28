@@ -1953,6 +1953,9 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
+        // SnowVisibilityLab では録画・Drive・Slack を完全停止
+        if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
+
         // 通常Play: ExitingEditMode(Play開始直前)でマーカー削除。古いsession混入防止のため_sessionIdもクリア。
         if (state == PlayModeStateChange.ExitingEditMode && !AutoRecordOnPlay)
         {

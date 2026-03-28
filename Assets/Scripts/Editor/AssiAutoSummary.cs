@@ -31,6 +31,9 @@ public static class AssiAutoSummary
 
     static void OnPlayModeChanged(PlayModeStateChange state)
     {
+        // SnowVisibilityLab ではサマリ生成を停止
+        if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
+
         if (state == PlayModeStateChange.EnteredPlayMode) { _sawPlay = true; return; }
         if (state != PlayModeStateChange.EnteredEditMode || !_sawPlay) return;
         _sawPlay = false;

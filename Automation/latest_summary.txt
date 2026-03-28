@@ -1,10 +1,10 @@
 === SUMMARY ===
-generated_at=2026-03-28 20:19:11
+generated_at=2026-03-28 21:09:44
 scene_name=SnowVisibilityLab
 
 compile_result=PASS
 error_count=0
-warning_count=2
+warning_count=3
 
 === CALIBRATION ===
 roof_points_captured=YES

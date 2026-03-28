@@ -939,6 +939,9 @@ public static class SnowLoopNoaReportAutoCopy
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
+        // SnowVisibilityLab では Video/Drive/Slack/Report を完全停止
+        if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
+
         if (state == PlayModeStateChange.EnteredPlayMode)
         {
             _sawPlayMode = true;
