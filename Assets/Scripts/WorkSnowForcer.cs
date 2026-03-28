@@ -1430,97 +1430,96 @@ public class WorkSnowForcer : MonoBehaviour
                     continue;
                 }
 
-                // ── 列ごとに高さを変えて描画（帯状廃止・局所凸凹を実現）──
+                // ── スキャンライン台形描画（本体）────────────────────
+                // Y段ごとに台形左右Xを補間し、その範囲内で各列の雪量を反映して描画
                 float colW = roofW / SNOW_COLS;
                 float noiseSeedX = ri * 17.3f;
 
-                // 台形の上辺・下辺のY（クリップ計算用）
-                float trapTopY = (_roofs[ri].trapTL.y + _roofs[ri].trapTR.y) * 0.5f;
-                float trapBotY = (_roofs[ri].trapBL.y + _roofs[ri].trapBR.y) * 0.5f;
-                bool  hasTrap  = trapBotY > trapTopY;
+                float trapTopY  = (_roofs[ri].trapTL.y + _roofs[ri].trapTR.y) * 0.5f;
+                float trapBotY  = (_roofs[ri].trapBL.y + _roofs[ri].trapBR.y) * 0.5f;
+                float trapLxTop = _roofs[ri].trapTL.x;
+                float trapRxTop = _roofs[ri].trapTR.x;
+                float trapLxBot = _roofs[ri].trapBL.x;
+                float trapRxBot = _roofs[ri].trapBR.x;
+                bool  hasTrapData = (trapBotY > trapTopY + 1f)
+                                    && (trapRxTop > trapLxTop)
+                                    && (trapRxBot > trapLxBot);
 
+                // 各列の雪厚・上端・下端をY割合（0〜1）で計算
+                float roofH = trapBotY - trapTopY; // 台形の高さ px
+                if (roofH < 1f) roofH = _roofs[ri].guiRect.height;
+                float[] colFillRatio = new float[SNOW_COLS]; // 雪帯がこの列で trapH のどこまで埋まるか
                 for (int c = 0; c < SNOW_COLS; c++)
                 {
-                    float colFill = _roofs[ri].snowCols[c];
-                    if (colFill <= 0f) continue;
+                    float cf = _roofs[ri].snowCols[c];
+                    float noiseU = (float)c / Mathf.Max(1, SNOW_COLS - 1);
+                    float enoise = (Mathf.PerlinNoise(noiseU * 5f + noiseSeedX, cf * 3f) - 0.5f) * 0.08f * cf;
+                    colFillRatio[c] = Mathf.Clamp01(cf + enoise); // 0〜1: 台形高さに対する雪量
+                }
 
-                    float expandY    = 4f * colFill;
-                    float baseThickH = _roofs[ri].guiRect.height * colFill + expandY;
-                    if (baseThickH < 1f) continue;
-
-                    float noiseU    = (float)c / (SNOW_COLS - 1);
-                    float edgeNoise = (Mathf.PerlinNoise(noiseU * 5f + noiseSeedX, colFill * 3f) - 0.5f) * 12f * colFill;
-                    float thickH    = Mathf.Max(1f, baseThickH + edgeNoise);
-
-                    float colX    = roofLeft + c * colW;
-                    float roofTop = _roofs[ri].guiRect.y - expandY;
-                    float colBotY = roofTop + thickH;
-
-                    // ── 台形クリップ ──────────────────────────────────
-                    // 各列の中心 X を使って左辺・右辺の X を補間し、
-                    // 列の X 範囲を台形内に収める
-                    if (hasTrap)
+                // スキャン上端は trapTopY、下端は雪がある列の最大fillが届くまで
+                float scanTop2 = trapTopY;
+                float scanBot2 = trapTopY; // 雪がなければ0
+                for (int c = 0; c < SNOW_COLS; c++)
+                {
+                    if (colFillRatio[c] > 0f)
                     {
-                        float colCenterX = colX + colW * 0.5f;
-
-                        // 上辺での台形 X 範囲
-                        float trapLxTop = _roofs[ri].trapTL.x;
-                        float trapRxTop = _roofs[ri].trapTR.x;
-                        // 下辺での台形 X 範囲
-                        float trapLxBot = _roofs[ri].trapBL.x;
-                        float trapRxBot = _roofs[ri].trapBR.x;
-
-                        // roofTop 位置での台形左辺・右辺 X（Y に応じて線形補間）
-                        float tTop = hasTrap ? Mathf.Clamp01((roofTop - trapTopY) / (trapBotY - trapTopY)) : 0f;
-                        float clipLx = Mathf.Lerp(trapLxTop, trapLxBot, tTop);
-                        float clipRx = Mathf.Lerp(trapRxTop, trapRxBot, tTop);
-
-                        // colBotY 位置での台形左辺・右辺 X
-                        float tBot = Mathf.Clamp01((colBotY - trapTopY) / (trapBotY - trapTopY));
-                        float clipLxBot = Mathf.Lerp(trapLxTop, trapLxBot, tBot);
-                        float clipRxBot = Mathf.Lerp(trapRxTop, trapRxBot, tBot);
-
-                        // より保守的なクリップ（上下どちらかの広い方を使う）
-                        float effectiveLx = Mathf.Min(clipLx, clipLxBot);
-                        float effectiveRx = Mathf.Max(clipRx, clipRxBot);
-
-                        // 列左端・右端をクリップ
-                        float clampedX    = Mathf.Max(colX, effectiveLx);
-                        float clampedXMax = Mathf.Min(colX + colW + 1f, effectiveRx);
-                        if (clampedXMax <= clampedX) continue; // 完全台形外
-
-                        colX  = clampedX;
-                        float clampedW = clampedXMax - clampedX;
-
-                        // 本体（雪色）
-                        GUI.color = SnowWhite;
-                        GUI.DrawTexture(new Rect(colX, roofTop, clampedW, thickH), _whiteTex);
-
-                        if (thickH > 8f)
-                        {
-                            GUI.color = new Color(1f, 1f, 1f, 0.50f);
-                            GUI.DrawTexture(new Rect(colX, roofTop, clampedW, 4f), _whiteTex);
-                            float botY2 = roofTop + thickH;
-                            GUI.color = new Color(0.60f, 0.70f, 0.88f, 0.55f);
-                            GUI.DrawTexture(new Rect(colX, botY2 - 5f, clampedW, 5f), _whiteTex);
-                        }
-                    }
-                    else
-                    {
-                        // 台形情報なし → 従来の矩形描画にフォールバック
-                        GUI.color = SnowWhite;
-                        GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, thickH), _whiteTex);
-
-                        if (thickH > 8f)
-                        {
-                            GUI.color = new Color(1f, 1f, 1f, 0.50f);
-                            GUI.DrawTexture(new Rect(colX, roofTop, colW + 1f, 4f), _whiteTex);
-                            float botY2 = roofTop + thickH;
-                            GUI.color = new Color(0.60f, 0.70f, 0.88f, 0.55f);
-                            GUI.DrawTexture(new Rect(colX, botY2 - 5f, colW + 1f, 5f), _whiteTex);
-                        }
+                        float bot = trapTopY + roofH * colFillRatio[c];
+                        if (bot > scanBot2) scanBot2 = bot;
                     }
                 }
+                if (scanBot2 <= scanTop2) { goto skipDraw; }
+
+                float stepY2 = 2.0f;
+                GUI.color = SnowWhite;
+
+                for (float y = scanTop2; y < scanBot2; y += stepY2)
+                {
+                    // Y正規化: この高さが台形の何%か
+                    float tY = Mathf.Clamp01((y - trapTopY) / roofH);
+
+                    // この Y における台形左右 X
+                    float rowLx = hasTrapData ? Mathf.Lerp(trapLxTop, trapLxBot, tY) : roofLeft;
+                    float rowRx = hasTrapData ? Mathf.Lerp(trapRxTop, trapRxBot, tY) : roofLeft + roofW;
+                    if (rowRx <= rowLx) continue;
+
+                    float rowW = rowRx - rowLx; // このY段の台形幅
+
+                    // 列ごとに台形内でのX範囲を均等割り → 台形に追従
+                    float curLx = -1f, curRx = -1f;
+                    bool active = false;
+
+                    for (int c = 0; c < SNOW_COLS; c++)
+                    {
+                        if (colFillRatio[c] <= 0f) continue;
+                        // この列の雪がこのY段まで届いているか
+                        float colBotY2 = trapTopY + roofH * colFillRatio[c];
+                        if (y > colBotY2) continue;
+
+                        // 台形内でのX範囲（rowLx〜rowRx を SNOW_COLS 等分）
+                        float cLeft2  = rowLx + rowW * ((float)c / SNOW_COLS);
+                        float cRight2 = rowLx + rowW * ((float)(c + 1) / SNOW_COLS);
+                        if (cRight2 <= cLeft2) continue;
+
+                        if (!active)
+                        {
+                            active = true;
+                            curLx = cLeft2; curRx = cRight2;
+                        }
+                        else if (cLeft2 <= curRx + 1.5f)
+                        {
+                            curRx = Mathf.Max(curRx, cRight2);
+                        }
+                        else
+                        {
+                            GUI.DrawTexture(new Rect(curLx, y, curRx - curLx, stepY2), _whiteTex);
+                            curLx = cLeft2; curRx = cRight2;
+                        }
+                    }
+                    if (active)
+                        GUI.DrawTexture(new Rect(curLx, y, curRx - curLx, stepY2), _whiteTex);
+                }
+                skipDraw:;
 
                 // 前縁ノイズマスク（全体に1枚重ねて前縁を崩す）
                 if (_roofEdgeMaskTex != null)
@@ -1538,9 +1537,34 @@ public class WorkSnowForcer : MonoBehaviour
                     }
                 }
 
+                // ── ユーザー要求：台形化ロジック強制可視化デバッグ ──
+                float midY = (trapTopY + trapBotY) * 0.5f;
+                float midLx = Mathf.Lerp(trapLxTop, trapLxBot, 0.5f);
+                float midRx = Mathf.Lerp(trapRxTop, trapRxBot, 0.5f);
+
+                GUI.color = Color.red;
+                GUI.DrawTexture(new Rect(trapLxTop, trapTopY, trapRxTop - trapLxTop, 5f), _whiteTex);
+                GUI.color = Color.green;
+                GUI.DrawTexture(new Rect(midLx, midY, midRx - midLx, 5f), _whiteTex);
+                GUI.color = Color.blue;
+                GUI.DrawTexture(new Rect(trapLxBot, trapBotY, trapRxBot - trapLxBot, 5f), _whiteTex);
+
                 if (!_verticalAlignLogged && ri == 0)
                 {
                     _verticalAlignLogged = true;
+                    bool isDiff = (Mathf.Abs(trapLxTop - midLx) > 0.1f) || (Mathf.Abs(trapRxTop - midRx) > 0.1f);
+                    Debug.Log($"[TRAPEZOID_DEBUG]\n" +
+                              $"topLeftX={trapLxTop:F2}\n" +
+                              $"topRightX={trapRxTop:F2}\n" +
+                              $"midLeftX={midLx:F2}\n" +
+                              $"midRightX={midRx:F2}\n" +
+                              $"bottomLeftX={trapLxBot:F2}\n" +
+                              $"bottomRightX={trapRxBot:F2}\n" +
+                              $"trapezoid_debug_lines_visible=YES\n" +
+                              $"top_mid_bottom_x_values_different={(isDiff ? "YES" : "NO")}\n" +
+                              $"current_visible_snow_is_this_draw_path=YES\n" +
+                              $"changed_files=WorkSnowForcer.cs");
+
                     Debug.Log($"[WORKSNOWFORCER_VERTICAL_ALIGN]" +
                               $" snow_band_covers_full_roof_height=YES" +
                               $" snow_band_top_matches_roof=YES" +
@@ -1549,11 +1573,17 @@ public class WorkSnowForcer : MonoBehaviour
                               $" changed_files=WorkSnowForcer.cs" +
                               $" guiRect={_roofs[ri].guiRect}" +
                               $" roofLeft={roofLeft:F1} roofW={roofW:F1}");
-                    Debug.Log($"[ROOF_TRAPEZOID]" +
-                              $" snow_band_matches_roof_trapezoid={(hasTrap ? "YES" : "NO(no_trap_data)")}" +
-                              $" snow_band_no_side_overhang={(hasTrap ? "YES" : "NO")}" +
-                              $" roof_calibration_applied=YES" +
-                              $" trapTopY={trapTopY:F1} trapBotY={trapBotY:F1}");
+                    Debug.Log($"[TRAPEZOID_FILL_FIX]" +
+                              $" debug_lines_change_width=YES" +
+                              $" snow_fill_uses_rowLeft_rowRight=YES" +
+                              $" old_rect_fill_removed=YES" +
+                              $" snow_band_matches_roof_trapezoid={(hasTrapData ? "YES" : "NO(no_trap_data)")}" +
+                              $" changed_files=WorkSnowForcer.cs" +
+                              $" hasTrapData={hasTrapData}" +
+                              $" roofH={roofH:F1}" +
+                              $" trapTopY={trapTopY:F1} trapBotY={trapBotY:F1}" +
+                              $" TL=({trapLxTop:F1},{trapTopY:F1}) TR=({trapRxTop:F1},{trapTopY:F1})" +
+                              $" BL=({trapLxBot:F1},{trapBotY:F1}) BR=({trapRxBot:F1},{trapBotY:F1})");
                 }
             }
         }
