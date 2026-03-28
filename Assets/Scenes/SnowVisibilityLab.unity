@@ -629,7 +629,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 560635670}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -846,7 +846,7 @@ MonoBehaviour:
   avalancheCooldownSeconds: 1.5
   roofSlideCollider: {fileID: 560635675}
   roofSnowColor: {r: 0.92, g: 0.95, b: 1, a: 1}
-  roofSnowConstantThickness: 0.08
+  roofSnowConstantThickness: 0.25
   roofSnowSurfaceOffsetY: -0.02
   burstChunkCount: 36
   burstChunkLife: 1.8

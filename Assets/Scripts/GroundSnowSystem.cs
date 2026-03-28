@@ -81,7 +81,7 @@ public class GroundSnowSystem : MonoBehaviour
         if (!logEverySecond) return;
         if (Time.time < _nextLogTime) return;
         _nextLogTime = Time.time + 1f;
-        Debug.Log($"[GroundSnow] total={totalSnowAmount:F3} piles={_piles.Count}");
+        // [GroundSnow] 1秒ログ停止（Consoleノイズ削減）
     }
 
     void Start()

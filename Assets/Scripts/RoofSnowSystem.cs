@@ -241,17 +241,7 @@ public class RoofSnowSystem : MonoBehaviour
         if (Time.time >= _nextRoofLogTime)
         {
             _nextRoofLogTime = Time.time + 1f;
-            string packEuler = snowPackSpawner != null ? snowPackSpawner.SnowPackRootEulerString : "N/A";
-            Debug.Log($"[RoofVectors] roofNormal=({roofNormal.x:F3},{roofNormal.y:F3},{roofNormal.z:F3}) roofUp=({roofUp.x:F3},{roofUp.y:F3},{roofUp.z:F3}) worldUp=({worldUp.x:F3},{worldUp.y:F3},{worldUp.z:F3}) SnowPackRootEuler={packEuler}");
-            Debug.Log($"[RoofSnow] depth={roofSnowDepthMeters:F3} threshold={ComputedThreshold:F3} angleDeg={AngleDeg:F1}");
-            var cd = FindFirstObjectByType<ToolCooldownManager>();
-            float cdRem = cd != null ? cd.CooldownRemaining : 0f;
-            float avgSlide = SnowPackSpawner.LastAvgRoofSlideDuration;
-            int chainTriggers = SnowPackSpawner.LastChainTriggerCount;
-            Debug.Log($"[TempoDebug] cooldownRemaining={cdRem:F2}s avgRoofSlideDuration={avgSlide:F3}s chainTriggersLastHit={chainTriggers}");
-            string state = Time.time < _nextAvalancheTime ? "Avalanche" : "Freeze";
-            float groundTotal = groundSnowSystem != null ? groundSnowSystem.totalSnowAmount : 0f;
-            Debug.Log($"[AvalancheAudit1s] frame={Time.frameCount} t={Time.time:F2} state={state} roofDepth={roofSnowDepthMeters:F3} groundTotal={groundTotal:F3}");
+            // 1秒ごとログは SnowVisibilityLab では無効（Consoleノイズ削減）
         }
 
         if (AssiDebugUI.AutoAvalancheOff)
@@ -675,16 +665,12 @@ public class RoofSnowSystem : MonoBehaviour
         Vector3 localUp = Vector3.zero;
         localUp[thickIdx] = invertThick ? -1f : 1f;
 
-        // slope軸：ワールドY成分が負（斜面下方向）になるように設定
-        // axes[slopeIdx].y > 0 なら +1 方向がY上向き → 反転して下向きにする
-        // ただし axes[slopeIdx].y ≈ 0（水平軸）の場合は Z 方向で判定
-        Vector3 slopeWorld = axes[slopeIdx];
-        bool invertSlope = slopeWorld.y > 0f || (Mathf.Abs(slopeWorld.y) < 0.1f && slopeWorld.z > 0f);
-        Vector3 localForward = Vector3.zero;
-        localForward[slopeIdx] = invertSlope ? -1f : 1f;
-
-        if (localForward.sqrMagnitude > 0.1f && localUp.sqrMagnitude > 0.1f)
-            layer.localRotation = Quaternion.LookRotation(localForward, localUp);
+        // 屋根法線を up、斜面下方向を forward としてワールド回転を設定
+        Vector3 roofNormalWorld = roofSlideCollider.transform.up.normalized;
+        // 斜面下方向: forward の Y成分が負になる方向
+        Vector3 roofFwdWorld = roofSlideCollider.transform.forward.normalized;
+        if (roofFwdWorld.y > 0f) roofFwdWorld = -roofFwdWorld;
+        layer.rotation = Quaternion.LookRotation(roofFwdWorld, roofNormalWorld);
 
         float cx = size[widthIdx];
         float slopeLength = size[slopeIdx];
@@ -710,7 +696,8 @@ public class RoofSnowSystem : MonoBehaviour
         if (!_roofAxisFixLogged)
         {
             _roofAxisFixLogged = true;
-            Debug.Log($"[ROOF_LAYER_AXIS_FIX] widthIdx={widthIdx} slopeIdx={slopeIdx} thickIdx={thickIdx} worldSize=({cx:F3},{slopeLength:F3},{colThickness:F3}) localScale=({localCx:F3},{localThickness:F3},{localSlope:F3})");
+            Vector3 euler = layer.rotation.eulerAngles;
+            Debug.Log($"[ROOF_LAYER_AXIS_FIX] worldEuler=({euler.x:F1},{euler.y:F1},{euler.z:F1}) localScale=({localCx:F3},{localThickness:F3},{localSlope:F3}) roofNormal=({roofSlideCollider.transform.up.x:F2},{roofSlideCollider.transform.up.y:F2},{roofSlideCollider.transform.up.z:F2})");
         }
     }
 

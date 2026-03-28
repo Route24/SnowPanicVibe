@@ -87,16 +87,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
             }
         }
         catch { }
-        UnityEngine.Debug.Log("[HIT_REGISTRATION_CHECK] hit_registered=true");
-        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] reason=Add(delta={delta}) invoked");
-        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] owner_file={ownerFile}");
-        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] owner_class={ownerClass}");
-        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] score_before={before}");
-        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] hit_test_performed=true");
-        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] score_after={_score}");
-        UnityEngine.Debug.Log("[RAW_SCORE_CHECK] score_changed=true");
-        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] increment_owner_file={ownerFile}");
-        UnityEngine.Debug.Log($"[RAW_SCORE_CHECK] increment_owner_class={ownerClass}");
+        UnityEngine.Debug.Log($"[HIT_REGISTRATION_CHECK] hit_registered=true score_before={before} score_after={_score} owner={ownerFile}");
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]

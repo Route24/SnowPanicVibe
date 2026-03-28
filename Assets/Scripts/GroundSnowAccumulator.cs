@@ -76,8 +76,7 @@ public class GroundSnowAccumulator : MonoBehaviour
                 float newH = Mathf.Clamp(oldH + add, 0f, maxHeightPerCell);
                 _heightByCell[c] = newH;
                 UpdateCellVisual(c, newH);
-
-                Debug.Log($"[GroundSnow] add pos={worldPos} cell=({c.x},{c.y}) amount={add:F3} newHeight={newH:F3}");
+                // [GroundSnow] add ログ停止（Consoleノイズ削減）
             }
         }
     }

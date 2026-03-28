@@ -65,18 +65,17 @@ public class Gate2SnowChecker : MonoBehaviour
             Debug.Log("[SNOW_VISUAL_BIND] RoofSnowLayer=NOT_FOUND");
         }
 
-        // [SNOW_COUNT_BIND] — current_house_count の管理元
-        int houseCount = 0;
-        var houses = GameObject.Find("Houses");
-        if (houses != null) houseCount = houses.transform.childCount;
-        int rdpCount = RoofDefinitionProvider.HouseCount;
+        // [SNOW_COUNT_BIND] — SnowPackPiecesRoot の childCount が実際の雪ピース数
+        var piecesRoot = GameObject.Find("SnowPackPiecesRoot");
+        int pieceCount = piecesRoot != null ? piecesRoot.transform.childCount : -1;
+        var sps2 = Object.FindFirstObjectByType<SnowPackSpawner>();
         Debug.Log(
             $"[SNOW_COUNT_BIND] " +
-            $"current_house_count_source=GameObject('Houses').childCount " +
-            $"current_house_count={houseCount} " +
-            $"Houses_GO_exists={(houses != null ? "YES" : "NO")} " +
-            $"RoofDefinitionProvider.HouseCount={rdpCount} " +
-            $"count_relevant_to_snow=NO(Houses_GOなし) "
+            $"count_source=SnowPackPiecesRoot.childCount " +
+            $"current_snow_piece_count={pieceCount} " +
+            $"SnowPackPiecesRoot_exists={(piecesRoot != null ? "YES" : "NO")} " +
+            $"SnowPackSpawner_exists={(sps2 != null ? "YES" : "NO")} " +
+            $"snow_registered={(pieceCount > 0 ? "YES" : "NO")}"
         );
     }
 }

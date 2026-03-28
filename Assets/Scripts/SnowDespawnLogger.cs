@@ -7,7 +7,7 @@ public static class DespawnTrace
     public static void Log(string reason, string caller, string state, Vector3 pos)
     {
         string c = string.IsNullOrEmpty(caller) ? GetCallerFromTrace() : caller;
-        UnityEngine.Debug.Log($"[DESPAWN] reason={reason} caller={c} state={state} pos=({pos.x:F2},{pos.y:F2},{pos.z:F2}) t={Time.time:F2}");
+        UnityEngine.Debug.Log($"[DESPAWN] reason={reason} caller={c} state={state} t={Time.time:F2}");
     }
 
     static string GetCallerFromTrace()

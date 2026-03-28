@@ -124,6 +124,7 @@ public class SnowPackSpawner : MonoBehaviour
     bool _generatedThisPlay;
     bool _spawnLogOnce;
     bool _scaleLogOnce;
+    bool _rebuildBasisLoggedOnce;
     static bool _poolReturnThrowOnce;
     static bool _rootCauseMeshLogged;
     float _nextToggleLogTime;
@@ -289,8 +290,10 @@ public class SnowPackSpawner : MonoBehaviour
         Vector3 roofFwd = roofCollider.transform.forward.normalized;
         float roofRotY = roofCollider.transform.rotation.eulerAngles.y;
         float packRotY = _visualRoot != null ? _visualRoot.rotation.eulerAngles.y : 0f;
-        UnityEngine.Debug.Log($"[SnowPackBasis] usingLocal=true roofUp={roofUp} roofFwd={roofFwd} roofRotY={roofRotY:F1} packRotY={packRotY:F1}");
-        UnityEngine.Debug.Log($"[SnowPieceScale] kind=Packed scale=({pieceSize:F3},{pieceSize * pieceHeightScale:F3},{pieceSize:F3})");
+        if (!_rebuildBasisLoggedOnce) { _rebuildBasisLoggedOnce = true;
+            UnityEngine.Debug.Log($"[SnowPackBasis] usingLocal=true roofUp={roofUp} roofFwd={roofFwd} roofRotY={roofRotY:F1} packRotY={packRotY:F1}");
+            UnityEngine.Debug.Log($"[SnowPieceScale] kind=Packed scale=({pieceSize:F3},{pieceSize * pieceHeightScale:F3},{pieceSize:F3})");
+        }
 
         CacheGridParams();
         float effectiveDepth = targetDepthMeters * snowDepthScale;
@@ -368,7 +371,7 @@ public class SnowPackSpawner : MonoBehaviour
         int hc = 0;
         var houses = GameObject.Find("Houses");
         if (houses != null) hc = houses.transform.childCount;
-        UnityEngine.Debug.Log($"[SNOW_ROLLBACK_CHECK] rollback_target=pre_camera_change_good_state current_house_count={hc} pieceSize={pieceSize:F2} maxSecondaryDetachPerHit={maxSecondaryDetachPerHit} chainDetachChance={chainDetachChance:F2} secondaryDetachFraction={secondaryDetachFraction:F2} result=OK comment=giant_collapse_type");
+        if (!_rebuildBasisLoggedOnce) UnityEngine.Debug.Log($"[SNOW_ROLLBACK_CHECK] rollback_target=pre_camera_change_good_state current_house_count={hc} pieceSize={pieceSize:F2} result=OK");
         if (reason == "AvalancheActiveZero" || reason == "AutoRebuildOnActiveZero")
             UnityEngine.Debug.Log($"[REFILL] reason={reason} packedBefore=0 packedAfter={spawned}");
 
@@ -419,7 +422,7 @@ public class SnowPackSpawner : MonoBehaviour
         float widthGap = roofVisualW - snowVisualW;
         float depthGap = roofVisualD - snowVisualD;
         bool visualMatch = Mathf.Abs(widthGap) <= 0.1f && Mathf.Abs(depthGap) <= 0.1f;
-        UnityEngine.Debug.Log($"[VISUAL_SIZE] roof_visual_width={roofVisualW:F3} roof_visual_depth={roofVisualD:F3} snow_visual_width={snowVisualW:F3} snow_visual_depth={snowVisualD:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3} visual_match_pass={visualMatch.ToString().ToLower()}");
+        if (!_rebuildBasisLoggedOnce) UnityEngine.Debug.Log($"[VISUAL_SIZE] roof_visual_width={roofVisualW:F3} snow_visual_width={snowVisualW:F3} width_gap={widthGap:F3} visual_match_pass={visualMatch.ToString().ToLower()}");
         SnowLoopLogCapture.AppendToAssiReport($"=== VISUAL_SIZE === roof_visual_width={roofVisualW:F3} roof_visual_depth={roofVisualD:F3} snow_visual_width={snowVisualW:F3} snow_visual_depth={snowVisualD:F3} width_gap={widthGap:F3} depth_gap={depthGap:F3} visual_match_pass={visualMatch}");
     }
 
@@ -501,48 +504,7 @@ public class SnowPackSpawner : MonoBehaviour
 
     void LogRotationOverrideSuspectedLocations(bool force = false)
     {
-        if (!force && _rotationOverrideLoggedOnce) return;
-        if (!force) _rotationOverrideLoggedOnce = true;
-        int count = 0;
-        try
-        {
-            string scriptsPath = System.IO.Path.Combine(Application.dataPath, "Scripts");
-            if (!System.IO.Directory.Exists(scriptsPath))
-            {
-                UnityEngine.Debug.Log("[RotationOverrideFound] None (Scripts dir not found)");
-                return;
-            }
-            var files = System.IO.Directory.GetFiles(scriptsPath, "*.cs", System.IO.SearchOption.AllDirectories);
-            foreach (var path in files)
-            {
-                string name = System.IO.Path.GetFileName(path);
-                bool relevant = name.Contains("SnowPack") || name.Contains("Packed") || name.Contains("Piece") || name.Contains("SnowTest") || name.Contains("Assi") || name.Contains("Debug") || name.Contains("Tap") || name.Contains("Gizmo") || name.Contains("Marker") || name.Contains("Roof") || name.Contains("Avalanche");
-                if (!relevant) continue;
-                var lines = System.IO.File.ReadAllLines(path);
-                for (int i = 0; i < lines.Length; i++)
-                {
-                    var line = lines[i];
-                    if (line.TrimStart().StartsWith("//")) continue;
-                    bool suspect = (line.Contains("Quaternion.identity") || line.Contains("Quaternion.Euler(0,0,0)")) && (line.Contains("rotation") || line.Contains("Rotation"));
-                    suspect = suspect || (line.Contains("LookRotation") && line.Contains("Vector3.up"));
-                    suspect = suspect || (line.Contains("LookAt") && (line.Contains("Camera") || line.Contains("Main")));
-                    suspect = suspect || (line.Contains("FromToRotation") && line.Contains("Vector3.up"));
-                    if (suspect)
-                    {
-                        var relPath = path.Replace(Application.dataPath, "Assets").Replace("\\", "/");
-                        string reason = line.Contains("Quaternion.identity") ? "Quaternion.identity" : line.Contains("LookRotation") ? "LookRotation+Vector3.up" : line.Contains("LookAt") ? "LookAt" : line.Contains("FromToRotation") ? "FromToRotation" : "rotation_overwrite";
-                        string objName = System.IO.Path.GetFileName(path);
-                        UnityEngine.Debug.Log($"[RotationOverrideFound] file={relPath} line={i + 1} obj={objName} reason={reason} code={line.Trim()}");
-                        count++;
-                    }
-                }
-            }
-            if (count == 0)
-                UnityEngine.Debug.Log("[RotationOverrideFound] None");
-            else
-                UnityEngine.Debug.Log($"[RotationOverrideFound] total={count} (上記file:line参照)");
-        }
-        catch (System.Exception ex) { UnityEngine.Debug.Log($"[RotationOverrideFound] None (search skip: {ex.Message})"); }
+        // Consoleノイズ削減のため停止
     }
 
     void LogPiecePoseSampleFirst3()
@@ -990,7 +952,7 @@ public class SnowPackSpawner : MonoBehaviour
             slopeDir = $"({d.slopeDirection.x:F2},{d.slopeDirection.y:F2},{d.slopeDirection.z:F2})";
         }
         string slopeStr = float.IsNaN(slopeAngle) ? "N/A" : slopeAngle.ToString("F1");
-        UnityEngine.Debug.Log($"[ROOF_MODULE] roof_definition_created={roofDefinitionCreated.ToString().ToLower()} roof_width={_roofWidth:F3} roof_depth={_roofLength:F3} roof_slope_angle={slopeStr} roof_slope_direction={slopeDir} snow_module_uses_roof_definition={usesDefinition.ToString().ToLower()} snow_module_asset_direct_dependency={assetDirect.ToString().ToLower()} multi_house_ready=true");
+        if (!_rebuildBasisLoggedOnce) UnityEngine.Debug.Log($"[ROOF_MODULE] roof_width={_roofWidth:F3} roof_depth={_roofLength:F3} roof_slope_angle={slopeStr}");
         SnowLoopLogCapture.AppendToAssiReport($"=== ROOF_MODULE === roof_definition_created={roofDefinitionCreated} roof_width={_roofWidth:F3} roof_depth={_roofLength:F3} roof_slope_angle={slopeStr} roof_slope_direction={slopeDir} snow_module_uses_roof_definition={usesDefinition} snow_module_asset_direct_dependency={assetDirect} multi_house_ready=true");
     }
 

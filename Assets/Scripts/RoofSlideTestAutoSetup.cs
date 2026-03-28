@@ -426,9 +426,7 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
         }
 
         bool spawnAboveTop = spawnPos.y >= (_roofSlideCollider.bounds.max.y + spawnLiftFromRoof - 0.0001f);
-        string hitName = hasHit && hit.collider != null ? hit.collider.name : "None";
-        Vector3 hitNormal = hasHit ? hit.normal : Vector3.zero;
-        Debug.Log($"[RoofSlideSpawn] b.min={_roofSlideCollider.bounds.min} b.max={_roofSlideCollider.bounds.max} spawnPos={spawnPos} hit={hitName} hitNormal={hitNormal} spawnAboveTop={spawnAboveTop} before={before}");
+        // [RoofSlideSpawn] ログ停止（Consoleノイズ削減）
     }
 
     struct PreflightReport
@@ -575,11 +573,7 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
         }
         Vector3 camPos = cam != null ? cam.transform.position : Vector3.zero;
         bool inView = IsInView(cam, snow.position);
-        string hitName = hasHit && hit.collider != null ? hit.collider.name : "None";
-        Vector3 hitNormal = hasHit ? hit.normal : Vector3.zero;
-        bool spawnAboveTop = snow.position.y >= (roofCol.bounds.max.y + spawnLiftFromRoof - 0.0001f);
-        Debug.Log($"[RoofSlideSpawn] b.min={roofCol.bounds.min} b.max={roofCol.bounds.max} spawnPos={snow.position} hit={hitName} hitNormal={hitNormal} spawnAboveTop={spawnAboveTop}");
-        Debug.Log($"[RoofSlideDemo] snowPos={snow.position} camPos={camPos} inView={inView} layer={LayerMask.LayerToName(snow.gameObject.layer)} active={snow.gameObject.activeInHierarchy} renderer={hasRenderer}");
+        // [RoofSlideSpawn] / [RoofSlideDemo] ログ停止（Consoleノイズ削減）
     }
 
     IEnumerator StartOnRoofNoDropVerification(Transform snow, BoxCollider roofCol, Vector3 fixedPos, float seconds)

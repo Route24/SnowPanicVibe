@@ -82,6 +82,7 @@ public static class SnowPanicVideoPipelineSelfTest
     static bool _localMp4Exists;
     static string _driveFileStatus;
     static string _slackMessageStatus;
+    static string _uploadStatus;
     static bool _outputDirWritable;
     static string _latestMp4Path;
     static string _dailyArchivePath;
@@ -867,221 +868,17 @@ public static class SnowPanicVideoPipelineSelfTest
     /// <summary>_latestMp4Path / _localPath から archive → preview → rclone → slack を実行。TryFinalizeFromTemp 後の last-chance 用。</summary>
     static void RunUploadPhaseFromLatest()
     {
-        try
-        {
-            var latestPath = !string.IsNullOrEmpty(_latestMp4Path) ? _latestMp4Path : _mp4Path;
-            if (string.IsNullOrEmpty(latestPath))
-            {
-                AssiLog("step=upload_skip reason=latest_path_empty");
-                _uploadFinished = true;
-                AssiLog("upload_finished=true");
-                return;
-            }
-            var uploadFi = new FileInfo(latestPath);
-            if (!uploadFi.Exists || uploadFi.Length <= 0)
-            {
-                AssiLog("step=upload_skip reason=latest_not_ready exists=" + uploadFi.Exists + " bytes=" + (uploadFi.Exists ? uploadFi.Length : 0));
-                _uploadFinished = true;
-                AssiLog("upload_finished=true");
-                return;
-            }
-            var uploadPath = latestPath;
-            var uploadSize = uploadFi.Length;
-            _uploadStarted = true;
-            AssiLog("upload_started=true");
-            var outDirMp4 = GetOutputDir();
-            var dailyPath = Path.Combine(outDirMp4 ?? "", "snow_test_" + DateTime.Now.ToString("yyyyMMdd") + ".mp4");
-            _dailyArchivePath = Path.GetFullPath(dailyPath);
-            _dailyArchiveCreated = false;
-            try
-            {
-                if (!File.Exists(dailyPath))
-                {
-                    File.Copy(latestPath, dailyPath, overwrite: false);
-                    _dailyArchiveCreated = true;
-                }
-            }
-            catch (Exception ex) { AssiLog("step=archive daily_archive_copy_failed ex=" + (ex.Message ?? "")); }
-            GeneratePreview(latestPath);
-            if (!_previewDoneCalled)
-            {
-                _previewDoneCalled = true;
-                AssiLog("preview_done_called=true (fallback_set)");
-            }
-            long driveSize;
-            string shareLink;
-            if (!RunRcloneCopyAndVerify(uploadPath, uploadSize, Path.GetFileName(uploadPath), out driveSize, out shareLink))
-            {
-                _result = "ERROR";
-                _errorStep = _lastStep == "upload" ? "upload" : "drive_verify";
-                _driveFileStatus = "not_found";
-                _uploadFinished = true;
-                AssiLog("upload_finished=true (rclone_failed)");
-                return;
-            }
-            _drivePath = RcloneRemote + "/" + Path.GetFileName(uploadPath);
-            _driveSizeBytes = driveSize;
-            _driveShareLink = shareLink ?? "";
-            _previewGifDriveLink = "";
-            if (_previewCreated && !string.IsNullOrEmpty(_previewPath) && File.Exists(_previewPath))
-            {
-                var previewFi = new FileInfo(_previewPath);
-                var previewFileName = Path.GetFileName(_previewPath);
-                long previewDriveSize;
-                string previewShareLink;
-                if (RunRcloneCopyAndVerify(_previewPath, previewFi.Length, previewFileName, out previewDriveSize, out previewShareLink))
-                    _previewGifDriveLink = previewShareLink ?? "";
-            }
-            var slackMsg = BuildSlackMessage(result: "SUCCESS", errorStep: "", localPath: uploadPath, localFileSizeBytes: uploadSize, drivePath: _drivePath, driveFileSizeBytes: driveSize, driveShareLink: shareLink, previewGifPath: _previewPath, previewGifDriveLink: _previewGifDriveLink);
-            if (!RunSlackNotify(slackMsg, CurlTimeoutMs))
-            {
-                _slackMessageStatus = "not_posted";
-                _result = "DRIVE_READY";
-                _errorStep = "none";
-            }
-            else
-            {
-                _result = "SUCCESS";
-                _errorStep = "none";
-                _driveFileStatus = "found size_bytes=" + driveSize;
-                _slackMessageStatus = string.IsNullOrEmpty(shareLink) ? "posted" : "posted " + shareLink;
-            }
-            _uploadFinished = true;
-            AssiLog("upload_finished=true");
-        }
-        catch (Exception ex)
-        {
-            AssiLog("step=RunUploadPhaseFromLatest_exception ex=" + (ex.Message ?? "").Replace("\r", " ").Replace("\n", " | "));
-            _previewDoneCalled = true;
-            _uploadFinished = true;
-            AssiLog("preview_done_called=true upload_finished=true (exception_recovery)");
-        }
+        // Drive upload を完全停止
+        AssiLog("step=upload_disabled");
+        _uploadStatus = "DISABLED";
     }
 
     /// <summary>mp4から軽量プレビューを必ず生成。gif→png_sequence→contact_sheet→qlmanage→placeholder。</summary>
     static void GeneratePreview(string mp4Path)
     {
-        _previewPath = "";
-        _previewCreated = false;
-        _previewGifSize = 0;
-        _previewType = "none";
-        _previewSizeBytes = 0;
-        _previewFallbackUsed = false;
-        _gifPath = "";
-        _previewStatus = "PREVIEW_ERROR";
-        if (string.IsNullOrEmpty(mp4Path) || !File.Exists(mp4Path) || new FileInfo(mp4Path).Length <= 0) return;
-        var outDir = Path.GetDirectoryName(mp4Path);
-        var ffmpeg = ResolveFfmpegPath();
-        _ffmpegPathUsed = ffmpeg ?? "";
-        _ffmpegAvailable = !string.IsNullOrEmpty(ffmpeg);
-        // 復旧: 常に snow_test_latest.gif に出力。2026-03 の session 別パス変更で下流が壊れたため元に戻す。
-        var gifOutPath = Path.Combine(outDir, "snow_test_latest.gif");
-        var stripPath = Path.Combine(outDir, "preview_strip.png");
-        _previewStartCalled = true;
-        AssiLog("preview_start ffmpeg_path=" + (_ffmpegPathUsed ?? "(none)") + " ffmpeg_available=" + _ffmpegAvailable.ToString().ToLower());
-
-        if (_ffmpegAvailable)
-        {
-            try
-            {
-                var gifCmd = "\"" + ffmpeg + "\" -i \"" + mp4Path + "\" -vf \"fps=10,scale=640:-1:flags=lanczos\" -t 5 -loop 0 -y \"" + gifOutPath + "\" 2>&1";
-                int exitCode;
-                RunZshWithExitCode(gifCmd, FfmpegTimeoutMs, out exitCode);
-                var gifExistsAfter = File.Exists(gifOutPath);
-                var gifSizeAfter = gifExistsAfter ? new FileInfo(gifOutPath).Length : 0L;
-                AssiLog("preview_gif_result exitCode=" + exitCode + " gifExists=" + gifExistsAfter + " gifSize=" + gifSizeAfter + " path=" + gifOutPath);
-                if (exitCode == 0 && gifExistsAfter && gifSizeAfter > 0)
-                {
-                    SetPreviewResult(gifOutPath, "gif", gifSizeAfter);
-                    _gifPath = Path.GetFullPath(gifOutPath);
-                    _previewGifSize = gifSizeAfter;
-                    _previewStatus = "PREVIEW_READY";
-                    _previewDoneCalled = true;
-                    AssiLog("preview_done preview_type=gif gif_path=" + _gifPath + " gif_exists=true gif_size_bytes=" + _previewGifSize + " preview_fallback_used=false");
-                    return;
-                }
-                _previewErrorReason = "ffmpeg_exit=" + exitCode + " fileExists=" + gifExistsAfter + " fileSize=" + gifSizeAfter;
-                AssiLog("preview_gif_skipped reason=" + _previewErrorReason);
-            }
-            catch (Exception ex) { _previewErrorReason = "gif_ex=" + (ex.Message ?? ""); AssiLog("preview_gif_failed ex=" + (ex.Message ?? "")); }
-        }
-        else
-        {
-            _previewErrorReason = "ffmpeg_not_found";
-            AssiLog("preview_gif_skipped ffmpeg_not_found");
-        }
-
-        _previewFallbackUsed = true;
-        if (_ffmpegAvailable)
-        {
-            try
-            {
-                var framesDir = Path.Combine(outDir, "preview_frames");
-                if (!Directory.Exists(framesDir)) Directory.CreateDirectory(framesDir);
-                var pngPattern = Path.Combine(framesDir, "frame_%04d.png");
-                var pngCmd = "\"" + ffmpeg + "\" -i \"" + mp4Path + "\" -vf \"fps=2,scale=320:-1\" -t 5 \"" + pngPattern + "\" 2>&1";
-                int exitCode;
-                RunZshWithExitCode(pngCmd, FfmpegTimeoutMs, out exitCode);
-                if (TryCreateContactSheet(framesDir, stripPath))
-                {
-                    var fi = new FileInfo(stripPath);
-                    SetPreviewResult(stripPath, "contact_sheet", fi.Length);
-                    _previewStatus = "PREVIEW_FALLBACK_READY";
-                    _previewDoneCalled = true;
-                    AssiLog("preview_done preview_type=contact_sheet gif_path= gif_exists=false gif_size_bytes=0 preview_fallback_used=true");
-                    return;
-                }
-            }
-            catch (Exception ex) { _previewErrorReason = "contact_sheet_ex=" + (ex.Message ?? ""); AssiLog("preview_contact_failed ex=" + (ex.Message ?? "")); }
-        }
-
-        if (Application.platform == RuntimePlatform.OSXEditor)
-        {
-            try
-            {
-                var qlDir = Path.Combine(Path.GetTempPath(), "vp_ql_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-                Directory.CreateDirectory(qlDir);
-                var qlCmd = "qlmanage -t -s 640 -o \"" + qlDir.Replace("\"", "\\\"") + "\" \"" + mp4Path.Replace("\"", "\\\"") + "\" 2>/dev/null";
-                int exitCode;
-                RunZshWithExitCode(qlCmd, 10000, out exitCode);
-                var qlPng = Directory.GetFiles(qlDir, "*.png").FirstOrDefault();
-                if (!string.IsNullOrEmpty(qlPng) && new FileInfo(qlPng).Length > 0)
-                {
-                    File.Copy(qlPng, stripPath, overwrite: true);
-                    var fi = new FileInfo(stripPath);
-                    SetPreviewResult(stripPath, "contact_sheet", fi.Length);
-                    try { Directory.Delete(qlDir, true); } catch { }
-                    _previewStatus = "PREVIEW_FALLBACK_READY";
-                    _previewDoneCalled = true;
-                    AssiLog("preview_done preview_type=contact_sheet gif_path= gif_exists=false preview_fallback_used=true (qlmanage)");
-                    return;
-                }
-                try { Directory.Delete(qlDir, true); } catch { }
-            }
-            catch (Exception ex) { _previewErrorReason = "qlmanage_ex=" + (ex.Message ?? ""); AssiLog("preview_qlmanage_failed ex=" + (ex.Message ?? "")); }
-        }
-
-        try
-        {
-            if (CreatePlaceholderPreview(stripPath))
-            {
-                var fi = new FileInfo(stripPath);
-                SetPreviewResult(stripPath, "placeholder", fi.Length);
-                _previewStatus = "PREVIEW_FALLBACK_READY";
-                _previewDoneCalled = true;
-                AssiLog("preview_done preview_type=placeholder preview_fallback_used=true");
-            }
-            else
-            {
-                _previewErrorReason = "placeholder_failed";
-                AssiLog("preview_final preview_status=PREVIEW_ERROR");
-            }
-        }
-        catch (Exception ex) { _previewErrorReason = "placeholder_ex=" + (ex.Message ?? ""); AssiLog("preview_placeholder_failed ex=" + (ex.Message ?? "")); }
-        if (string.IsNullOrEmpty(_previewErrorReason) && _previewStatus != "PREVIEW_READY" && _previewStatus != "PREVIEW_FALLBACK_READY")
-            _previewErrorReason = "all_fallbacks_failed";
-        _previewDoneCalled = true;
-        AssiLog("preview_done_called=true preview_error_reason=" + (_previewErrorReason ?? "none") + " preview_status=" + (_previewStatus ?? "?"));
+        // Preview/GIF 生成を完全停止
+        AssiLog("step=preview_disabled");
+        return;
     }
 
     static void SetPreviewResult(string path, string type, long sizeBytes)
@@ -1350,25 +1147,10 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static bool RunSlackNotify(string text, int timeoutMs)
     {
-        _slackError = "";
-        var webhook = ReadWebhookUrl();
-        if (string.IsNullOrEmpty(webhook)) { AssiLog("SLACK_SKIP no webhook"); _slackError = "no_webhook"; return true; }
-        _lastStep = "slack";
-        AssiLog("step=slack_post");
-        var payload = "{\"text\":\"" + text.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n") + "\"}";
-        var tmp = Path.Combine(Path.GetTempPath(), "slack_vp_" + Guid.NewGuid().ToString("N") + ".json");
-        File.WriteAllText(tmp, payload);
-        var out_ = RunZsh("curl -s -w \"\\n%{http_code}\" -X POST -H 'Content-Type: application/json' -d '@" + tmp + "' '" + webhook.Replace("'", "'\\''") + "'", timeoutMs);
-        try { File.Delete(tmp); } catch { }
-        bool ok = out_.Contains("200") || out_.TrimEnd().EndsWith("200") || out_.Contains("ok");
-        if (!ok)
-        {
-            var err = out_.Length > 300 ? out_.Substring(0, 300) + "..." : out_;
-            _slackError = "curl_failed " + err.Replace("\r", " ").Replace("\n", " | ").Trim();
-            AssiLog("SLACK_RESPONSE " + err);
-        }
-        AssiLog(ok ? "SLACK_DONE" : "SLACK_ERROR");
-        return ok;
+        // Slack 送信を完全停止
+        _slackMessageStatus = "not_posted";
+        AssiLog("SLACK_DISABLED");
+        return true;
     }
 
     [MenuItem("SnowPanic/Self Test", false, 1)]
@@ -2674,153 +2456,10 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void StartRecordingThisSession()
     {
+        // Video 録画を完全停止
+        AssiLog("step=recording_disabled");
         _recorderStartOk = false;
-        _recorderStopRequested = false;
-        _lastRecorderException = null;
-        AssiLog("step=recorder_start_begin");
-        try
-        {
-            var outputDir = ResolveOutputDir();
-            if (string.IsNullOrEmpty(outputDir))
-            {
-                string sid, tmp, od;
-                if (TryReadSessionActive(out sid, out tmp, out od) && !string.IsNullOrEmpty(od))
-                    outputDir = od;
-            }
-            if (string.IsNullOrEmpty(outputDir))
-            {
-                AssiLog("step=recorder_start_exception reason=outputDir_resolve_failed_in_play dataPath=" + (Application.dataPath ?? "(null)") + " currentDir=" + (Environment.CurrentDirectory ?? "(null)"));
-                UnityEngine.Debug.LogError("[VideoPipeline] StartRecordingThisSession outputDir FAILED");
-                _result = "ERROR";
-                _errorStep = "outputDir_resolve_failed";
-                return;
-            }
-            UnityEngine.Debug.Log("[VideoPipeline] StartRecordingThisSession outputDir=" + outputDir);
-            if (string.IsNullOrEmpty(_outputPathBase) || string.IsNullOrEmpty(_sessionId))
-            {
-                string sid, tmp;
-                if (TryReadSessionActive(out sid, out tmp))
-                {
-                    _sessionId = sid;
-                    _tempMp4Path = tmp;
-                }
-                _outputPathBase = Path.Combine(outputDir, "snow_test_tmp_" + (_sessionId ?? "unknown"));
-                _tempMp4Path = Path.GetFullPath(_outputPathBase + ".mp4");
-                _mp4Path = Path.GetFullPath(Path.Combine(outputDir, "snow_test_latest.mp4"));
-            }
-            _lastStep = "recorder_start";
-            AssiLog("step=recorder_start outputDir=" + outputDir + " expectedMp4Path=" + (_mp4Path ?? "") + " implementation=Unity Recorder MovieRecorder");
-
-            try
-            {
-                Directory.CreateDirectory(outputDir);
-            }
-            catch (Exception ex)
-            {
-                AssiLog("step=recorder_start_exception reason=outputDir_create_failed path=" + outputDir + " ex=" + (ex.Message ?? "") + " type=" + ex.GetType().Name);
-                throw;
-            }
-
-            var dirExists = Directory.Exists(outputDir);
-            var writable = false;
-            Exception writableEx = null;
-            if (dirExists)
-            {
-                try
-                {
-                    var testPath = Path.Combine(outputDir, ".vp_write_test_" + Guid.NewGuid().ToString("N").Substring(0, 8));
-                    File.WriteAllText(testPath, "");
-                    writable = true;
-                    File.Delete(testPath);
-                }
-                catch (Exception ex) { writableEx = ex; AssiLog("step=recorder_start outputDirWritable_failed op=write_test ex=" + (ex.Message ?? "") + " type=" + ex.GetType().Name + " stacktrace=" + (ex.StackTrace ?? "").Replace("\r", " ").Replace("\n", " | ")); }
-            }
-            _outputDirWritable = writable;
-            AssiLog("step=recorder_start outputDir=" + outputDir + " outputDirExists=" + dirExists + " outputDirWritable=" + writable + (writableEx != null ? " writableEx=" + writableEx.Message : ""));
-
-            _controllerSettings = ScriptableObject.CreateInstance<RecorderControllerSettings>();
-            _controllerSettings.SetRecordModeToTimeInterval(0f, RecordDurationSeconds);
-            _controllerSettings.FrameRate = FrameRate;
-            _controllerSettings.CapFrameRate = true;
-            _controllerSettings.ExitPlayMode = false;
-
-            _movieSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
-            _movieSettings.name = "VideoPipeline SelfTest";
-            _movieSettings.Enabled = true;
-            var tempPath = Path.GetFullPath(Path.Combine(outputDir, "snow_test_tmp_" + (_sessionId ?? "unknown") + ".mp4"));
-            _tempMp4Path = tempPath;
-            _movieSettings.OutputFile = Path.GetFullPath(Path.Combine(outputDir, "snow_test_tmp_" + (_sessionId ?? "unknown")));
-            AssiLog("step=recorder_start OutputFile=" + _movieSettings.OutputFile + " tempPath=" + tempPath);
-            _movieSettings.CaptureAlpha = false;
-            _movieSettings.CaptureAudio = false;
-            _movieSettings.ImageInputSettings = new GameViewInputSettings { OutputWidth = RecWidth, OutputHeight = RecHeight };
-            _movieSettings.EncoderSettings = new CoreEncoderSettings { EncodingQuality = CoreEncoderSettings.VideoEncodingQuality.High, Codec = CoreEncoderSettings.OutputCodec.MP4 };
-
-            _controllerSettings.AddRecorderSettings(_movieSettings);
-            _controller = new RecorderController(_controllerSettings);
-            AssiLog("step=recorder_controller_created controller=" + (_controller != null) + " settings=" + (_controllerSettings != null));
-
-            var prepared = false;
-            try
-            {
-                _controller.PrepareRecording();
-                prepared = true;
-                AssiLog("step=recorder_prepare_done controller=" + (_controller != null));
-            }
-            catch (Exception ex)
-            {
-                AssiLog("step=recorder_prepare_exception ex=" + (ex.Message ?? "") + " type=" + ex.GetType().Name);
-                throw;
-            }
-            var started = false;
-            try
-            {
-                started = _controller.StartRecording();
-                AssiLog("step=recorder_start_done started=" + started + " controller=" + (_controller != null) + " isRecording=" + (_controller != null && _controller.IsRecording()));
-            }
-            catch (Exception ex)
-            {
-                AssiLog("step=recorder_start_exception ex=" + (ex.Message ?? "") + " type=" + ex.GetType().Name);
-                throw;
-            }
-            if (!started)
-            {
-                _result = "ERROR";
-                _errorStep = "recorder_start_failed";
-                _lastRecorderException = "StartRecording() returned false";
-                _lastRecorderExceptionMessage = "StartRecording() returned false";
-                _lastRecorderExceptionStackTrace = "";
-                AssiLog("step=recorder_start_exception reason=StartRecording_returned_false");
-                _state = State.Done;
-                RunExitRoutine(timedOut: false);
-                EditorApplication.ExitPlaymode();
-                return;
-            }
-            AssiLog("step=recorder_start_ok StartRecording_returned_true");
-            _recorderStartOk = true;
-            _startHookCalled = true;
-            _recordingStartedAt = DateTime.Now;
-            VideoPipelineStopRequestor.RequestStop = false;
-            VideoPipelineStopRequestor.RecordingStartedRealtime = 0f;
-            AssiLog("step=recorder_start expectedMp4Path=" + _mp4Path + " manual_stop_only=true");
-            ScheduleForceStopTimer();
-            ScheduleTempPathEarlyCheck();
-            // ScheduleRecorderOutputCheck 無効化: RecorderはStop時にファイル書き込みするため、録画中にmp4を探すのは誤り
-        }
-        catch (Exception ex)
-        {
-            _result = "ERROR";
-            _errorStep = "recorder_start_failed";
-            _lastRecorderException = ex.ToString();
-            _lastRecorderExceptionMessage = ex.Message ?? "";
-            _lastRecorderExceptionStackTrace = ex.StackTrace ?? "";
-            AssiLog("step=recorder_start_exception ex=" + ex.GetType().FullName + " msg=" + (ex.Message ?? "").Replace("\r", " ").Replace("\n", " | "));
-            AssiLog("step=recorder_start_exception stacktrace=" + (ex.StackTrace ?? "").Replace("\r", " ").Replace("\n", " | "));
-            AssiLog("step=recorder_start_exception toString=" + ex.ToString().Replace("\r", " ").Replace("\n", " | "));
-            _state = State.Done;
-            RunExitRoutine(timedOut: false);
-            EditorApplication.ExitPlaymode();
-        }
+        return;
     }
 
     /// <summary>EditorApplication.delayCall で10秒後に必ず Stop を呼ぶ。ManualStopOnly のときはスキップ。</summary>

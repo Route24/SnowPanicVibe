@@ -24,10 +24,18 @@ public class SnowLoopLogCapture : MonoBehaviour
     static bool _assiDiagnostic2sEmitted;
 
     /// <summary>ログCapture未配置でも必ず動く。BeforeSceneLoadで最優先生成。VideoPipeline SelfTest中は雪系を無効化。</summary>
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
         if (_instance != null) return;
+
+        // SnowVisibilityLab ではデバッグシステムを一切起動しない
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowVisibilityLab")
+        {
+            UnityEngine.Debug.Log("[SnowLoopLogCapture] SnowVisibilityLab: dev systems skipped.");
+            return;
+        }
+
         var go = new GameObject("SnowLoopLogCapture");
         DontDestroyOnLoad(go);
         _instance = go.AddComponent<SnowLoopLogCapture>();
