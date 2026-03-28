@@ -952,12 +952,10 @@ public static class SnowLoopNoaReportAutoCopy
                     string content =
                         $"timestamp={System.DateTime.Now:yyyy-MM-ddTHH:mm:ss}\n" +
                         "compile_result=PASS\n" +
-                        "report_mode=MINIMAL_ONLY\n" +
-                        "old_sections_disabled=YES\n" +
-                        "output_mode=OVERWRITE\n" +
-                        "output_line_count=7\n" +
-                        "edited_files=SnowLoopNoaReportAutoCopy.cs\n" +
-                        "result=PASS\n";
+                        "capture_source=OldMp4(not_play_view)\n" +
+                        "play_view_match=NO\n" +
+                        "gif_export_disabled=YES\n" +
+                        "edited_files=ClickCheckGifExporter.cs,SnowLoopNoaReportAutoCopy.cs\n";
                     File.WriteAllText(ReportPath, content);
                     EditorApplication.delayCall += () => AssiReportWindow.OpenAndShowReport();
                 }

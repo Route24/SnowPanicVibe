@@ -15,7 +15,7 @@ public class SimpleCubeSpawner : MonoBehaviour
         var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
         mat.color = Color.cyan;
         _cube.GetComponent<Renderer>().sharedMaterial = mat;
-        // コライダーはそのまま残す（クリック判定用）
+        // コライダーはそのまま残す（クリック判定用）— TASK3B v3
     }
 
     void Update()

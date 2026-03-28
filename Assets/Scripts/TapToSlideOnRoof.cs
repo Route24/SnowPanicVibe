@@ -209,28 +209,7 @@ public class TapToSlideOnRoof : MonoBehaviour
 
     IEnumerator ShowHitGizmo(Vector3 worldPos)
     {
-        GameObject go = null;
-        try
-        {
-            go = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            if (go == null) yield break;
-            go.name = "TapHitGizmo";
-            var col = go.GetComponent<Collider>();
-            if (col != null) col.enabled = false;
-            go.transform.position = worldPos;
-            go.transform.localScale = Vector3.one * (hitGizmoRadius * 2f);
-            var r = go.GetComponent<Renderer>();
-            if (r != null)
-            {
-                var mat = r.material;
-                if (mat != null) MaterialColorHelper.SetColorSafe(mat, Color.red);
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogWarning($"[ShowHitGizmo] gizmo color failed (non-fatal): {ex.Message}");
-        }
-        yield return new WaitForSeconds(hitGizmoDuration);
-        if (go != null) Object.Destroy(go);
+        // TASK3C: 赤デバッグSphere 生成を停止
+        yield break;
     }
 }

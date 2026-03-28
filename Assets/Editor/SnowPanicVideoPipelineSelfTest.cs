@@ -876,9 +876,6 @@ public static class SnowPanicVideoPipelineSelfTest
     /// <summary>mp4から軽量プレビューを必ず生成。gif→png_sequence→contact_sheet→qlmanage→placeholder。</summary>
     static void GeneratePreview(string mp4Path)
     {
-        // Preview/GIF 生成を完全停止
-        AssiLog("step=preview_disabled");
-        return;
     }
 
     static void SetPreviewResult(string path, string type, long sizeBytes)
@@ -1735,8 +1732,8 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
-        // SnowVisibilityLab では録画・Drive・Slack を完全停止
-        if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
+        // SnowVisibilityLab では録画・Drive・Slack を完全停止（RCV2: 解除）
+        // if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
 
         // 通常Play: ExitingEditMode(Play開始直前)でマーカー削除。古いsession混入防止のため_sessionIdもクリア。
         if (state == PlayModeStateChange.ExitingEditMode && !AutoRecordOnPlay)
@@ -2456,10 +2453,6 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void StartRecordingThisSession()
     {
-        // Video 録画を完全停止
-        AssiLog("step=recording_disabled");
-        _recorderStartOk = false;
-        return;
     }
 
     /// <summary>EditorApplication.delayCall で10秒後に必ず Stop を呼ぶ。ManualStopOnly のときはスキップ。</summary>
