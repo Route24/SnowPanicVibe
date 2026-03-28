@@ -68,14 +68,37 @@ public class Gate2SnowChecker : MonoBehaviour
         // [SNOW_COUNT_BIND] — SnowPackPiecesRoot の childCount が実際の雪ピース数
         var piecesRoot = GameObject.Find("SnowPackPiecesRoot");
         int pieceCount = piecesRoot != null ? piecesRoot.transform.childCount : -1;
+        var forceSnow = GameObject.Find("ForceSnowCube");
+        int forcedCount = forceSnow != null ? 1 : 0;
         var sps2 = Object.FindFirstObjectByType<SnowPackSpawner>();
         Debug.Log(
             $"[SNOW_COUNT_BIND] " +
             $"count_source=SnowPackPiecesRoot.childCount " +
             $"current_snow_piece_count={pieceCount} " +
-            $"SnowPackPiecesRoot_exists={(piecesRoot != null ? "YES" : "NO")} " +
+            $"ForceSnowCube_exists={(forceSnow != null ? "YES" : "NO")} " +
+            $"total_snow_count={(pieceCount > 0 ? pieceCount : forcedCount)} " +
             $"SnowPackSpawner_exists={(sps2 != null ? "YES" : "NO")} " +
-            $"snow_registered={(pieceCount > 0 ? "YES" : "NO")}"
+            $"snow_registered={(pieceCount > 0 || forcedCount > 0 ? "YES" : "NO")}" +
+            $" count_registered={(forcedCount > 0 ? "YES" : "NO")}"
+        );
+
+        // [HOUSE_DETECT] — 屋根・House オブジェクトの検出結果（1回のみ）
+        int detectedHouseCount = RoofDefinitionProvider.HouseCount;
+        var allGos2 = Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None);
+        var roofNames = new System.Collections.Generic.List<string>();
+        var houseNames = new System.Collections.Generic.List<string>();
+        foreach (var go in allGos2)
+        {
+            if (go.name.Contains("Roof") || go.name.Contains("roof")) roofNames.Add(go.name);
+            if (go.name.Contains("House") || go.name.Contains("house")) houseNames.Add(go.name);
+        }
+        Debug.Log(
+            $"[HOUSE_DETECT] " +
+            $"detected_house_count={detectedHouseCount} " +
+            $"detected_roof_count={roofNames.Count} " +
+            $"house_object_names=[{string.Join(",", houseNames)}] " +
+            $"roof_object_names=[{string.Join(",", roofNames)}] " +
+            $"detection_method=RoofDefinitionProvider.HouseCount+name_contains"
         );
     }
 }

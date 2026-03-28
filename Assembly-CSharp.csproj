@@ -74,6 +74,7 @@
     <Compile Include="Assets/Scripts/DebugGloveOnly.cs" />
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
     <Compile Include="Assets/Scripts/SnowMvpBootstrap.cs" />
+    <Compile Include="Assets/Scripts/SimpleCubeSpawner.cs" />
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
     <Compile Include="Assets/Scripts/Gate2SnowChecker.cs" />
@@ -81,6 +82,7 @@
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB2.cs" />
     <Compile Include="Assets/Scripts/Debug/SnowDebugOverlay.cs" />
     <Compile Include="Assets/Scripts/RunResultUI.cs" />
+    <Compile Include="Assets/Scripts/RoofSnowPrototypeSpawner.cs" />
     <Compile Include="Assets/Scripts/RoofAlignToSnow.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestor.cs" />
     <Compile Include="Assets/Scripts/BugOriginTracker.cs" />
@@ -100,6 +102,7 @@
     <Compile Include="Assets/Scripts/RollbackVerification.cs" />
     <Compile Include="Assets/Scripts/SnowVisual.cs" />
     <Compile Include="Assets/Scripts/ScoreUiCheckEmitter.cs" />
+    <Compile Include="Assets/Scripts/ForceSnowOnRoof.cs" />
     <Compile Include="Assets/Scripts/SnowVisibilityChecker.cs" />
     <Compile Include="Assets/Scripts/AssiLogger.cs" />
     <Compile Include="Assets/Scripts/GroundPipeFix.cs" />

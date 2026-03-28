@@ -222,6 +222,7 @@ public class SnowPackSpawner : MonoBehaviour
         if (!Application.isPlaying) return;
         if (roofCollider == null) roofCollider = ResolveRoofCollider();
         EnsureRoot();
+        StartCoroutine(ForceSpawnFallback());
     }
 
     void OnEnable()
@@ -246,6 +247,23 @@ public class SnowPackSpawner : MonoBehaviour
         _generatedThisPlay = true;
         LogSnowPackCall("REBUILD", "Start");
         RebuildSnowPack("RebuildOnPlay");
+    }
+
+    // フォールバック: Start から 0.5 秒後に未生成なら強制スポーン
+    System.Collections.IEnumerator ForceSpawnFallback()
+    {
+        yield return new WaitForSeconds(0.5f);
+        if (_piecesRoot == null || _piecesRoot.childCount == 0)
+        {
+            UnityEngine.Debug.Log("[FORCE_SPAWN] fallback triggered piecesRoot.childCount=0 calling RebuildSnowPack");
+            _generatedThisPlay = false;
+            _generatedThisPlay = true;
+            RebuildSnowPack("ForceFallback");
+        }
+        else
+        {
+            UnityEngine.Debug.Log($"[FORCE_SPAWN] fallback skipped piecesRoot.childCount={_piecesRoot.childCount}");
+        }
     }
 
     [ContextMenu("Rebuild Snow Pack")]
