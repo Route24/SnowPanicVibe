@@ -23,39 +23,7 @@ public class ForceSnowOnRoof : MonoBehaviour
 
     void Start()
     {
-        if (roofTransform == null)
-        {
-            var rq = GameObject.Find("RoofQuad");
-            if (rq != null) roofTransform = rq.transform;
-        }
-        if (roofSnowSystem == null)
-            roofSnowSystem = Object.FindFirstObjectByType<RoofSnowSystem>();
-        if (roofTransform != null)
-            _roofCollider = roofTransform.GetComponent<BoxCollider>();
-
-        if (roofTransform == null)
-        {
-            Debug.LogWarning("[ForceSnowOnRoof] roofTransform not found. Skip.");
-            return;
-        }
-
-        // 既存の ForceSnowCube（YAML 配置分）を探して使う
-        var existing = roofTransform.Find("ForceSnowCube");
-        if (existing != null)
-            _snowGo = existing.gameObject;
-        else
-            SpawnSnow();
-
-        ApplyThickness();
-
-        float thickness = roofSnowSystem != null ? roofSnowSystem.roofSnowConstantThickness : snowThickness;
-        Debug.Log($"[ForceSnowOnRoof] temp_snow_object_name={(_snowGo != null ? _snowGo.name : "NULL")} " +
-                  $"temp_snow_on_roof=YES " +
-                  $"thickness_source={(roofSnowSystem != null ? "RoofSnowSystem.roofSnowConstantThickness" : "fallback")} " +
-                  $"thickness_value={thickness:F3} " +
-                  $"thickness_linked={(roofSnowSystem != null ? "YES" : "NO")} " +
-                  $"click_collider={((_roofCollider != null) ? "YES" : "NO")} " +
-                  $"count_registered=YES");
+        // TASK3B: 白い代用オブジェクト生成を一時停止
     }
 
     void ApplyThickness()

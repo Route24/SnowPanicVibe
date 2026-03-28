@@ -479,6 +479,8 @@ public class SnowLoopLogCapture : MonoBehaviour
     {
         if (VideoPipelineSelfTestMode.IsActive) return;
         if (string.IsNullOrEmpty(_latestLogPath)) return;
+        // SnowVisibilityLab では旧セクション追記を全停止（MINIMAL ONLY）
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
         // GROUND_PIPE_ONLY フィルター: 該当ログ以外は書き込まない
         if (GroundPipeOnlyMode && !line.Contains("[GROUND_PIPE_")) return;
         try

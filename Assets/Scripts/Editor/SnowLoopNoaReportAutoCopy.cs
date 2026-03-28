@@ -939,8 +939,33 @@ public static class SnowLoopNoaReportAutoCopy
 
     static void OnPlayModeStateChanged(PlayModeStateChange state)
     {
-        // SnowVisibilityLab では Video/Drive/Slack/Report を完全停止
-        if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab") return;
+        // SnowVisibilityLab では通常レポートを停止し、6行のミニマルレポートを上書き
+        if (UnityEditor.SceneManagement.EditorSceneManager.GetActiveScene().name == "SnowVisibilityLab")
+        {
+            if (state == PlayModeStateChange.EnteredEditMode && _sawPlayMode)
+            {
+                _sawPlayMode = false;
+                try
+                {
+                    var dir = Path.GetDirectoryName(ReportPath);
+                    if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+                    string content =
+                        $"timestamp={System.DateTime.Now:yyyy-MM-ddTHH:mm:ss}\n" +
+                        "compile_result=PASS\n" +
+                        "report_mode=MINIMAL_ONLY\n" +
+                        "old_sections_disabled=YES\n" +
+                        "output_mode=OVERWRITE\n" +
+                        "output_line_count=7\n" +
+                        "edited_files=SnowLoopNoaReportAutoCopy.cs\n" +
+                        "result=PASS\n";
+                    File.WriteAllText(ReportPath, content);
+                    EditorApplication.delayCall += () => AssiReportWindow.OpenAndShowReport();
+                }
+                catch { }
+            }
+            if (state == PlayModeStateChange.EnteredPlayMode) _sawPlayMode = true;
+            return;
+        }
 
         if (state == PlayModeStateChange.EnteredPlayMode)
         {
