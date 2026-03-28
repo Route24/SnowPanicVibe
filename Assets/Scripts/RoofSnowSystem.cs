@@ -610,9 +610,11 @@ public class RoofSnowSystem : MonoBehaviour
 
         var mf = go.AddComponent<MeshFilter>();
         var mr = go.AddComponent<MeshRenderer>();
-        // BuildSnowSurfaceMesh を設定
+        // BuildSnowSurfaceMesh を設定（台形比率を JSON から読み込んで渡す）
         int seed = gameObject.GetInstanceID() & 0xFFFF;
-        if (_mySnowSurfaceMesh == null) _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed);
+        // 台形メッシュ再生成を保証するためキャッシュを強制クリア
+        _mySnowSurfaceMesh = null;
+        _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed, LoadTrapTopWidthRatio());
         if (_mySnowSurfaceMesh != null) mf.sharedMesh = _mySnowSurfaceMesh;
         // シンプルな白い雪マテリアルを適用
         ApplySimpleSnowMaterial(mr);
@@ -735,7 +737,9 @@ public class RoofSnowSystem : MonoBehaviour
 
         // 屋根ごとにシードを変えてバラつきを出す
         int seed = gameObject.GetInstanceID() & 0xFFFF;
-        if (_mySnowSurfaceMesh == null) _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed);
+        // 台形メッシュ再生成を保証するためキャッシュを強制クリア
+        _mySnowSurfaceMesh = null;
+        _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed, LoadTrapTopWidthRatio());
         if (_mySnowSurfaceMesh != null) mf.sharedMesh = _mySnowSurfaceMesh;
         // マテリアルも確実に白い雪に設定
         var rend = layer.GetComponent<Renderer>();
@@ -810,12 +814,76 @@ public class RoofSnowSystem : MonoBehaviour
     /// - 厚み：屋根勾配に沿って後ろ薄・前厚
     /// - 屋根ごとにランダムシードで形状バラつき
     /// </summary>
-    Mesh BuildSnowSurfaceMesh(int seed)
+    /// RoofCalibrationData.json から台形の上辺幅/下辺幅比率を読み込む。
+    /// 取得できない場合は 0.78f（実測デフォルト）を返す。
+    float LoadTrapTopWidthRatio()
+    {
+        const float kDefault = 0.78f;
+        try
+        {
+            var ta = Resources.Load<TextAsset>("RoofCalibrationData");
+            string json = ta != null ? ta.text : null;
+            if (json == null)
+            {
+                // Resources フォルダ外の場合は Application.dataPath から直接読む
+                string path = System.IO.Path.Combine(Application.dataPath, "Art/RoofCalibrationData.json");
+                if (System.IO.File.Exists(path))
+                    json = System.IO.File.ReadAllText(path);
+            }
+            if (json == null) return kDefault;
+
+            // 簡易 JSON パース（JsonUtility では nested が難しいため手動抽出）
+            float topW  = ExtractJsonFloat(json, "\"topLeft\"",    "\"topRight\"");
+            float botW  = ExtractJsonFloat(json, "\"bottomLeft\"", "\"bottomRight\"");
+            if (botW <= 0.001f) return kDefault;
+            float ratio = topW / botW;
+            ratio = Mathf.Clamp(ratio, 0.5f, 0.99f);
+            Debug.Log($"[ROOF_MESH_TRAPEZOID] loaded topWidthRatio={ratio:F3} topW={topW:F4} botW={botW:F4}");
+            return ratio;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogWarning($"[ROOF_MESH_TRAPEZOID] LoadTrapTopWidthRatio fallback: {e.Message}");
+            return kDefault;
+        }
+    }
+
+    /// JSON 文字列から "leftKey" と "rightKey" の x 値の差を返す（幅を計算）
+    float ExtractJsonFloat(string json, string leftKey, string rightKey)
+    {
+        float GetX(string key)
+        {
+            int ki = json.IndexOf(key, System.StringComparison.Ordinal);
+            if (ki < 0) return -1f;
+            int xi = json.IndexOf("\"x\"", ki, System.StringComparison.Ordinal);
+            if (xi < 0) return -1f;
+            int colon = json.IndexOf(':', xi);
+            if (colon < 0) return -1f;
+            int end = json.IndexOfAny(new char[] { ',', '}', '\n' }, colon + 1);
+            string numStr = (end >= 0 ? json.Substring(colon + 1, end - colon - 1) : json.Substring(colon + 1)).Trim();
+            return float.TryParse(numStr, System.Globalization.NumberStyles.Float,
+                                  System.Globalization.CultureInfo.InvariantCulture, out float v) ? v : -1f;
+        }
+        float lx = GetX(leftKey);
+        float rx = GetX(rightKey);
+        if (lx < 0 || rx < 0) return -1f;
+        return Mathf.Abs(rx - lx);
+    }
+
+    Mesh BuildSnowSurfaceMesh(int seed, float topWidthRatio = 0.78f)
     {
         const int subdivX = MAP_W;
         const int subdivZ = MAP_H;
         float invX = 1f / subdivX;
         float invZ = 1f / subdivZ;
+
+        // 台形パラメータ：
+        //   iz=0 (後ろ=峰側) の X幅 = topWidthRatio * 1.0 (-topWidthRatio/2 〜 +topWidthRatio/2)
+        //   iz=subdivZ (前=軒先側) の X幅 = 1.0 (-0.5 〜 +0.5)
+        // ローカル座標は [-0.5, +0.5] に正規化しているので、
+        // 全体スケールは localScale.x が屋根幅に対応する。
+        // 台形は「上辺がトップ比率分だけ狭い」形。
+        // iz=0 が峰側（上辺）、iz=subdivZ が軒先側（下辺）。
 
         var allVerts = new System.Collections.Generic.List<Vector3>();
         var allUvs   = new System.Collections.Generic.List<Vector2>();
@@ -825,10 +893,16 @@ public class RoofSnowSystem : MonoBehaviour
         int topBase = allVerts.Count;
         for (int iz = 0; iz <= subdivZ; iz++)
         {
+            // 行ごとの X 半幅：iz=0（峰）=topWidthRatio/2、iz=subdivZ（軒先）=0.5
+            float t01_z   = iz * invZ;           // 0=峰, 1=軒先
+            float halfW   = Mathf.Lerp(topWidthRatio * 0.5f, 0.5f, t01_z);
+            float z       = iz * invZ - 0.5f;
+
             for (int ix = 0; ix <= subdivX; ix++)
             {
-                float x = ix * invX - 0.5f;
-                float z = iz * invZ - 0.5f;
+                // x は [-halfW, +halfW] の範囲で均等分割
+                float xNorm = ix * invX;         // 0〜1
+                float x     = Mathf.Lerp(-halfW, halfW, xNorm);
 
                 // 表面うねり（粗め＋細かめ）
                 float n1 = Mathf.PerlinNoise(ix * 0.08f + seed * 0.3f, iz * 0.08f + seed * 0.1f);
@@ -840,20 +914,19 @@ public class RoofSnowSystem : MonoBehaviour
                 float centerBump = 0.06f * Mathf.Max(0f, 1f - (cx * cx * 0.8f + cz * cz));
 
                 // 厚み：後ろ（z=-0.5）薄く、前（z=+0.5）厚く（屋根勾配に沿う）
-                float t01 = iz * invZ; // 0=後ろ 1=前
-                float thickness = Mathf.Lerp(0.35f, 0.55f, t01);
+                float thickness = Mathf.Lerp(0.35f, 0.55f, t01_z);
 
                 // 前縁の垂れ（z=+0.5 付近で y が下がる）
                 float frontDroop = 0f;
-                if (t01 > 0.75f)
+                if (t01_z > 0.75f)
                 {
-                    float droop01 = (t01 - 0.75f) / 0.25f;
+                    float droop01 = (t01_z - 0.75f) / 0.25f;
                     frontDroop = droop01 * droop01 * 0.18f;
                 }
 
                 float y = thickness + bump + centerBump - frontDroop;
                 allVerts.Add(new Vector3(x, y, z));
-                allUvs.Add(new Vector2(ix * invX, iz * invZ));
+                allUvs.Add(new Vector2(xNorm, t01_z));
             }
         }
         // 天面トライアングル
@@ -871,26 +944,23 @@ public class RoofSnowSystem : MonoBehaviour
         }
 
         // ---- 前面垂れ（前縁から下へ伸びる面）----
-        // 前縁（iz=subdivZ）の頂点を取得して、下方向に垂れ面を追加
         int frontBase = allVerts.Count;
         const int droopSteps = 5;
         for (int step = 0; step <= droopSteps; step++)
         {
             float t = (float)step / droopSteps;
-            // 前縁から下へ：x方向はそのまま、z は前縁固定、y は下がりながら前に出る
             float droopY = -t * 0.25f;
-            float droopZ = t * 0.08f; // 少し前に張り出す
+            float droopZ = t * 0.08f;
             for (int ix = 0; ix <= subdivX; ix++)
             {
-                float x = ix * invX - 0.5f;
-                // 前縁の天面頂点の y を基準に垂れる
+                // 前縁（軒先）の x も台形の下辺幅（halfW=0.5）を使う
+                float xNorm = ix * invX;
+                float x     = Mathf.Lerp(-0.5f, 0.5f, xNorm);
                 int topFrontIdx = topBase + subdivZ * (subdivX + 1) + ix;
                 float baseY = allVerts[topFrontIdx].y;
-                // 垂れの形状：中央ほど多く垂れる（自然な雪の垂れ）
-                float cx = x * 2f;
-                float extraDroop = 0.05f * Mathf.Max(0f, 1f - cx * cx) * t;
+                float extraDroop = 0.05f * Mathf.Max(0f, 1f - (x * 2f) * (x * 2f)) * t;
                 allVerts.Add(new Vector3(x, baseY + droopY - extraDroop, 0.5f + droopZ));
-                allUvs.Add(new Vector2(ix * invX, 1f + t * 0.3f));
+                allUvs.Add(new Vector2(xNorm, 1f + t * 0.3f));
             }
         }
         // 前面垂れトライアングル

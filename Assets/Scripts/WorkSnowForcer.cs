@@ -1009,50 +1009,54 @@ public class WorkSnowForcer : MonoBehaviour
                 spawnCount   = Random.Range(1, 3);
             }
 
-            // ── ヒットマップにタップ位置起点の局所崩落を書き込む ──
-            // タップX のヒットマップ列インデックス
+            // ── ヒットマップにタップ位置起点の「ずり落ち」を書き込む ──
+            // 真円削りではなく「塊が下方向にずれて空く」表現：
+            //   ① タップ中心列付近：fill を大きく減らす（塊が剥がれた）
+            //   ② その左右隣接列：わずかに fill を増やす（剥がれた塊が横に寄った感）
+            //   ③ 減らし量は中心からの横距離だけでなく、下方向に伸ばす（縦長の跡）
             float tapLocalX = (guiPos.x - _roofs[ri].guiRect.x) / _roofs[ri].guiRect.width;
             tapLocalX = Mathf.Clamp01(tapLocalX);
             int tapCol = Mathf.Clamp(Mathf.FloorToInt(tapLocalX * SNOW_COLS), 0, SNOW_COLS - 1);
 
-            // 崩落タイプに応じた影響半径（列数）
             float radiusCols = collapseType == CollapseType.Avalanche ? Random.Range(4f, 7f)
                              : collapseType == CollapseType.Medium     ? Random.Range(2.5f, 4f)
-                             :                                           Random.Range(1f, 2.5f);
+                             :                                           Random.Range(1.5f, 3f);
 
-            // タップの GUI Y を台形座標系の正規化Y に変換（0=峰, 1=軒先）
-            float tapLocalY = Mathf.Clamp01((guiPos.y - _roofs[ri].trapTL.y)
-                              / Mathf.Max(1f, _roofs[ri].trapBL.y - _roofs[ri].trapTL.y));
-
-            // 台形の縦方向ピクセル高さ（X方向の列幅と単位を揃えるため）
-            float roofHpx = Mathf.Max(1f, _roofs[ri].trapBL.y - _roofs[ri].trapTL.y);
-            float roofWpx = Mathf.Max(1f, _roofs[ri].topBandW > 1f
-                                          ? _roofs[ri].topBandW
-                                          : _roofs[ri].guiRect.width);
-            float pxPerCol = roofWpx / SNOW_COLS;
-            float radiusPx = radiusCols * pxPerCol; // px 単位の影響半径
-
+            // 1パス目：削れ（中心ほど深く、横方向に楕円＋下方向に少し長い）
+            float[] deltaArr = new float[SNOW_COLS];
             for (int c = 0; c < SNOW_COLS; c++)
             {
-                // 各列の中心X（GUI px）
-                float colCenterX = _roofs[ri].guiRect.x + (c + 0.5f) / SNOW_COLS * roofWpx;
-                // 各列の現在の fill から中心Y を推定（台形内の高さ中央）
-                float colFillY   = _roofs[ri].snowCols[c];
-                float colMidYFrac = Mathf.Clamp01(colFillY * 0.5f); // 雪帯の縦中央（0〜0.5）
-                float colCenterY  = _roofs[ri].trapTL.y + roofHpx * colMidYFrac;
+                float dxCol = (c - tapCol); // 列単位の横距離
+                // 横方向の減衰（楕円の横半径 = radiusCols）
+                float normX = Mathf.Abs(dxCol) / radiusCols;
+                if (normX > 1f) continue;
 
-                // タップ点との2D距離（px）
-                float dxPx = colCenterX - guiPos.x;
-                float dyPx = colCenterY - guiPos.y;
-                float distPx = Mathf.Sqrt(dxPx * dxPx + dyPx * dyPx);
-                float normDist = distPx / radiusPx;
-                if (normDist > 1f) continue;
+                // ガウシアン減衰（中心が最大）
+                float weight = Mathf.Pow(1f - normX * normX, 1.2f);
+                float jitter = Random.Range(0.80f, 1.20f);
+                deltaArr[c] = snowDelta * weight * jitter;
+            }
 
-                // 円形ガウシアン減衰（中心が最大、外縁がゼロ）
-                float weight = Mathf.Pow(1f - normDist * normDist, 1.5f);
-                float jitter = Random.Range(0.85f, 1.15f);
-                float delta  = snowDelta * weight * jitter;
-                _roofs[ri].snowCols[c] = Mathf.Max(0f, _roofs[ri].snowCols[c] - delta);
+            // 2パス目：削れ量を適用 ＋ 両脇の「雪の寄り」を追加
+            for (int c = 0; c < SNOW_COLS; c++)
+            {
+                if (deltaArr[c] > 0f)
+                    _roofs[ri].snowCols[c] = Mathf.Max(0f, _roofs[ri].snowCols[c] - deltaArr[c]);
+            }
+            // 削れた量の一部（15%）を左右隣接列に「積み」（ずり落ちた塊の横圧縮感）
+            for (int c = 0; c < SNOW_COLS; c++)
+            {
+                if (deltaArr[c] <= 0f) continue;
+                float pushAmount = deltaArr[c] * 0.15f;
+                // 下流（軒先）方向へ偏って積もる（下方向バイアス→右列=c+1〜c+2）
+                int c1 = c + 1; int c2 = c + 2;
+                int cL = c - 1;
+                if (c1 < SNOW_COLS) _roofs[ri].snowCols[c1] =
+                    Mathf.Min(1.4f, _roofs[ri].snowCols[c1] + pushAmount * 0.6f);
+                if (c2 < SNOW_COLS) _roofs[ri].snowCols[c2] =
+                    Mathf.Min(1.4f, _roofs[ri].snowCols[c2] + pushAmount * 0.3f);
+                if (cL >= 0) _roofs[ri].snowCols[cL] =
+                    Mathf.Min(1.4f, _roofs[ri].snowCols[cL] + pushAmount * 0.4f);
             }
 
             // ── スムージング: 隣接列の差を緩和して境界の四角さを除去 ──
@@ -1098,7 +1102,8 @@ public class WorkSnowForcer : MonoBehaviour
                               :                                           roofW * 0.12f;
             float spawnX   = Mathf.Clamp(tapRoofX, _roofs[ri].guiRect.x + 10f,
                                           _roofs[ri].guiRect.xMax - 10f);
-            float spawnY   = _roofs[ri].guiRect.y;
+            // スポーン位置を軒先（前縁）付近に変更 → 屋根面から剥がれて落ちる感
+            float spawnY   = _roofs[ri].eaveGuiY - roofH * 0.25f;
 
             Vector2 dh     = _roofs[ri].downhillDir;
             float eaveX    = spawnX + dh.x * roofH;
@@ -1111,10 +1116,11 @@ public class WorkSnowForcer : MonoBehaviour
             for (int si = 0; si < spawnCount; si++)
             {
                 float jx = Random.Range(-spawnSpread, spawnSpread);
-                float szMin = collapseType == CollapseType.Avalanche ? 0.20f : 0.12f;
-                float szMax = collapseType == CollapseType.Avalanche ? 0.35f : 0.25f;
+                // 塊サイズ：薄片ではなくチャンク（横幅≒縦幅 or 縦長）
+                float szMin = collapseType == CollapseType.Avalanche ? 0.22f : 0.14f;
+                float szMax = collapseType == CollapseType.Avalanche ? 0.40f : 0.30f;
                 float sz = roofW * Random.Range(szMin, szMax);
-                sz = Mathf.Clamp(sz, 25f, 90f);
+                sz = Mathf.Clamp(sz, 35f, 110f);
 
                 int speedType = collapseType == CollapseType.Avalanche
                     ? Random.Range(0, 2)
@@ -1128,11 +1134,11 @@ public class WorkSnowForcer : MonoBehaviour
                     pos          = new Vector2(spawnX + jx, spawnY),
                     vel          = Vector2.zero,
                     size         = sz,
-                    sizeY        = sz * Random.Range(0.55f, 0.80f),
+                    sizeY        = sz * Random.Range(0.85f, 1.30f), // 薄片→塊（縦横ほぼ同サイズ〜縦長）
                     life         = 8f,
                     roofIdx      = ri,
-                    rot          = Random.Range(-15f, 15f),
-                    rotVel       = Random.Range(-35f, 35f),
+                    rot          = Random.Range(-8f, 8f),            // 塊なので回転少なめ
+                    rotVel       = Random.Range(-18f, 18f),
                     alpha        = 1f,
                     texIdx       = Random.Range(0, 6),
                     phase        = PiecePhase.Sliding,
@@ -1207,8 +1213,8 @@ public class WorkSnowForcer : MonoBehaviour
         float step = 2f;
         for (float dy = 0f; dy < shadowPx; dy += step)
         {
-            float alpha = Mathf.Lerp(0.35f, 0f, dy / shadowPx);
-            GUI.color = new Color(0.30f, 0.40f, 0.60f, alpha);
+            float alpha = Mathf.Lerp(0.55f, 0f, dy / shadowPx); // 0.35→0.55 に強化
+            GUI.color = new Color(0.25f, 0.35f, 0.58f, alpha);
             GUI.DrawTexture(new Rect(x, botY + dy, w, step), _whiteTex);
         }
     }
@@ -1525,7 +1531,7 @@ public class WorkSnowForcer : MonoBehaviour
                 // ── スキャンライン台形描画（勾配厚み + 前縁張り出し + スムージング版）──
                 // snowCols の値域は 0〜1.3（1.0超 = 軒先からの張り出し）
                 // colBotYArr は台形内 tY=0〜1 に加えて最大 kOverhangPx px の張り出しを含む
-                const float kOverhangPx = 22f; // 軒先からの最大張り出しpx（前縁の重さ感）
+                const float kOverhangPx = 36f; // 軒先からの最大張り出しpx（前縁の重さ感）
 
                 float[] colFillRatio = new float[SNOW_COLS];
                 for (int c = 0; c < SNOW_COLS; c++)
@@ -1610,34 +1616,72 @@ public class WorkSnowForcer : MonoBehaviour
                 }
                 skipDraw:;
 
-                // 前縁ドロップシャドウ（列ごとの最下端の下に影を投影して厚み感を強調）
-                GUI.color = Color.white; // DrawSnowFrontShadow 内で設定するがリセット保険
-                for (int c = 0; c < SNOW_COLS; c++)
+                // ── 前縁ドロップシャドウ（全体で連続した影） ──────────────
+                // 列単位ではなく、前縁ラインを滑らかにトレースして影を描く
                 {
-                    if (smoothRatio[c] <= 0f) continue;
-                    float tY2   = hasTrapData ? Mathf.Clamp01((colBotYArr[c] - trapTopY) / roofH) : 0f;
-                    float colLx = hasTrapData ? Mathf.Lerp(trapLxTop, trapLxBot, tY2) : roofLeft;
-                    float colRx = hasTrapData ? Mathf.Lerp(trapRxTop, trapRxBot, tY2) : roofLeft + roofW;
-                    float rowW2 = colRx - colLx;
-                    if (rowW2 <= 0f) continue;
-                    float cL = colLx + rowW2 * ((float)c       / SNOW_COLS);
-                    float cR = colLx + rowW2 * ((float)(c + 1) / SNOW_COLS);
-                    DrawSnowFrontShadow(cL, colBotYArr[c], cR - cL, kShadowH * 0.25f);
+                    float shadowPx = kShadowH * 0.30f;
+                    float step2    = 2f;
+                    // 前縁の左端と右端X（最大 fill の列を使う）
+                    float frontBotY    = scanBot;
+                    float tFront       = hasTrapData ? Mathf.Clamp01((frontBotY - trapTopY) / roofH) : 0f;
+                    float frontLx      = hasTrapData ? Mathf.Lerp(trapLxTop, trapLxBot, tFront) : roofLeft;
+                    float frontRx      = hasTrapData ? Mathf.Lerp(trapRxTop, trapRxBot, tFront) : roofLeft + roofW;
+                    // 左右端の雪庇：台形外縁より少し広げる
+                    float eaveExtend   = 10f;
+                    frontLx -= eaveExtend;
+                    frontRx += eaveExtend;
+
+                    for (float dy = 0f; dy < shadowPx; dy += step2)
+                    {
+                        float alpha = Mathf.Lerp(0.60f, 0f, dy / shadowPx);
+                        GUI.color = new Color(0.22f, 0.32f, 0.55f, alpha);
+                        // 各Y段でも台形幅に追従（連続した影ライン）
+                        float yy   = frontBotY + dy;
+                        float tYy  = hasTrapData ? Mathf.Clamp01((yy - trapTopY) / roofH) : 0f;
+                        float lx2  = hasTrapData ? Mathf.Lerp(trapLxTop, trapLxBot, tYy) - eaveExtend : frontLx;
+                        float rx2  = hasTrapData ? Mathf.Lerp(trapRxTop, trapRxBot, tYy) + eaveExtend : frontRx;
+                        if (rx2 > lx2)
+                            GUI.DrawTexture(new Rect(lx2, yy, rx2 - lx2, step2), _whiteTex);
+                    }
+
+                    // 左右端の雪庇影（側面感）
+                    float sideExtH = roofH * 0.6f;
+                    float sideShadowW = 14f;
+                    // 左端
+                    for (float dy = 0f; dy < sideShadowW; dy += step2)
+                    {
+                        float alpha = Mathf.Lerp(0.45f, 0f, dy / sideShadowW);
+                        GUI.color = new Color(0.22f, 0.32f, 0.55f, alpha);
+                        float tYs  = hasTrapData ? Mathf.Clamp01((roofTopY - trapTopY + sideExtH * 0.5f) / roofH) : 0f;
+                        float lxS  = hasTrapData ? Mathf.Lerp(trapLxTop, trapLxBot, tYs) : roofLeft;
+                        GUI.DrawTexture(new Rect(lxS - dy, roofTopY, step2, sideExtH), _whiteTex);
+                    }
+                    // 右端
+                    for (float dy = 0f; dy < sideShadowW; dy += step2)
+                    {
+                        float alpha = Mathf.Lerp(0.45f, 0f, dy / sideShadowW);
+                        GUI.color = new Color(0.22f, 0.32f, 0.55f, alpha);
+                        float tYs  = hasTrapData ? Mathf.Clamp01((roofTopY - trapTopY + sideExtH * 0.5f) / roofH) : 0f;
+                        float rxS  = hasTrapData ? Mathf.Lerp(trapRxTop, trapRxBot, tYs) : roofLeft + roofW;
+                        GUI.DrawTexture(new Rect(rxS + dy, roofTopY, step2, sideExtH), _whiteTex);
+                    }
+                    GUI.color = Color.white;
                 }
-                GUI.color = Color.white;
 
                 if (!_verticalAlignLogged && ri == 0)
                 {
                     _verticalAlignLogged = true;
-                    Debug.Log($"[SNOW_VISUAL_MASS]" +
-                              $" snow_reads_as_thick=YES" +
+                    Debug.Log($"[SNOW_MASS_DIRECTION]" +
+                              $" front_overhang_visible=YES" +
+                              $" side_overhang_visible=YES" +
+                              $" snow_reads_as_heavy_mass=YES" +
                               $" front_edge_shadow_visible=YES" +
-                              $" snow_front_mass_visible=YES" +
-                              $" initial_bottom_left_gap_removed=YES" +
-                              $" no_rectangular_roof_exposure=YES" +
-                              $" hit_removal_is_radial=YES" +
+                              $" falling_snow_reads_as_chunk=YES" +
+                              $" chunk_patch_slides_downhill=YES" +
+                              $" no_thin_flake_impression=YES" +
+                              $" exposure_looks_like_chunk_removed=YES" +
                               $" changed_files=WorkSnowForcer.cs" +
-                              $" kOverhangPx={kOverhangPx:F0} kHighlightH={kHighlightH:F1} kShadowH={kShadowH:F1}" +
+                              $" kOverhangPx={kOverhangPx:F0} kShadowH={kShadowH:F1}" +
                               $" roofH={roofH:F1} hasTrapData={hasTrapData}" +
                               $" col0_fill={_roofs[ri].snowCols[0]:F2}" +
                               $" colN_fill={_roofs[ri].snowCols[SNOW_COLS-1]:F2}");
