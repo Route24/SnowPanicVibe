@@ -60,6 +60,7 @@
     <Compile Include="Assets/Editor/SnowVerifyPhaseB2Creator.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
     <Compile Include="Assets/Editor/DebugScreenshotEditor.cs" />
+    <Compile Include="Assets/Editor/SnowSceneDiagnosticTool.cs" />
     <Compile Include="Assets/Editor/BillboardBackgroundSceneCreator.cs" />
     <Compile Include="Assets/Editor/MockHudCanvasSetup.cs" />
     <Compile Include="Assets/Editor/FileChangeChecker.cs" />

@@ -339,7 +339,6 @@ GameObject:
   m_Component:
   - component: {fileID: 292199808}
   - component: {fileID: 292199807}
-  - component: {fileID: 292199809}
   m_Layer: 0
   m_Name: SnowTest
   m_TagString: Untagged
@@ -366,7 +365,7 @@ MonoBehaviour:
   avalancheRetainRatio: 0.3
   avalancheCooldownSeconds: 1.5
   roofSlideCollider: {fileID: 2075413136}
-  roofSnowColor: {r: 0.21960784, g: 0.21960784, b: 0.21960784, a: 1}
+  roofSnowColor: {r: 0.92, g: 0.95, b: 1, a: 1}
   roofSnowConstantThickness: 0.08
   roofSnowSurfaceOffsetY: -0.02
   burstChunkCount: 36
@@ -377,7 +376,7 @@ MonoBehaviour:
   burstSpread: 0.8
   burstGroundDepositPerChunk: 0.015
   groundSnowSystem: {fileID: 0}
-  snowPackSpawner: {fileID: 0}
+  snowPackSpawner: {fileID: 854050806}
   groundMask:
     serializedVersion: 2
     m_Bits: 4294967295
@@ -468,112 +467,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &292199809
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 292199806}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d383eaf6db1ac4689a2e3cb37c01d28f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::RoofSnowSystem
-  roofSnowDepthMeters: 0.5
-  baseThresholdMeters: 0.3
-  slopeFactor: 0.0006
-  minThresholdMeters: 0.1
-  avalancheRetainRatio: 0.3
-  avalancheCooldownSeconds: 1.5
-  roofSlideCollider: {fileID: 0}
-  roofSnowColor: {r: 0.92, g: 0.95, b: 1, a: 1}
-  roofSnowConstantThickness: 0.08
-  roofSnowSurfaceOffsetY: -0.02
-  burstChunkCount: 36
-  burstChunkLife: 1.8
-  burstChunkSpeed: 2.2
-  hitRadiusR: 1.05
-  localAvalancheSlideSpeed: 0.9
-  burstSpread: 0.8
-  burstGroundDepositPerChunk: 0.015
-  groundSnowSystem: {fileID: 0}
-  snowPackSpawner: {fileID: 0}
-  groundMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  avalancheSlideDuration: 0.6
-  avalancheSlideOffset: 1.2
-  avalancheGraceSeconds: 2
-  heightmap_mode_enabled: 1
-  snowDepth1D:
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  - 0
-  detachedStuckVelThreshold: 0.05
-  detachedStuckVelSeconds: 3
-  detachedStuckSleepSeconds: 3
 --- !u!1 &379811952
 GameObject:
   m_ObjectHideFlags: 0
@@ -756,6 +649,95 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 552958747}
   m_CullTransparentMesh: 1
+--- !u!1 &854050805
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 854050807}
+  - component: {fileID: 854050806}
+  m_Layer: 0
+  m_Name: SnowPackSpawner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &854050806
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 854050805}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c74c3bb0c8d54a08a2f86ddf8ca8ef96, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SnowPackSpawner
+  roofCollider: {fileID: 2075413136}
+  targetSnowRenderer: {fileID: 0}
+  houseIndex: 0
+  roofAngleReferenceTransform: {fileID: 0}
+  roofSnowSystem: {fileID: 292199807}
+  snowFallSystem: {fileID: 0}
+  syncIntervalSeconds: 0.2
+  addThreshold: 0.08
+  removeThreshold: -0.08
+  minSyncInterval: 0.5
+  maxLayersPerSync: 1
+  visualSmoothTime: 0.8
+  packDepthMeters: 0.4
+  maxDownStepPerSec: 0.25
+  minVisibleDepth: 0.05
+  targetDepthMeters: 0.5
+  snowDepthScale: 0.2
+  snowPieceThicknessScale: 0.25
+  snowRenderThicknessScale: 0.6
+  pieceSize: 0.17
+  visualScale: 0.1
+  pieceHeightScale: 0.85
+  jitter: 0.045
+  scaleJitterXZ: 0.18
+  normalInset: 0.01
+  maxPieces: 1800
+  rebuildOnPlay: 1
+  snowColor: {r: 0.92, g: 0.95, b: 1, a: 1}
+  throwOnFirstPoolReturn: 0
+  debugAlignToRoofUp: 0
+  debugMinPackedPieces: 200
+  debugAutoRefillRoofSnow: 0
+  blockDeactivate: 0
+  debugForcePieceRendererDirect: 0
+  enableStateIndicator: 0
+  unstableRadiusScale: 1.4
+  unstableDurationSec: 1.4
+  secondaryDetachDelaySec: 0.35
+  secondaryDetachFraction: 0.35
+  thirdWaveDelaySec: 0.65
+  thirdWaveFraction: 0.18
+  chainDetachChance: 0.78
+  maxSecondaryDetachPerHit: 28
+  localAvalancheMinDetach: 20
+  localAvalancheMaxDetach: 80
+--- !u!4 &854050807
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 854050805}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -0.04748, y: 1.03514, z: -0.65348}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1105849485
 GameObject:
   m_ObjectHideFlags: 0
@@ -1384,3 +1366,4 @@ SceneRoots:
   - {fileID: 1181614544}
   - {fileID: 292199808}
   - {fileID: 2075413137}
+  - {fileID: 854050807}

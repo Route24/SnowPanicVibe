@@ -631,7 +631,13 @@ public class RoofSnowSystem : MonoBehaviour
         Vector3 center;
         if (boxCol != null)
         {
-            size = boxCol.size;
+            // lossyScale を乗じた実ワールドサイズで軸を判定する（size が (1,1,1) の場合の誤判定を防ぐ）
+            Vector3 ls = roofSlideCollider.transform.lossyScale;
+            Vector3 localSize = boxCol.size;
+            size = new Vector3(
+                Mathf.Abs(localSize.x * ls.x),
+                Mathf.Abs(localSize.y * ls.y),
+                Mathf.Abs(localSize.z * ls.z));
             center = boxCol.center;
         }
         else
@@ -680,10 +686,23 @@ public class RoofSnowSystem : MonoBehaviour
         float colThickness = size[thickIdx];
         float snowThickness = Mathf.Max(colThickness * 0.25f, Mathf.Max(0.25f, roofSnowConstantThickness));
 
-        layer.localScale = new Vector3(Mathf.Max(0.1f, cx), snowThickness, Mathf.Max(0.1f, slopeLength));
-        layer.localPosition = center + localUp * (colThickness * 0.5f + roofSnowSurfaceOffsetY);
+        // size はワールドサイズなので、親（roofSlideCollider.transform）の lossyScale で割ってローカルスケールに戻す
+        Vector3 parentLS = roofSlideCollider.transform.lossyScale;
+        float invPX = parentLS.x > 0.001f ? 1f / parentLS.x : 1f;
+        float invPY = parentLS.y > 0.001f ? 1f / parentLS.y : 1f;
+        float invPZ = parentLS.z > 0.001f ? 1f / parentLS.z : 1f;
+        Vector3 invParentLS = new Vector3(invPX, invPY, invPZ);
 
-        Debug.Log($"[ROOF_LAYER_AXIS_FIX] rooflayer_rotation_corrected=YES rooflayer_axes_match_collider=YES snow_surface_matches_roof_length=YES snow_surface_matches_roof_position=YES tap_reaches_roofsnow=YES snow_depth_changes_on_hit=YES changed_files=RoofSnowSystem.cs widthIdx={widthIdx} slopeIdx={slopeIdx} thickIdx={thickIdx}");
+        // localScale の各軸は layer.localRotation で再マップされているので、ワールド幅/長/厚をそのまま使う
+        // （layer は roofSlideCollider の子なので lossyScale 割り算が必要）
+        float localCx        = cx          * invParentLS[widthIdx];
+        float localSlope     = slopeLength * invParentLS[slopeIdx];
+        float localThickness = snowThickness * invParentLS[thickIdx];
+
+        layer.localScale = new Vector3(Mathf.Max(0.01f, localCx), Mathf.Max(0.01f, localThickness), Mathf.Max(0.01f, localSlope));
+        layer.localPosition = center + localUp * (boxCol != null ? boxCol.size[thickIdx] * 0.5f + roofSnowSurfaceOffsetY : colThickness * 0.5f + roofSnowSurfaceOffsetY);
+
+        Debug.Log($"[ROOF_LAYER_AXIS_FIX] widthIdx={widthIdx} slopeIdx={slopeIdx} thickIdx={thickIdx} worldSize=({cx:F3},{slopeLength:F3},{colThickness:F3}) localScale=({localCx:F3},{localThickness:F3},{localSlope:F3})");
     }
 
     /// <summary>RoofSnowLayerのlocalTransformを屋根面基準で補正する。</summary>
@@ -740,7 +759,7 @@ public class RoofSnowSystem : MonoBehaviour
         int seed = gameObject.GetInstanceID() & 0xFFFF;
         // 台形メッシュ再生成を保証するためキャッシュを強制クリア
         _mySnowSurfaceMesh = null;
-        _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed, 0.20f);
+        _mySnowSurfaceMesh = BuildSnowSurfaceMesh(seed, LoadTrapTopWidthRatio());
         if (_mySnowSurfaceMesh != null) 
         {
             mf.sharedMesh = _mySnowSurfaceMesh;
