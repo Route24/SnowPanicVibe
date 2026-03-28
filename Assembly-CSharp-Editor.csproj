@@ -50,34 +50,22 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Assets/Scripts/Editor/SummaryToProtocol.cs" />
+    <Compile Include="Assets/Scripts/Editor/ConsoleWindowUtilityStub.cs" />
     <Compile Include="Assets/Editor/SnowPanicVideoPipelineSelfTest.cs" />
     <Compile Include="Assets/TutorialInfo/Scripts/Editor/ReadmeEditor.cs" />
     <Compile Include="Assets/Scripts/Editor/AssiReportWindow.cs" />
     <Compile Include="Assets/Scripts/Editor/AssiAutoSummary.cs" />
-    <Compile Include="Assets/Scripts/Editor/DioramaRoofSetup.cs" />
-    <Compile Include="Assets/Editor/SnowTestSnowPackSetup.cs" />
-    <Compile Include="Assets/Editor/SnowVerifyPhaseB1Creator.cs" />
-    <Compile Include="Assets/Editor/SnowVerifyPhaseB2Creator.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
     <Compile Include="Assets/Editor/DebugScreenshotEditor.cs" />
-    <Compile Include="Assets/Editor/SnowSceneDiagnosticTool.cs" />
+    <Compile Include="Assets/Editor/SnowVisibilityLabSetup.cs" />
     <Compile Include="Assets/Editor/BillboardBackgroundSceneCreator.cs" />
-    <Compile Include="Assets/Editor/MockHudCanvasSetup.cs" />
     <Compile Include="Assets/Editor/FileChangeChecker.cs" />
-    <Compile Include="Assets/Editor/SnowTestPrefabBuilder.cs" />
     <Compile Include="Assets/Editor/TMP_ImporterFix.cs" />
     <Compile Include="Assets/Scripts/Editor/AssiProtocol.cs" />
-    <Compile Include="Assets/Editor/SnowVerifyMinimalSceneCreator.cs" />
-    <Compile Include="Assets/Scripts/Editor/SnowPanicPlayVerificationWindow.cs" />
-    <Compile Include="Assets/Editor/SnowVerifyFixedSceneCreator.cs" />
-    <Compile Include="Assets/Scripts/Editor/CorniceSceneSetup.cs" />
+    <Compile Include="Assets/Scripts/Editor/SnowPanicPlayVerificationWindowStub.cs" />
     <Compile Include="Assets/Editor/SnowPanicAutoRecord.cs" />
-    <Compile Include="Assets/Editor/SnowPanicUploadTest.cs" />
-    <Compile Include="Assets/Editor/SnowClumpMeshGenerator.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowLoopNoaReportAutoCopy.cs" />
-    <Compile Include="Assets/Scripts/Editor/SnowMinReproSceneBuilder.cs" />
-    <Compile Include="Assets/Editor/SnowVerifyPhaseACreator.cs" />
-    <Compile Include="Assets/Editor/SnowVerifyPhaseBCreator.cs" />
+    <Compile Include="Assets/Editor/SnowVisibilityLabCreator.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="UnityEngine">

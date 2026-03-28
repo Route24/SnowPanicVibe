@@ -38,11 +38,11 @@ public static class SummaryToProtocol
         }
     }
 
-    [MenuItem("SnowPanicVibe/Generate Protocol from Summary", false, 401)]
+    [MenuItem("SnowPanic/Generate Protocol from Summary", false, 401)]
     public static void RunManual() => RunAfterSummary();
 
     /// <summary>アシが実装完了後に呼ぶ。READY_FOR_UNITY_PLAY に遷移する。</summary>
-    [MenuItem("SnowPanicVibe/Mark Ready for Unity Play", false, 402)]
+    [MenuItem("SnowPanic/Mark Ready for Unity Play", false, 402)]
     public static void MarkReadyForUnityPlay()
     {
         SetStatus("READY_FOR_UNITY_PLAY");

@@ -1760,7 +1760,7 @@ public static class SnowPanicVideoPipelineSelfTest
         catch (Exception ex) { UnityEngine.Debug.LogError("[VideoPipeline] Ping failed: " + ex.Message); }
     }
 
-    [MenuItem("Tools/SnowPanic/Stop Video Recording", false, 100)]
+    [MenuItem("SnowPanic/VideoPipeline/Stop2", false, 152)]
     [MenuItem("SnowPanic/VideoPipeline/Stop %#s", false, 151)]
     public static void RunManualStop()
     {

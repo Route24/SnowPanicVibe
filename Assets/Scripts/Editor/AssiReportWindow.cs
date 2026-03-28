@@ -30,8 +30,8 @@ public class AssiReportWindow : EditorWindow
         w.Focus();
     }
 
-    [MenuItem("Tools/ASSI Report (ノア送信用)", false, 300)]
-    [MenuItem("SnowPanicVibe/ASSI Report (ノア送信用)", false, 300)]
+    [MenuItem("SnowPanic/ASSI Report (ノア送信用)", false, 300)]
+    [MenuItem("SnowPanic/ASSI Report (ノア送信用)", false, 300)]
     static void OpenFromMenu()
     {
         var w = GetWindow<AssiReportWindow>("ASSI Report");

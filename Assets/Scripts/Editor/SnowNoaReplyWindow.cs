@@ -16,7 +16,7 @@ public class SnowNoaReplyWindow : EditorWindow
     Vector2 _scroll;
     bool _initialized;
 
-    [MenuItem("Tools/Snow Panic/ノアへの返答をコピー", false, 199)]
+    [MenuItem("SnowPanic/ノアへの返答をコピー", false, 199)]
     static void CopyReply()
     {
         var reply = BuildNoaReply();
@@ -31,7 +31,7 @@ public class SnowNoaReplyWindow : EditorWindow
         }
     }
 
-    [MenuItem("Tools/Snow Panic/ノアへの返答を表示", false, 200)]
+    [MenuItem("SnowPanic/ノアへの返答を表示", false, 200)]
     static void Open()
     {
         var w = GetWindow<SnowNoaReplyWindow>("ノアへの返答");

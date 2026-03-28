@@ -26,7 +26,7 @@ public static class SnowLoopNoaReportAutoCopy
         EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
     }
 
-    [MenuItem("Tools/Snow Panic/Copy ASSI Report to Clipboard", false, 100)]
+    [MenuItem("SnowPanic/Copy ASSI Report to Clipboard", false, 100)]
     public static void CopyReportToClipboard()
     {
         if (TryBuildAndCopyReport())

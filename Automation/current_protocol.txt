@@ -1,26 +1,22 @@
 SNOW PANIC - ASSI PROTOCOL
 
 目的:
-軒下停止（under_eave_stop）が YES か NO かを確認する。
-今回は確認のみ。修正は次のタスクにする。
+Compile エラーを修正して PASS 状態に戻す。
 
 前提:
-- under_eave_stop=UNKNOWN
-- scene=(no Cornice scene) house_count=0 spawn_system=N/A is_expected=N/A
+- compile_result=FAIL
+- error_count=2
+- scene=SnowVisibilityLab
 
 今回触るモジュール:
-- なし（確認のみ）
+- エラーが出ているスクリプト（Console で確認）
 
 実装対象:
-- なし
-
-確認手順:
-1. Play する
-2. 屋根をタップして雪を落とす
-3. 雪が軒下で止まるか目視確認する
-4. Stop → latest_summary.txt の under_eave_stop を確認
+- Console のエラーを1件ずつ修正する
+- 修正後 Compile PASS を確認する
 
 完了条件:
-- under_eave_stop が YES / NO / PARTIAL のいずれかに更新される
+- compile_result=PASS
+- error_count=0
 
-生成日時: 2026-03-28 18:25:51
+生成日時: 2026-03-28 19:27:01

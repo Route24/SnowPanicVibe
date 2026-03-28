@@ -339,6 +339,8 @@ GameObject:
   m_Component:
   - component: {fileID: 292199808}
   - component: {fileID: 292199807}
+  - component: {fileID: 292199809}
+  - component: {fileID: 292199810}
   m_Layer: 0
   m_Name: SnowTest
   m_TagString: Untagged
@@ -467,6 +469,36 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &292199809
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 292199806}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4ac995266aacc45eb8897c2938e8fefc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DebugSnowVisual
+  roofCollider: {fileID: 2075413136}
+  snowColor: {r: 0.95, g: 0.97, b: 1, a: 1}
+  sizeMultiplier: {x: 1, y: 0.18, z: 1}
+  heightOffset: 0.12
+  destroyOnDisable: 0
+--- !u!114 &292199810
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 292199806}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 71428ebfdc87c4433b0eb93ba0bf8f0f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CameraVisibilityTest
+
 --- !u!1 &379811952
 GameObject:
   m_ObjectHideFlags: 0

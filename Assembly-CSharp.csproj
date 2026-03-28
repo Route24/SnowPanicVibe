@@ -54,6 +54,7 @@
     <Compile Include="Assets/Scripts/ToolUIRenderer.cs" />
     <Compile Include="Assets/Scripts/BillboardSnowKiller.cs" />
     <Compile Include="Assets/Scripts/MvpSnowChunkMotion.cs" />
+    <Compile Include="Assets/Scripts/DebugSnowVisual.cs" />
     <Compile Include="Assets/Scripts/SnowSizeDiagnostics.cs" />
     <Compile Include="Assets/Scripts/ShovelTool.cs" />
     <Compile Include="Assets/Scripts/SnowPanicMinimalSample.cs" />
@@ -79,6 +80,7 @@
     <Compile Include="Assets/Scripts/SnowStripV2.cs" />
     <Compile Include="Assets/Scripts/EavesDropTrigger.cs" />
     <Compile Include="Assets/Scripts/SnowPieceAutoSettle.cs" />
+    <Compile Include="Assets/Scripts/Gate2SnowChecker.cs" />
     <Compile Include="Assets/Scripts/RoofDebugGizmo.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB2.cs" />
     <Compile Include="Assets/Scripts/Debug/SnowDebugOverlay.cs" />
@@ -95,6 +97,7 @@
     <Compile Include="Assets/Scripts/RoofSnow.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB.cs" />
     <Compile Include="Assets/Scripts/AvalanchePhysicsSystem.cs" />
+    <Compile Include="Assets/Scripts/CameraVisibilityTest.cs" />
     <Compile Include="Assets/Scripts/ToolCooldownManager.cs" />
     <Compile Include="Assets/Scripts/SnowMinReproBootstrap.cs" />
     <Compile Include="Assets/Scripts/CameraMatchAndSnowConfig.cs" />

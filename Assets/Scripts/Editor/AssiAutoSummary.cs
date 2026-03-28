@@ -46,11 +46,11 @@ public static class AssiAutoSummary
         }
     }
 
-    [MenuItem("SnowPanicVibe/Generate Latest Summary", false, 400)]
+    [MenuItem("SnowPanic/Generate Latest Summary", false, 400)]
     public static void GenerateSummaryManual() => GenerateSummary();
 
     /// <summary>アシがコーディング完了時に呼ぶ。mark_ready.py を実行して READY_FOR_UNITY_PLAY に遷移する。</summary>
-    [MenuItem("SnowPanicVibe/Coding Done (Mark Ready)", false, 403)]
+    [MenuItem("SnowPanic/Coding Done (Mark Ready)", false, 403)]
     public static void CodingDone()
     {
         var runner = Path.GetFullPath(Path.Combine("Automation", "mark_ready.py"));
