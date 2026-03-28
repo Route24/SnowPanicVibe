@@ -54,8 +54,8 @@ public class WorkSnowGameBootstrap : MonoBehaviour
         var snowTest = GameObject.Find("SnowTest");
         if (snowTest != null)
         {
-            snowTest.SetActive(false);
-            Debug.Log("[WORK_SNOW_GAME] SnowTest disabled at Bootstrap (prevents red cube spawn)");
+            // snowTest.SetActive(false);
+            Debug.Log("[WORK_SNOW_GAME] SnowTest disable at Bootstrap WAS CANCELLED for debug.");
         }
 
         if (Object.FindFirstObjectByType<WorkSnowGameBootstrap>() != null) return;

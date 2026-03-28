@@ -1474,6 +1474,12 @@ public class WorkSnowForcer : MonoBehaviour
     //   ③ 雪煙: 強化（数・サイズ・寿命増加）
     void OnGUI()
     {
+        if (Application.isPlaying && Event.current != null && Event.current.type == EventType.Repaint)
+        {
+            Debug.Log("[WORK_EXEC_CHECK] WorkSnowForcer OnGUI entered");
+            Debug.Log($"[WORK_SNOW_RENDERER] This script uses GUI.DrawTexture. It does NOT use MeshFilter/MeshRenderer. tex='{(_whiteTex != null ? _whiteTex.name : "null")}' mask='{(_roofEdgeMaskTex != null ? _roofEdgeMaskTex.name : "null")}'");
+        }
+
         if (!Application.isPlaying) return;
         if (_whiteTex == null) return;
 
