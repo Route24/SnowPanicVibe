@@ -37,7 +37,10 @@ public static class AssiAutoSummary
         if (state == PlayModeStateChange.EnteredPlayMode) { _sawPlay = true; return; }
         if (state != PlayModeStateChange.EnteredEditMode || !_sawPlay) return;
         _sawPlay = false;
-        // レポート書き込み完了を待つため3秒後に実行
+        // 最小レポートを即座に書き込み、ウィンドウを開く
+        SnowLoopNoaReportAutoCopy.WriteReportOnStop();
+        AssiReportWindow.OpenAndShowReport();
+        // latest_summary.txt の生成は3秒後（ゲームロジック処理完了待ち）
         var stopTime = DateTime.Now;
         EditorApplication.update += WaitAndGenerate;
 

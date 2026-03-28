@@ -2453,6 +2453,52 @@ public static class SnowPanicVideoPipelineSelfTest
 
     static void StartRecordingThisSession()
     {
+        AssiLog("step=recorder_start_begin");
+        try
+        {
+            var outputDir = ResolveOutputDir();
+            if (string.IsNullOrEmpty(outputDir))
+            {
+                AssiLog("step=recorder_start_exception reason=outputDir_resolve_failed");
+                _result = "ERROR"; _errorStep = "outputDir_resolve_failed"; return;
+            }
+
+            // Recorder Controller セットアップ
+            if (_controllerSettings != null) { ScriptableObject.DestroyImmediate(_controllerSettings); _controllerSettings = null; }
+            _controllerSettings = ScriptableObject.CreateInstance<RecorderControllerSettings>();
+
+            var movieSettings = ScriptableObject.CreateInstance<MovieRecorderSettings>();
+            movieSettings.Enabled = true;
+            movieSettings.name = "SnowPanic_Mp4";
+            movieSettings.OutputFormat = MovieRecorderSettings.VideoRecorderOutputFormat.MP4;
+            movieSettings.VideoBitRateMode = VideoBitrateMode.Medium;
+            movieSettings.ImageInputSettings = new GameViewInputSettings
+            {
+                OutputWidth = 1280, OutputHeight = 720
+            };
+            movieSettings.AudioInputSettings.PreserveAudio = false;
+            movieSettings.OutputFile = Path.Combine(outputDir, "snow_test_tmp_" + _sessionId);
+            _tempMp4Path = movieSettings.OutputFile + ".mp4";
+
+            _controllerSettings.AddRecorderSettings(movieSettings);
+            _controllerSettings.SetRecordModeToManual();
+            _controllerSettings.FrameRate = 30f;
+            _movieSettings = movieSettings;
+
+            _controller = new RecorderController(_controllerSettings);
+            _controller.PrepareRecording();
+            _controller.StartRecording();
+            _recorderStartOk = _controller.IsRecording();
+            _recordingStartedAt = DateTime.Now;
+            AssiLog("step=recorder_started isRecording=" + _recorderStartOk + " tempPath=" + _tempMp4Path);
+            ScheduleForceStopTimer();
+            ScheduleRecorderOutputCheck();
+        }
+        catch (Exception ex)
+        {
+            AssiLog("step=recorder_start_exception ex=" + (ex.Message ?? "").Replace("\n", " | "));
+            _result = "ERROR"; _errorStep = "recorder_start_failed";
+        }
     }
 
     /// <summary>EditorApplication.delayCall で10秒後に必ず Stop を呼ぶ。ManualStopOnly のときはスキップ。</summary>
