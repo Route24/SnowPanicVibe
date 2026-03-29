@@ -134,6 +134,7 @@
     <Compile Include="Assets/Scripts/RoofDebugAutoSetup.cs" />
     <Compile Include="Assets/Scripts/SnowLoopLogCapture.cs" />
     <Compile Include="Assets/Scripts/CabinRoofForceHide.cs" />
+    <Compile Include="Assets/Scripts/AntiProtocol/SafeStateAnchor.cs" />
     <Compile Include="Assets/Scripts/RoofSnowReportWriter.cs" />
     <Compile Include="Assets/Scripts/DebugScreenshotCapture.cs" />
     <Compile Include="Assets/Scripts/RunHUDUI.cs" />
@@ -141,6 +142,7 @@
     <Compile Include="Assets/Scripts/SnowCluster.cs" />
     <Compile Include="Assets/Scripts/AIPipelineTestCollector.cs" />
     <Compile Include="Assets/Scripts/SnowVerifyPhaseB1.cs" />
+    <Compile Include="Assets/Scripts/AntiProtocol/SafeStateSnapshot.cs" />
     <Compile Include="Assets/Scripts/SnowDespawnLogger.cs" />
     <Compile Include="Assets/Scripts/VideoPipelineStopRequestorBehaviour.cs" />
     <Compile Include="Assets/Scripts/DebugDiagnostics.cs" />
@@ -151,9 +153,11 @@
     <Compile Include="Assets/Scripts/DebugSnowVisibility.cs" />
     <Compile Include="Assets/Scripts/InitialRoofSnowForcer.cs" />
     <Compile Include="Assets/Scripts/CorniceHitter.cs" />
+    <Compile Include="Assets/Scripts/AntiProtocol/SafeStateExternalObserver.cs" />
     <Compile Include="Assets/Scripts/SnowTestCube.cs" />
     <Compile Include="Assets/Scripts/AssiDebugUI.cs" />
     <Compile Include="Assets/Scripts/SnowLayerType.cs" />
+    <Compile Include="Assets/Scripts/AntiProtocol/SafeStateDiffReader.cs" />
     <Compile Include="Assets/Scripts/RoofSlideTestAutoSetup.cs" />
     <Compile Include="Assets/Scripts/DetachedSnowRegistry.cs" />
     <Compile Include="Assets/Scripts/GroundPipeTier.cs" />

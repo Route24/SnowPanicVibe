@@ -5,9 +5,11 @@ using UnityEngine;
 /// </summary>
 public sealed class SafeStateDiffReader : MonoBehaviour
 {
-    private enum DiffState { NotChecked, MatchFound, DiffFound }
+    public enum DiffState { NotChecked, MatchFound, DiffFound }
 
     private DiffState _state = DiffState.NotChecked;
+
+    public DiffState CurrentState => _state;
 
     private void Start()
     {

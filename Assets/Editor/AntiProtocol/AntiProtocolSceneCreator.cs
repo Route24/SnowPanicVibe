@@ -13,6 +13,9 @@ public static class AntiProtocolSceneCreator
 {
     const string ScenePath = "Assets/Scenes/SnowCore_AntiProtocol.unity";
     const string SnowLayerName = "Snow";
+    const float roofThickness = 2.0f;
+    const float roofWidth     = 6f;
+    const float roofDepth     = 4f;
 
     [MenuItem("SnowPanic/Create SnowCore_AntiProtocol", false, 20)]
     public static void CreateScene()
@@ -52,12 +55,33 @@ public static class AntiProtocolSceneCreator
         // ── Environment ──────────────────────────────────────
         var envGo = new GameObject("Environment");
 
+        // ── BackgroundImage（BG Quad）────────────────────────
+        var bgQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        bgQuad.name = "BackgroundImage";
+        bgQuad.transform.SetParent(envGo.transform, false);
+        bgQuad.transform.localPosition = new Vector3(0f, -0.3f, 0.6f);
+        bgQuad.transform.localEulerAngles = new Vector3(36f, 0f, 0f);
+        bgQuad.transform.localScale = new Vector3(15.0f, 8.5f, 1f);
+        var bgTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Art/clean_background.png");
+        if (bgTex != null)
+        {
+            var bgSh = Shader.Find("Unlit/Texture") ?? Shader.Find("Universal Render Pipeline/Unlit");
+            if (bgSh != null)
+            {
+                var bgMat = new Material(bgSh) { name = "BackgroundImage_Mat" };
+                bgMat.mainTexture = bgTex;
+                bgQuad.GetComponent<MeshRenderer>().sharedMaterial = bgMat;
+            }
+        }
+        var bgCol = bgQuad.GetComponent<Collider>();
+        if (bgCol != null) bgCol.enabled = false;
+
         // ── Roof (Environment の子) ──────────────────────────
         var roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
         roof.name = "Roof";
         roof.transform.SetParent(envGo.transform, false);
         roof.transform.localPosition = Vector3.zero;
-        roof.transform.localScale = new Vector3(6f, 0.5f, 4f);
+        roof.transform.localScale = new Vector3(roofWidth, roofThickness, roofDepth);
         SetLitColor(roof, new Color(0.52f, 0.38f, 0.22f));
         // Roof は Default レイヤーのまま。BoxCollider は残す（RoofはSnowLayerMaskに含まれない）
 
