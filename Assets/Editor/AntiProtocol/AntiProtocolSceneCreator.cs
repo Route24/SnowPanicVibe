@@ -13,9 +13,12 @@ public static class AntiProtocolSceneCreator
 {
     const string ScenePath = "Assets/Scenes/SnowCore_AntiProtocol.unity";
     const string SnowLayerName = "Snow";
-    const float roofThickness = 2.0f;
-    const float roofWidth     = 6f;
+    const float roofThickness = 0.5f;
+    const float roofWidth     = 14.9f;
     const float roofDepth     = 4f;
+    const float roofPosX      = 0f;
+    const float roofPosY      = 0.5f;
+    const float roofPosZ      = 9f;
 
     [MenuItem("SnowPanic/Create SnowCore_AntiProtocol", false, 20)]
     public static void CreateScene()
@@ -56,15 +59,38 @@ public static class AntiProtocolSceneCreator
         var envGo = new GameObject("Environment");
 
         // ── BackgroundImage（BG Quad）────────────────────────
-        var bgQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        bgQuad.name = "BackgroundImage";
-        bgQuad.transform.SetParent(envGo.transform, false);
-        bgQuad.transform.localPosition = new Vector3(0f, -0.3f, 0.6f);
-        bgQuad.transform.localEulerAngles = new Vector3(36f, 0f, 0f);
-        bgQuad.transform.localScale = new Vector3(15.0f, 8.5f, 1f);
+        // BGはカメラ(rot.x=20°)に正対させて傾け、画面基準の下敷きとして配置する。
+        // カメラ forward 方向に距離 20 の位置に置き、FOV50・実アスペクト1920/1080 でフィットさせる。
+        // これにより余白ゼロの完全フィットを最小コードで実現する。
         var bgTex = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Art/clean_background.png");
         if (bgTex != null)
         {
+            float texW      = bgTex.width;
+            float texH      = bgTex.height;
+            float texAspect = texW / texH;
+
+            // カメラ正面方向に z_dist=20 進んだ位置
+            // cam pos=(0,4,-8), rot.x=20° => forward=(0,-sin20,cos20)
+            // center = (0, 4 + (-sin20)*20, -8 + cos20*20) = (0, -2.84, 10.79)
+            const float zDist  = 20f;
+            const float camRot = 20f; // deg
+            float sinR  = Mathf.Sin(camRot * Mathf.Deg2Rad);
+            float cosR  = Mathf.Cos(camRot * Mathf.Deg2Rad);
+            float bgY   = 4f  + (-sinR) * zDist;  // ≈ -2.84
+            float bgZ   = -8f + cosR    * zDist;   // ≈ 10.79
+
+            // フィットサイズ: h = 2*zDist*tan(FOV/2), w = h * texAspect
+            const float fovHalf = 0.4663f; // tan(25°)
+            float hFit = 2f * zDist * fovHalf;
+            float wFit = hFit * texAspect;
+
+            var bgQuad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            bgQuad.name = "BackgroundImage";
+            bgQuad.transform.SetParent(envGo.transform, false);
+            bgQuad.transform.localPosition    = new Vector3(0f, bgY, bgZ);
+            bgQuad.transform.localEulerAngles = new Vector3(camRot, 0f, 0f); // カメラと同角度に傾ける
+            bgQuad.transform.localScale       = new Vector3(wFit, hFit, 1f);
+
             var bgSh = Shader.Find("Unlit/Texture") ?? Shader.Find("Universal Render Pipeline/Unlit");
             if (bgSh != null)
             {
@@ -72,15 +98,19 @@ public static class AntiProtocolSceneCreator
                 bgMat.mainTexture = bgTex;
                 bgQuad.GetComponent<MeshRenderer>().sharedMaterial = bgMat;
             }
+            var bgCol = bgQuad.GetComponent<Collider>();
+            if (bgCol != null) bgCol.enabled = false;
+
+            Debug.Log($"[AntiProtocol] bg_texture_width={texW} bg_texture_height={texH}"
+                    + $" bg_aspect_ratio={texAspect:F4} bg_scale_w={wFit:F3} bg_scale_h={hFit:F3}"
+                    + $" bg_tilt_deg={camRot} bg_y={bgY:F3} bg_z={bgZ:F3}");
         }
-        var bgCol = bgQuad.GetComponent<Collider>();
-        if (bgCol != null) bgCol.enabled = false;
 
         // ── Roof (Environment の子) ──────────────────────────
         var roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
         roof.name = "Roof";
         roof.transform.SetParent(envGo.transform, false);
-        roof.transform.localPosition = Vector3.zero;
+        roof.transform.localPosition = new Vector3(roofPosX, roofPosY, roofPosZ);
         roof.transform.localScale = new Vector3(roofWidth, roofThickness, roofDepth);
         SetLitColor(roof, new Color(0.52f, 0.38f, 0.22f));
         // Roof は Default レイヤーのまま。BoxCollider は残す（RoofはSnowLayerMaskに含まれない）
