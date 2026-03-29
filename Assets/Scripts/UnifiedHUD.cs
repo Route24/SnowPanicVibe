@@ -15,9 +15,11 @@ public class UnifiedHUD : MonoBehaviour
     Component _scoreTMP;
     Component _statusTMP;
 
-    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
+        // AntiProtocol シーンでは HUD を一切生成しない
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         if (Object.FindFirstObjectByType<UnifiedHUD>() != null) return;
         var go = new GameObject(RootName);
         go.AddComponent<UnifiedHUD>();
@@ -26,6 +28,12 @@ public class UnifiedHUD : MonoBehaviour
 
     void Awake()
     {
+        // AntiProtocol シーンでは HUD を生成しない（Bootstrap 後に遷移した場合の保険）
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol")
+        {
+            Destroy(gameObject);
+            return;
+        }
         var existing = Object.FindFirstObjectByType<UnifiedHUD>(); if (existing != null && existing != this) { Destroy(gameObject); return; }
         CreateHUD();
         IsActive = true;

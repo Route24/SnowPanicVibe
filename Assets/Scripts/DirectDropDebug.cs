@@ -36,10 +36,9 @@ public class DirectDropDebug : MonoBehaviour
     static void Bootstrap()
     {
         if (!Application.isPlaying) return;
-        // WORK_SNOW シーンでは DirectDropDebug を起動しない
-        // （3D Cube/Sphere マーカーが画面中央に白いブロックとして表示される原因）
+        // WORK_SNOW / SnowCore_AntiProtocol シーンでは DirectDropDebug を起動しない
         string scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        if (scene.Contains("WORK_SNOW")) return;
+        if (scene.Contains("WORK_SNOW") || scene == "SnowCore_AntiProtocol") return;
         var go = new GameObject("DirectDropDebug");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<DirectDropDebug>();

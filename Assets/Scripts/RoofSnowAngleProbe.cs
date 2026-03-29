@@ -19,8 +19,9 @@ public class RoofSnowAngleProbe : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void AutoAttach()
     {
-        // WORK_SNOW シーンではデバッグ自動アタッチを停止する
-        if (SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
+        // WORK_SNOW / SnowCore_AntiProtocol シーンではデバッグ自動アタッチを停止する
+        var _sn = SceneManager.GetActiveScene().name;
+        if (_sn.Contains("WORK_SNOW") || _sn == "SnowCore_AntiProtocol") return;
         if (VideoPipelineSelfTestMode.IsActive) return;
         if (Object.FindFirstObjectByType<RoofSnowAngleProbe>() != null) return;
         var go = GameObject.Find("DebugTools");

@@ -9,6 +9,7 @@ public class RollbackVerification : MonoBehaviour
     static void EnsureInScene()
     {
         if (Object.FindFirstObjectByType<RollbackVerification>() != null) return;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("RollbackVerification");
         go.AddComponent<RollbackVerification>();
     }

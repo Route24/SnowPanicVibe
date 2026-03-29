@@ -9,6 +9,7 @@ public class RunHUDUI : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         if (FindFirstObjectByType<RunHUDUI>() != null) return;
         var go = new GameObject("RunHUDUI");
         go.AddComponent<RunHUDUI>();

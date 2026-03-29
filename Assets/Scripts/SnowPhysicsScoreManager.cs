@@ -93,6 +93,7 @@ public class SnowPhysicsScoreManager : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnsureBootstrap()
     {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         EnsureBootstrapIfNeeded();
     }
 

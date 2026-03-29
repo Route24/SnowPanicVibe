@@ -5,15 +5,15 @@ using System.IO;
 using System.Diagnostics;
 
 /// <summary>
-/// SnowVisibilityLab 専用: Play → Stop 後に
-/// Recordings/snow_test_latest.mp4 から
-/// Recordings/latest_click_check.gif を生成する。
+/// Play → Stop 後に Recordings/snow_test_latest.mp4 から
+/// Recordings/snow_test_latest.gif を生成する。
+/// GIF が実画面と一致している場合のみ [REPORT] の gif_created_this_session=YES が有効になる。
 /// </summary>
 [InitializeOnLoad]
 static class ClickCheckGifExporter
 {
     static readonly string Mp4Path = Path.GetFullPath("Recordings/snow_test_latest.mp4");
-    static readonly string GifPath = Path.GetFullPath("Recordings/latest_click_check.gif");
+    static readonly string GifPath = Path.GetFullPath("Recordings/snow_test_latest.gif");
     static bool _sawPlay;
 
     static ClickCheckGifExporter()
@@ -23,10 +23,6 @@ static class ClickCheckGifExporter
 
     static void OnPlayModeState(PlayModeStateChange state)
     {
-        // TASK3G: play_view_match=NO のため GIF 書き出しを停止
-        // 理由: snow_test_latest.mp4 は現 Play 画面の録画ではなく旧セッションの mp4
-        return;
-
         if (state == PlayModeStateChange.EnteredPlayMode) { _sawPlay = true; return; }
         if (state != PlayModeStateChange.EnteredEditMode || !_sawPlay) return;
         _sawPlay = false;
@@ -39,6 +35,13 @@ static class ClickCheckGifExporter
         if (!File.Exists(Mp4Path))
         {
             UnityEngine.Debug.Log($"[ClickCheckGif] mp4 not found: {Mp4Path}");
+            return;
+        }
+
+        var mp4Info = new FileInfo(Mp4Path);
+        if ((System.DateTime.UtcNow - mp4Info.LastWriteTimeUtc).TotalMinutes > 10)
+        {
+            UnityEngine.Debug.LogWarning($"[ClickCheckGif] mp4 is older than 10 min - skipping gif export to avoid using stale file");
             return;
         }
 
@@ -60,6 +63,7 @@ static class ClickCheckGifExporter
             proc.WaitForExit(15000);
             bool exists = File.Exists(GifPath);
             UnityEngine.Debug.Log($"[ClickCheckGif] gif_export={(exists ? "YES" : "NO")} gif_path={GifPath} gif_exists={exists}");
+            if (exists) SnowLoopNoaReportAutoCopy.UpdateReportWithGif();
         }
         catch (System.Exception ex)
         {

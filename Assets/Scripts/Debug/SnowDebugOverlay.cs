@@ -5,6 +5,7 @@ public class SnowDebugOverlay : MonoBehaviour
     [RuntimeInitializeOnLoadMethod]
     static void Boot()
     {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("SnowDebugOverlay");
         go.AddComponent<SnowDebugOverlay>();
     }

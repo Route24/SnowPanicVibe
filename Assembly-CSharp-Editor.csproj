@@ -55,9 +55,11 @@
     <Compile Include="Assets/TutorialInfo/Scripts/Editor/ReadmeEditor.cs" />
     <Compile Include="Assets/Scripts/Editor/AssiReportWindow.cs" />
     <Compile Include="Assets/Scripts/Editor/ClickCheckGifExporter.cs" />
+    <Compile Include="Assets/Editor/AntiProtocol/AntiProtocolSceneCreator.cs" />
     <Compile Include="Assets/Scripts/Editor/AssiAutoSummary.cs" />
     <Compile Include="Assets/Scripts/Editor/SnowNoaReplyWindow.cs" />
     <Compile Include="Assets/Editor/DebugScreenshotEditor.cs" />
+    <Compile Include="Assets/Editor/SnowMinimalClickLabCreator.cs" />
     <Compile Include="Assets/Editor/SnowVisibilityLabSetup.cs" />
     <Compile Include="Assets/Editor/BillboardBackgroundSceneCreator.cs" />
     <Compile Include="Assets/Editor/FileChangeChecker.cs" />

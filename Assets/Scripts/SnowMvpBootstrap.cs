@@ -8,9 +8,9 @@ public class SnowMvpBootstrap : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
-        // WORK_SNOW シーンでは SnowMvpBootstrap を起動しない
-        // （SnowPackSpawner.EnsureSnowPackVisualHierarchy が Quad/Cube を生成して画面中央に白ブロックが出る）
-        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
+        // WORK_SNOW / SnowCore_AntiProtocol シーンでは SnowMvpBootstrap を起動しない
+        var sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (sceneName.Contains("WORK_SNOW") || sceneName == "SnowCore_AntiProtocol") return;
         var snowTest = GameObject.Find("SnowTest");
         if (snowTest != null && snowTest.GetComponent<SnowPackSpawner>() != null)
         {

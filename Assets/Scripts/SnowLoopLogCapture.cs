@@ -29,10 +29,11 @@ public class SnowLoopLogCapture : MonoBehaviour
     {
         if (_instance != null) return;
 
-        // SnowVisibilityLab ではデバッグシステムを一切起動しない
-        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowVisibilityLab")
+        // SnowVisibilityLab / SnowCore_AntiProtocol ではデバッグシステムを一切起動しない
+        var sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (sceneName == "SnowVisibilityLab" || sceneName == "SnowCore_AntiProtocol")
         {
-            UnityEngine.Debug.Log("[SnowLoopLogCapture] SnowVisibilityLab: dev systems skipped.");
+            UnityEngine.Debug.Log($"[SnowLoopLogCapture] {sceneName}: dev systems skipped.");
             return;
         }
 

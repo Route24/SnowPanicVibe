@@ -25,25 +25,14 @@ public class UIBootstrap : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     static void BootstrapBeforeScene()
     {
-        if (_booted) return;
-        _booted = true;
-        try
-        {
-            UnifiedHUD.EnsureBootstrap(); // ensure canonical HUD first
-            if (!UnifiedHUD.IsActive) EnsureUIRootAndScoreText();
-            SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();
-            var c = GameObject.Find("Canvas") ?? GameObject.Find("UIRoot");
-            Debug.Log($"[UIBootstrap] BeforeSceneLoad complete Canvas={(c != null ? "OK" : "FAIL")}");
-        }
-        catch (System.Exception ex)
-        {
-            Debug.LogError($"[UIBootstrap] BeforeSceneLoad failed: {ex.Message}\n{ex.StackTrace}");
-        }
+        // BeforeSceneLoad ではシーン名が取れないため、HUD/Score 生成は AfterSceneLoad 側に委ねる
+        // このメソッドでは何もしない
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void BootstrapAfterScene()
     {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         UnifiedHUD.EnsureBootstrap();
         if (!UnifiedHUD.IsActive) EnsureUIRootAndScoreText();
         SnowPhysicsScoreManager.EnsureBootstrapIfNeeded();

@@ -19,9 +19,9 @@ public class InitialRoofSnowForcer : MonoBehaviour
     static void Bootstrap()
     {
         if (!Application.isPlaying) return;
-        // WORK_SNOW シーンでは InitialRoofSnowForcer を起動しない
-        // （SnowPackSpawner 経由で 3D Cube が生成され画面中央に白ブロックが出る）
-        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
+        // WORK_SNOW / SnowCore_AntiProtocol シーンでは InitialRoofSnowForcer を起動しない
+        var _sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (_sceneName.Contains("WORK_SNOW") || _sceneName == "SnowCore_AntiProtocol") return;
         var go = new GameObject("InitialRoofSnowForcer");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<InitialRoofSnowForcer>();

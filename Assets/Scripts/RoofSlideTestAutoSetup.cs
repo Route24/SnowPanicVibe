@@ -79,8 +79,9 @@ public class RoofSlideTestAutoSetup : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnsureRuntimeBootstrap()
     {
-        // WORK_SNOW シーンではデバッグ自動起動を完全停止する
-        if (SceneManager.GetActiveScene().name.Contains("WORK_SNOW")) return;
+        // WORK_SNOW / SnowCore_AntiProtocol シーンではデバッグ自動起動を完全停止する
+        var _s = SceneManager.GetActiveScene().name;
+        if (_s.Contains("WORK_SNOW") || _s == "SnowCore_AntiProtocol") return;
 
         var setup = FindFirstObjectByType<RoofSlideTestAutoSetup>();
         if (setup == null)

@@ -8,6 +8,7 @@ public class RoofSnowCleanup : MonoBehaviour
     static void Init()
     {
         if (VideoPipelineSelfTestMode.IsActive) return;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("RoofSnowCleanup");
         go.AddComponent<RoofSnowCleanup>();
     }

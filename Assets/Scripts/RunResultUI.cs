@@ -10,6 +10,7 @@ public class RunResultUI : MonoBehaviour
     static void Bootstrap()
     {
         if (FindFirstObjectByType<RunResultUI>() != null) return;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("RunResultUI");
         go.AddComponent<RunResultUI>();
         DontDestroyOnLoad(go);

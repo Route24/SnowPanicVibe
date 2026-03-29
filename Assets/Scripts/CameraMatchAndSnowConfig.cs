@@ -61,6 +61,7 @@ public static class CameraMatchAndSnowConfig
     static void Bootstrap()
     {
         if (!Application.isPlaying) return;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("CameraMatchAndSnowConfig_Runner");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<CameraMatchAndSnowRunner>();

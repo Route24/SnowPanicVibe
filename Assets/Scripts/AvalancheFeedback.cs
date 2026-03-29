@@ -11,6 +11,7 @@ public class AvalancheFeedback : MonoBehaviour
     static void EnsureInstance()
     {
         if (_instance != null) return;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("AvalancheFeedback");
         DontDestroyOnLoad(go);
         _instance = go.AddComponent<AvalancheFeedback>();

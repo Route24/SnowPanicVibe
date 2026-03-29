@@ -47,6 +47,7 @@ public class RunStructureManager : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void Bootstrap()
     {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         if (FindFirstObjectByType<RunStructureManager>() != null) return;
         var go = new GameObject("RunStructureManager");
         go.AddComponent<RunStructureManager>();
@@ -89,8 +90,9 @@ public class RunStructureManager : MonoBehaviour
     void Start()
     {
         if (VideoPipelineSelfTestMode.IsActive) return;
-        _currentSceneName = SceneManager.GetActiveScene().name;
-        SceneManager.sceneLoaded += OnSceneLoaded;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
+        _currentSceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnSceneLoaded;
         BeginRun();
     }
 

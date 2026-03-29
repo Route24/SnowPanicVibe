@@ -22,6 +22,7 @@ public class RoofSnowVisToggle : MonoBehaviour
     static void Bootstrap()
     {
         if (!Application.isPlaying) return;
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         var go = new GameObject("RoofSnowVisToggle");
         Object.DontDestroyOnLoad(go);
         go.AddComponent<RoofSnowVisToggle>();

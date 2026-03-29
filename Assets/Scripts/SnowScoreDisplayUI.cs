@@ -8,6 +8,7 @@ public class SnowScoreDisplayUI : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     static void EnsureBootstrapOnLoad()
     {
+        if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "SnowCore_AntiProtocol") return;
         EnsureBootstrap();
     }
 
