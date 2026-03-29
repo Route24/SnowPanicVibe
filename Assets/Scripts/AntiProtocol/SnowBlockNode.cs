@@ -18,6 +18,9 @@ public sealed class SnowBlockNode : MonoBehaviour
         var reporter = FindObjectOfType<AntiProtocolVisibilityReporter>();
         if (reporter != null) reporter.NotifyCyanDestroyed();
 
+        // EventTraceLogger にイベントを送る
+        FindObjectOfType<EventTraceLogger>()?.OnCyanBoxDestroyed();
+
         Destroy(gameObject);
     }
 }

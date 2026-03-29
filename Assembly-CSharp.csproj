@@ -71,6 +71,7 @@
     <Compile Include="Assets/Scripts/AvalancheFeedback.cs" />
     <Compile Include="Assets/Scripts/CorniceSnowSegment.cs" />
     <Compile Include="Assets/Scripts/RoofSnowVisToggle.cs" />
+    <Compile Include="Assets/Scripts/AntiProtocol/EventTraceLogger.cs" />
     <Compile Include="Assets/Scripts/DebugGloveOnly.cs" />
     <Compile Include="Assets/Scripts/AntiProtocol/SnowBlockNode.cs" />
     <Compile Include="Assets/Scripts/EavesCatchZone.cs" />
