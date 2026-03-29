@@ -323,7 +323,7 @@ public static class AntiProtocolSceneCreator
     const int   TypeB_PanelCountY       = 2;     // 縦分割数
     const float TypeB_SnowOffset        = 0.12f; // 屋根面からの法線オフセット（突き抜け防止）
     const float TypeB_HeightBase        = 1.60f; // 雪の高さ（Y方向）★3.50→1.60 約50%縮小
-    const float TypeB_CorniceOverhang   = 1.20f; // 雪庇の前方張り出し量（変更なし）
+    const float TypeB_CorniceOverhang   = 0.15f; // 雪庇の前方張り出し量 ★1.20→0.15（overhang_front≈0.12目標）
     const float TypeB_CorniceHeight     = 0.80f; // 雪庇の高さ（Y方向）★2.00→0.80 縮小
 
     // 雪の色: 純白（Unlit で常に明確に見える）
@@ -433,7 +433,7 @@ public static class AntiProtocolSceneCreator
             var rt1 = rb1 + upDir * TypeB_CorniceHeight;
 
             // 先端：前方に張り出し＋少し下方（先端垂れ）
-            float overhang = TypeB_CorniceOverhang + TypeB_EdgeJitter[cx % 4] * 1.2f;
+            float overhang = TypeB_CorniceOverhang + TypeB_EdgeJitter[cx % 4] * 0.3f; // ジッター係数縮小★
             var tip = frontDir * overhang + upDir * 0f; // 先端垂れなし（overhang_below 抑制）
             var cb0 = rb0 + tip;
             var cb1 = rb1 + tip;

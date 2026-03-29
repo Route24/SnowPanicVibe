@@ -13,7 +13,7 @@ public sealed class SafeStateDiffReader : MonoBehaviour
 
     private void Start()
     {
-        bool isMatch = (SafeStateSnapshot.SafeStateVersion == "TASK13_SAFE");
+        bool isMatch = (SafeStateSnapshot.SafeStateVersion == "TASK_SNOW_SHAPE_MEASURED");
         _state = isMatch ? DiffState.MatchFound : DiffState.DiffFound;
         Debug.Log("[SafeDiff] " + _state);
     }
