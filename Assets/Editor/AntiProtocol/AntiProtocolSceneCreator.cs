@@ -322,15 +322,15 @@ public static class AntiProtocolSceneCreator
     const int   TypeB_PanelCountX       = 4;     // 横分割数
     const int   TypeB_PanelCountY       = 2;     // 縦分割数
     const float TypeB_SnowOffset        = 0.12f; // 屋根面からの法線オフセット（突き抜け防止）
-    const float TypeB_HeightBase        = 1.10f; // 雪の高さ（Y方向、手前から見えるサイズ）
-    const float TypeB_CorniceOverhang   = 0.70f; // 雪庇の前方張り出し量
-    const float TypeB_CorniceHeight     = 0.60f; // 雪庇の高さ（Y方向）
+    const float TypeB_HeightBase        = 1.60f; // 雪の高さ（Y方向）★3.50→1.60 約50%縮小
+    const float TypeB_CorniceOverhang   = 1.20f; // 雪庇の前方張り出し量（変更なし）
+    const float TypeB_CorniceHeight     = 0.80f; // 雪庇の高さ（Y方向）★2.00→0.80 縮小
 
     // 雪の色: 純白（Unlit で常に明確に見える）
     static readonly Color TypeB_SnowColor = new Color(1.00f, 1.00f, 1.00f, 1f);
 
-    // 列ごとの高さバリエーション（塊の凸凹感）
-    static readonly float[] TypeB_HeightVar = { 0.20f, -0.15f, 0.25f, -0.10f };
+    // 列ごとの高さバリエーション（段差幅も縮小）
+    static readonly float[] TypeB_HeightVar = { 0.10f, -0.08f, 0.12f, -0.05f };
 
     // 端・手前のジッター（u方向の不定形化）
     static readonly float[] TypeB_EdgeJitter = { -0.035f, 0.025f, -0.020f, 0.030f };
@@ -396,7 +396,7 @@ public static class AntiProtocolSceneCreator
 
                 // 上面 = 下面 + Y方向の高さ（列ごとに段差・手前列は高め）
                 float h = TypeB_HeightBase + TypeB_HeightVar[px % TypeB_HeightVar.Length];
-                if (py == 0) h += 0.20f; // 手前列は高さを追加（重量感）
+                if (py == 0) h += 0.10f; // 手前列は高さを追加（重量感）★0.20→0.10
                 var heightVec = upDir * h;
 
                 var t00 = b00 + heightVec;
@@ -434,7 +434,7 @@ public static class AntiProtocolSceneCreator
 
             // 先端：前方に張り出し＋少し下方（先端垂れ）
             float overhang = TypeB_CorniceOverhang + TypeB_EdgeJitter[cx % 4] * 1.2f;
-            var tip = frontDir * overhang + upDir * (-0.20f); // 先端を少し下げる
+            var tip = frontDir * overhang + upDir * 0f; // 先端垂れなし（overhang_below 抑制）
             var cb0 = rb0 + tip;
             var cb1 = rb1 + tip;
             // 先端上面 = 先端下面 + 高さの半分（先端が薄くなる垂れ形状）
