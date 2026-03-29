@@ -871,11 +871,47 @@ public static class SnowPanicVideoPipelineSelfTest
         // Drive upload を完全停止
         AssiLog("step=upload_disabled");
         _uploadStatus = "DISABLED";
+
+        // GIF生成のみ実行
+        var mp4 = _localPath ?? _mp4Path ?? "";
+        if (!string.IsNullOrEmpty(mp4) && File.Exists(mp4))
+        {
+            GeneratePreview(mp4);
+        }
     }
 
-    /// <summary>mp4から軽量プレビューを必ず生成。gif→png_sequence→contact_sheet→qlmanage→placeholder。</summary>
+    /// <summary>mp4からffmpegでGIFを生成。snow_test_latest.gif に出力。</summary>
     static void GeneratePreview(string mp4Path)
     {
+        if (string.IsNullOrEmpty(mp4Path) || !File.Exists(mp4Path)) return;
+        try
+        {
+            var ffmpeg = ResolveFfmpegPath();
+            if (string.IsNullOrEmpty(ffmpeg)) return;
+            _ffmpegPathUsed = ffmpeg;
+            _ffmpegAvailable = true;
+            var outDir = Path.GetDirectoryName(mp4Path);
+            var gifOut = Path.Combine(outDir, "snow_test_latest.gif");
+            // 8fps, 320px幅, 最大6秒, パレット最適化なし（速度優先）
+            var cmd = "\"" + ffmpeg + "\" -y -i \"" + mp4Path + "\" -vf \"fps=8,scale=320:-1:flags=lanczos\" -t 6 \"" + gifOut + "\" 2>&1";
+            int exitCode;
+            RunZshWithExitCode(cmd, FfmpegTimeoutMs, out exitCode);
+            if (exitCode == 0 && File.Exists(gifOut) && new FileInfo(gifOut).Length > 0)
+            {
+                var sz = new FileInfo(gifOut).Length;
+                SetPreviewResult(gifOut, "gif", sz);
+                _gifPath = gifOut;
+                AssiLog("gif_created=YES gif_path=" + gifOut + " gif_size_bytes=" + sz);
+            }
+            else
+            {
+                AssiLog("gif_created=NO ffmpeg_exit=" + exitCode);
+            }
+        }
+        catch (Exception ex)
+        {
+            AssiLog("gif_exception=" + (ex.Message ?? "").Replace("\n", " "));
+        }
     }
 
     static void SetPreviewResult(string path, string type, long sizeBytes)

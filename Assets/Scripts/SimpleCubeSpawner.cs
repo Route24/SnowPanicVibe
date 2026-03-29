@@ -8,14 +8,37 @@ public class SimpleCubeSpawner : MonoBehaviour
 
     void Start()
     {
+        // ── 不要オブジェクトを非表示 ──────────────────────────
+        HideIfExists("RedCube_Visibility");
+        HideIfExists("SnowQuad_Static");
+        HideIfExists("SnowTest");
+        // 動的に生成されたデバッグオブジェクトも対象
+        HideIfExists("DEBUG_RedCube_CamTest");
+        HideIfExists("ForceSnowCube");
+
+        // ── シアンボックスを屋根上に1個生成 ────────────────────
         _cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
         _cube.name = CubeName;
-        _cube.transform.position = new Vector3(0f, 2f, 0f);
-        _cube.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
-        var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
-        mat.color = Color.cyan;
+
+        // 屋根（RoofQuad）の上に配置
+        var roof = GameObject.Find("RoofQuad");
+        if (roof != null)
+        {
+            _cube.transform.position = roof.transform.position + Vector3.up * 0.3f;
+            _cube.transform.rotation = roof.transform.rotation;
+        }
+        else
+        {
+            _cube.transform.position = new Vector3(0f, 1.5f, 0f);
+        }
+        _cube.transform.localScale = new Vector3(0.4f, 0.4f, 0.4f);
+
+        var mat = new Material(Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color") ?? Shader.Find("Standard"));
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", Color.cyan);
+        if (mat.HasProperty("_Color"))     mat.SetColor("_Color", Color.cyan);
         _cube.GetComponent<Renderer>().sharedMaterial = mat;
-        // コライダーはそのまま残す（クリック判定用）— TASK3B v3
+
+        Debug.Log($"[CYAN_BOX] spawned=YES name={CubeName} pos={_cube.transform.position}");
     }
 
     void Update()
@@ -33,5 +56,16 @@ public class SimpleCubeSpawner : MonoBehaviour
         Destroy(hit.collider.gameObject);
         _cube = null;
         _done = true;
+        Debug.Log("[CYAN_BOX] destroyed_on_click=YES");
+    }
+
+    static void HideIfExists(string goName)
+    {
+        var go = GameObject.Find(goName);
+        if (go != null)
+        {
+            go.SetActive(false);
+            Debug.Log($"[SCENE_CLEANUP] hidden={goName}");
+        }
     }
 }

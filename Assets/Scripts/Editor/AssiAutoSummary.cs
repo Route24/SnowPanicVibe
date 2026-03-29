@@ -50,6 +50,18 @@ public static class AssiAutoSummary
             EditorApplication.update -= WaitAndGenerate;
             GenerateSummary();
         }
+
+        // GIF生成完了（バックグラウンド）を待ち、レポートを再更新する
+        var stopTime2 = DateTime.Now;
+        EditorApplication.update += WaitAndRefreshGif;
+
+        void WaitAndRefreshGif()
+        {
+            if ((DateTime.Now - stopTime2).TotalSeconds < 15.0) return;
+            EditorApplication.update -= WaitAndRefreshGif;
+            SnowLoopNoaReportAutoCopy.UpdateReportWithGif();
+            AssiReportWindow.RefreshIfOpen();
+        }
     }
 
     [MenuItem("SnowPanic/Generate Latest Summary", false, 400)]
